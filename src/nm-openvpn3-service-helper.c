@@ -52,7 +52,7 @@ static struct {
 #define _NMLOG(level, ...) \
 	G_STMT_START { \
 		if (gl.log_level >= (level)) { \
-			g_print ("nm-openvpn[%s]: %-7s [helper-%ld] " _NM_UTILS_MACRO_FIRST (__VA_ARGS__) "\n", \
+			g_print ("nm-openvpn3[%s]: %-7s [helper-%ld] " _NM_UTILS_MACRO_FIRST (__VA_ARGS__) "\n", \
 			         gl.log_prefix_token ?: "???", \
 			         nm_utils_syslog_to_str (level), \
 			         (long) getpid () \

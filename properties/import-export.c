@@ -697,7 +697,7 @@ inline_blob_construct_path (const char *basename, const char *token)
 	if (_nmovpn_test_temp_path)
 		return g_build_filename (_nmovpn_test_temp_path, f_filename, NULL);
 
-	path = nm_vpn_plugin_utils_get_cert_path ("nm-openvpn");
+	path = nm_vpn_plugin_utils_get_cert_path ("nm-openvpn3");
 	return g_build_filename (path, f_filename, NULL);
 }
 

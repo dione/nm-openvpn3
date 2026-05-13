@@ -216,7 +216,7 @@ static const ValidProperty valid_secrets[] = {
 #define _NMLOG(level, ...) \
 	G_STMT_START { \
 		if (gl.log_level >= (level)) { \
-			g_print ("nm-openvpn[%ld] %-7s " _NM_UTILS_MACRO_FIRST (__VA_ARGS__) "\n", \
+			g_print ("nm-openvpn3[%ld] %-7s " _NM_UTILS_MACRO_FIRST (__VA_ARGS__) "\n", \
 			         (long) getpid (), \
 			         nm_utils_syslog_to_str (level) \
 			         _NM_UTILS_MACRO_REST (__VA_ARGS__)); \
@@ -1362,7 +1362,7 @@ mgt_path_create (NMConnection *connection, GError **error)
 		return NULL;
 	}
 
-	return g_strdup_printf (RUNDIR"/nm-openvpn-%s",
+	return g_strdup_printf (RUNDIR"/nm-openvpn3-%s",
 	                        nm_connection_get_uuid (connection));
 }
 
@@ -1968,7 +1968,7 @@ nm_openvpn3_start_openvpn_binary (NMOpenvpn3Plugin *plugin,
 
 	if (gl.log_syslog) {
 		args_add_strv (args, "--syslog",
-		                     "nm-openvpn");
+		                     "nm-openvpn3");
 	}
 
 	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_TUNNEL_MTU);
@@ -2532,7 +2532,7 @@ main (int argc, char *argv[])
 	g_option_context_add_main_entries (opt_ctx, options, NULL);
 
 	g_option_context_set_summary (opt_ctx,
-	                              _("nm-openvpn-service provides integrated "
+	                              _("nm-openvpn3-service provides integrated "
 	                                "OpenVPN capability to NetworkManager."));
 
 	if (!g_option_context_parse (opt_ctx, &argc, &argv, &error)) {
@@ -2568,7 +2568,7 @@ main (int argc, char *argv[])
 	                                              10, 0, 1,
 	                                              gl.debug ? 0 : 1);
 
-	_LOGD ("nm-openvpn-service (version " DIST_VERSION ") starting...");
+	_LOGD ("nm-openvpn3-service (version " DIST_VERSION ") starting...");
 
 	if (   !g_file_test ("/sys/class/misc/tun", G_FILE_TEST_EXISTS)
 	    && (system ("/sbin/modprobe tun") == -1))
