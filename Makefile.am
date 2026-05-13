@@ -386,9 +386,9 @@ appdata_files = $(appdata_in_files:.xml.in=.xml)
 if WITH_GNOME
 appdata_DATA = $(appdata_files)
 endif
-appdata_in_files = appdata/network-manager-openvpn.metainfo.xml.in
+appdata_in_files = appdata/network-manager-openvpn3.metainfo.xml.in
 
-appdata/network-manager-openvpn.metainfo.xml: appdata/network-manager-openvpn.metainfo.xml.in
+appdata/network-manager-openvpn3.metainfo.xml: appdata/network-manager-openvpn3.metainfo.xml.in
 	$(AM_V_GEN)$(MSGFMT) --xml --template $< -d $(top_srcdir)/po -o $@
 
 nm-openvpn-service.name: $(srcdir)/nm-openvpn-service.name.in

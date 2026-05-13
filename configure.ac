@@ -1,9 +1,9 @@
 AC_PREREQ(2.52)
 
-AC_INIT(NetworkManager-openvpn,
-        1.12.5,
-        https://gitlab.gnome.org/GNOME/NetworkManager-openvpn/issues,
-        NetworkManager-openvpn)
+AC_INIT(NetworkManager-openvpn3,
+        0.1.0,
+        https://github.com/dione/nm-openvpn3/issues,
+        NetworkManager-openvpn3)
 AM_INIT_AUTOMAKE([1.9 foreign tar-ustar no-dist-gzip dist-xz -Wno-portability])
 AM_MAINTAINER_MODE
 AM_SILENT_RULES([yes])
@@ -73,8 +73,8 @@ AC_SUBST([ACLOCAL_AMFLAGS])
 dnl
 dnl GNOME support
 dnl
-AC_ARG_WITH(gnome, AS_HELP_STRING([--without-gnome], [Build NetworkManager-openvpn without GNOME support, e.g. vpn service only]), [], [with_gnome_specified=no])
-AC_ARG_WITH(gtk4, AS_HELP_STRING([--with-gtk4], [Build NetworkManager-openvpn with libnma-gtk4 support]), [], [with_gtk4_specified=no])
+AC_ARG_WITH(gnome, AS_HELP_STRING([--without-gnome], [Build NetworkManager-openvpn3 without GNOME support, e.g. vpn service only]), [], [with_gnome_specified=no])
+AC_ARG_WITH(gtk4, AS_HELP_STRING([--with-gtk4], [Build NetworkManager-openvpn3 with libnma-gtk4 support]), [], [with_gtk4_specified=no])
 if test "$with_gnome" != no; then
 	with_gnome=yes
 fi
@@ -89,7 +89,7 @@ AM_CONDITIONAL(WITH_GTK4, test "$with_gtk4" != no)
 
 AC_ARG_ENABLE(absolute-paths, AS_HELP_STRING([--enable-absolute-paths], [Use absolute paths to in .name files. Useful for development. (default is no)]))
 
-GETTEXT_PACKAGE=NetworkManager-openvpn
+GETTEXT_PACKAGE=NetworkManager-openvpn3
 AC_SUBST(GETTEXT_PACKAGE)
 AC_DEFINE_UNQUOTED(GETTEXT_PACKAGE,"$GETTEXT_PACKAGE", [Gettext package])
 

@@ -5,15 +5,15 @@
          xmlns:gnome="http://api.gnome.org/doap-extensions#"
          xmlns="http://usefulinc.com/ns/doap#">
 
-  <name xml:lang="en">NetworkManager-openvpn</name>
-  <shortdesc xml:lang="en">OpenVPN support for NetworkManager</shortdesc>
-  <description>OpenVPN support for NetworkManager</description>
+  <name xml:lang="en">NetworkManager-openvpn3</name>
+  <shortdesc xml:lang="en">OpenVPN 3 support for NetworkManager</shortdesc>
+  <description>OpenVPN 3 support for NetworkManager</description>
 
-  <homepage rdf:resource="https://networkmanager.dev/" />
+  <homepage rdf:resource="https://github.com/dione/nm-openvpn3" />
   <developer-forum rdf:resource="https://discourse.gnome.org/tag/networkmanager" />
   <support-forum rdf:resource="https://discourse.gnome.org/tag/networkmanager" />
-  <download-page rdf:resource="https://download.gnome.org/sources/NetworkManager-openvpn/" />
-  <bug-database rdf:resource="https://gitlab.gnome.org/GNOME/NetworkManager-openvpn/issues" />
+  <download-page rdf:resource="https://github.com/dione/nm-openvpn3/releases" />
+  <bug-database rdf:resource="https://github.com/dione/nm-openvpn3/issues" />
   <category rdf:resource="http://api.gnome.org/doap-extensions#apps" />
   <programming-language>C</programming-language>
   <maintainer>

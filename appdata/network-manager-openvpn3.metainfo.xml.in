@@ -1,14 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- Copyright Lubomir Rintel 2016 -->
 <component type="addon">
-  <id>network-manager-openvpn</id>
+  <id>network-manager-openvpn3</id>
   <project_license>GPL-2.0+</project_license>
   <metadata_license>CC0-1.0</metadata_license>
   <extends>nm-connection-editor.desktop</extends>
   <extends>org.gnome.Settings.desktop</extends>
   <extends>gnome-control-center.desktop</extends>
-  <name>OpenVPN client</name>
-  <summary>Client for OpenVPN virtual private networks</summary>
+  <name>OpenVPN 3 client</name>
+  <summary>Client for OpenVPN 3 virtual private networks</summary>
 
   <keywords>
     <keyword>network</keyword>
@@ -20,23 +20,23 @@
   </keywords>
 
   <description>
-    <p>Support for configuring OpenVPN virtual private network connections.</p>
-    <p>OpenVPN is a popular and flexible free-software VPN solution.</p>
+    <p>Support for configuring OpenVPN 3 virtual private network connections.</p>
+    <p>OpenVPN 3 is a modern, D-Bus-based VPN solution using the OpenVPN 3 Core library.</p>
   </description>
 
   <screenshots>
     <screenshot type="default">
-      <image width="800" height="658">https://gitlab.gnome.org/GNOME/NetworkManager-openvpn/raw/master/appdata/openvpn.png</image>
+      <image width="800" height="658">https://github.com/dione/nm-openvpn3/raw/main/appdata/openvpn.png</image>
     </screenshot>
     <screenshot>
       <caption>The advanced options dialog</caption>
-      <image width="800" height="604">https://gitlab.gnome.org/GNOME/NetworkManager-openvpn/raw/master/appdata/openvpn-advanced.png</image>
+      <image width="800" height="604">https://github.com/dione/nm-openvpn3/raw/main/appdata/openvpn-advanced.png</image>
     </screenshot>
   </screenshots>
 
-  <url type="homepage">https://networkmanager.dev/docs/vpn/</url>
-  <url type="bugtracker">https://gitlab.gnome.org/GNOME/NetworkManager-openvpn/issues</url>
+  <url type="homepage">https://github.com/dione/nm-openvpn3</url>
+  <url type="bugtracker">https://github.com/dione/nm-openvpn3/issues</url>
   <update_contact>networkmanager-maint@gnome.bugs</update_contact>
-  <translation type="gettext">NetworkManager-openvpn</translation>
+  <translation type="gettext">NetworkManager-openvpn3</translation>
   <developer_name>The NetworkManager Developers</developer_name>
 </component>
