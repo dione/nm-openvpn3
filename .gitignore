@@ -77,3 +77,7 @@ properties/tests/test-import-export-glib
 properties/resources.[ch]
 /NetworkManager-openvpn*.tar*
 /po/NetworkManager-openvpn.pot
+
+# Fork-local directories — not part of upstream sources
+/reference/
+/docs/
