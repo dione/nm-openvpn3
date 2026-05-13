@@ -19,8 +19,8 @@
  * Copyright (C) 2008 - 2018 Red Hat, Inc.
  */
 
-#ifndef __NM_OPENVPN_EDITOR_PLUGIN_H__
-#define __NM_OPENVPN_EDITOR_PLUGIN_H__
+#ifndef __NM_OPENVPN3_EDITOR_PLUGIN_H__
+#define __NM_OPENVPN3_EDITOR_PLUGIN_H__
 
 #define OPENVPN_TYPE_EDITOR_PLUGIN                (openvpn_editor_plugin_get_type ())
 #define OPENVPN_EDITOR_PLUGIN(obj)            (G_TYPE_CHECK_INSTANCE_CAST ((obj), OPENVPN_TYPE_EDITOR_PLUGIN, OpenvpnEditorPlugin))
@@ -47,9 +47,9 @@ typedef NMVpnEditor *(*NMVpnEditorFactory) (NMVpnEditorPlugin *editor_plugin,
                                             GError **error);
 
 NMVpnEditor *
-nm_vpn_editor_factory_openvpn (NMVpnEditorPlugin *editor_plugin,
+nm_vpn_editor_factory_openvpn3 (NMVpnEditorPlugin *editor_plugin,
                                NMConnection *connection,
                                GError **error);
 
-#endif /* __NM_OPENVPN_EDITOR_PLUGIN_H__ */
+#endif /* __NM_OPENVPN3_EDITOR_PLUGIN_H__ */
 

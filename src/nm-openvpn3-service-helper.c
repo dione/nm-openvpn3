@@ -77,7 +77,7 @@ helper_failed (GDBusProxy *proxy, const char *reason)
 {
 	GError *err = NULL;
 
-	_LOGW ("nm-openvpn-service-openvpn-helper did not receive a valid %s from openvpn", reason);
+	_LOGW ("nm-openvpn3-service-helper did not receive a valid %s from openvpn", reason);
 
 	if (!g_dbus_proxy_call_sync (proxy, "SetFailure",
 	                             g_variant_new ("(s)", reason),

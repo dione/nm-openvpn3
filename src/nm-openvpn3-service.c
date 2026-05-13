@@ -61,28 +61,28 @@ static struct {
 	GPtrArray *tmp_file_paths;
 } gl/*obal*/;
 
-#define NM_OPENVPN_HELPER_PATH LIBEXECDIR"/nm-openvpn-service-openvpn-helper"
+#define NM_OPENVPN3_HELPER_PATH LIBEXECDIR"/nm-openvpn3-service-helper"
 
 /*****************************************************************************/
 
-#define NM_TYPE_OPENVPN_PLUGIN            (nm_openvpn_plugin_get_type ())
-#define NM_OPENVPN_PLUGIN(obj)            (G_TYPE_CHECK_INSTANCE_CAST ((obj), NM_TYPE_OPENVPN_PLUGIN, NMOpenvpnPlugin))
-#define NM_OPENVPN_PLUGIN_CLASS(klass)    (G_TYPE_CHECK_CLASS_CAST ((klass), NM_TYPE_OPENVPN_PLUGIN, NMOpenvpnPluginClass))
-#define NM_IS_OPENVPN_PLUGIN(obj)         (G_TYPE_CHECK_INSTANCE_TYPE ((obj), NM_TYPE_OPENVPN_PLUGIN))
-#define NM_IS_OPENVPN_PLUGIN_CLASS(klass) (G_TYPE_CHECK_CLASS_TYPE ((klass), NM_TYPE_OPENVPN_PLUGIN))
-#define NM_OPENVPN_PLUGIN_GET_CLASS(obj)  (G_TYPE_INSTANCE_GET_CLASS ((obj), NM_TYPE_OPENVPN_PLUGIN, NMOpenvpnPluginClass))
+#define NM_TYPE_OPENVPN3_PLUGIN            (nm_openvpn3_plugin_get_type ())
+#define NM_OPENVPN3_PLUGIN(obj)            (G_TYPE_CHECK_INSTANCE_CAST ((obj), NM_TYPE_OPENVPN3_PLUGIN, NMOpenvpn3Plugin))
+#define NM_OPENVPN3_PLUGIN_CLASS(klass)    (G_TYPE_CHECK_CLASS_CAST ((klass), NM_TYPE_OPENVPN3_PLUGIN, NMOpenvpn3PluginClass))
+#define NM_IS_OPENVPN3_PLUGIN(obj)         (G_TYPE_CHECK_INSTANCE_TYPE ((obj), NM_TYPE_OPENVPN3_PLUGIN))
+#define NM_IS_OPENVPN3_PLUGIN_CLASS(klass) (G_TYPE_CHECK_CLASS_TYPE ((klass), NM_TYPE_OPENVPN3_PLUGIN))
+#define NM_OPENVPN3_PLUGIN_GET_CLASS(obj)  (G_TYPE_INSTANCE_GET_CLASS ((obj), NM_TYPE_OPENVPN3_PLUGIN, NMOpenvpn3PluginClass))
 
 typedef struct {
 	NMVpnServicePlugin parent;
-} NMOpenvpnPlugin;
+} NMOpenvpn3Plugin;
 
 typedef struct {
 	NMVpnServicePluginClass parent;
-} NMOpenvpnPluginClass;
+} NMOpenvpn3PluginClass;
 
-GType nm_openvpn_plugin_get_type (void);
+GType nm_openvpn3_plugin_get_type (void);
 
-NMOpenvpnPlugin *nm_openvpn_plugin_new (const char *bus_name);
+NMOpenvpn3Plugin *nm_openvpn3_plugin_new (const char *bus_name);
 
 /*****************************************************************************/
 
@@ -90,7 +90,7 @@ typedef struct {
 	GPid pid;
 	guint watch_id;
 	guint kill_id;
-	NMOpenvpnPlugin *plugin;
+	NMOpenvpn3Plugin *plugin;
 	bool is_terminating:1;
 } PidsPendingData;
 
@@ -108,20 +108,20 @@ typedef struct {
 	char *challenge_flags;
 	GIOChannel *socket_channel;
 	guint socket_channel_eventid;
-} NMOpenvpnPluginIOData;
+} NMOpenvpn3PluginIOData;
 
 typedef struct {
 	GPid pid;
 	guint connect_timer;
 	guint connect_count;
-	NMOpenvpnPluginIOData *io_data;
+	NMOpenvpn3PluginIOData *io_data;
 	gboolean interactive;
 	char *mgt_path;
-} NMOpenvpnPluginPrivate;
+} NMOpenvpn3PluginPrivate;
 
-G_DEFINE_TYPE (NMOpenvpnPlugin, nm_openvpn_plugin, NM_TYPE_VPN_SERVICE_PLUGIN)
+G_DEFINE_TYPE (NMOpenvpn3Plugin, nm_openvpn3_plugin, NM_TYPE_VPN_SERVICE_PLUGIN)
 
-#define NM_OPENVPN_PLUGIN_GET_PRIVATE(o) (G_TYPE_INSTANCE_GET_PRIVATE ((o), NM_TYPE_OPENVPN_PLUGIN, NMOpenvpnPluginPrivate))
+#define NM_OPENVPN3_PLUGIN_GET_PRIVATE(o) (G_TYPE_INSTANCE_GET_PRIVATE ((o), NM_TYPE_OPENVPN3_PLUGIN, NMOpenvpn3PluginPrivate))
 
 /*****************************************************************************/
 
@@ -134,80 +134,80 @@ typedef struct {
 } ValidProperty;
 
 static const ValidProperty valid_properties[] = {
-	{ NM_OPENVPN_KEY_ALLOW_COMPRESSION,         G_TYPE_STRING, 0, 0, FALSE },
-	{ NM_OPENVPN_KEY_ALLOW_PULL_FQDN,           G_TYPE_BOOLEAN, 0, 0, FALSE },
-	{ NM_OPENVPN_KEY_AUTH,                      G_TYPE_STRING, 0, 0, FALSE },
-	{ NM_OPENVPN_KEY_CA,                        G_TYPE_STRING, 0, 0, FALSE },
-	{ NM_OPENVPN_KEY_CERT,                      G_TYPE_STRING, 0, 0, FALSE },
-	{ NM_OPENVPN_KEY_CIPHER,                    G_TYPE_STRING, 0, 0, FALSE },
-	{ NM_OPENVPN_KEY_KEYSIZE,                   G_TYPE_INT, 1, 65535, FALSE },
-	{ NM_OPENVPN_KEY_COMPRESS,                  G_TYPE_STRING, 0, 0, FALSE },
-	{ NM_OPENVPN_KEY_COMP_LZO,                  G_TYPE_STRING, 0, 0, FALSE },
-	{ NM_OPENVPN_KEY_CONNECT_TIMEOUT,           G_TYPE_INT, 0, G_MAXINT, FALSE },
-	{ NM_OPENVPN_KEY_CONNECTION_TYPE,           G_TYPE_STRING, 0, 0, FALSE },
-	{ NM_OPENVPN_KEY_CRL_VERIFY_FILE,           G_TYPE_STRING, 0, 0, FALSE },
-	{ NM_OPENVPN_KEY_CRL_VERIFY_DIR,            G_TYPE_STRING, 0, 0, FALSE },
-	{ NM_OPENVPN_KEY_DATA_CIPHERS,              G_TYPE_STRING, 0, 0, FALSE },
-	{ NM_OPENVPN_KEY_DATA_CIPHERS_FALLBACK,     G_TYPE_STRING, 0, 0, FALSE },
-	{ NM_OPENVPN_KEY_EXTRA_CERTS,               G_TYPE_STRING, 0, 0, FALSE },
-	{ NM_OPENVPN_KEY_FLOAT,                     G_TYPE_BOOLEAN, 0, 0, FALSE },
-	{ NM_OPENVPN_KEY_NCP_DISABLE,               G_TYPE_BOOLEAN, 0, 0, FALSE },
-	{ NM_OPENVPN_KEY_FRAGMENT_SIZE,             G_TYPE_INT, 0, G_MAXINT, FALSE },
-	{ NM_OPENVPN_KEY_KEY,                       G_TYPE_STRING, 0, 0, FALSE },
-	{ NM_OPENVPN_KEY_LOCAL_IP,                  G_TYPE_STRING, 0, 0, TRUE },
-	{ NM_OPENVPN_KEY_MSSFIX,                    G_TYPE_STRING, 0, 0, FALSE },
-	{ NM_OPENVPN_KEY_MTU_DISC,                  G_TYPE_STRING, 0, 0, FALSE },
-	{ NM_OPENVPN_KEY_PING,                      G_TYPE_INT, 0, G_MAXINT, FALSE },
-	{ NM_OPENVPN_KEY_PING_EXIT,                 G_TYPE_INT, 0, G_MAXINT, FALSE },
-	{ NM_OPENVPN_KEY_PING_RESTART,              G_TYPE_INT, 0, G_MAXINT, FALSE },
-	{ NM_OPENVPN_KEY_MAX_ROUTES,                G_TYPE_INT, 0, 100000000, FALSE },
-	{ NM_OPENVPN_KEY_PROTO_TCP,                 G_TYPE_BOOLEAN, 0, 0, FALSE },
-	{ NM_OPENVPN_KEY_PORT,                      G_TYPE_INT, 1, 65535, FALSE },
-	{ NM_OPENVPN_KEY_PROXY_TYPE,                G_TYPE_STRING, 0, 0, FALSE },
-	{ NM_OPENVPN_KEY_PROXY_SERVER,              G_TYPE_STRING, 0, 0, FALSE },
-	{ NM_OPENVPN_KEY_PROXY_PORT,                G_TYPE_INT, 1, 65535, FALSE },
-	{ NM_OPENVPN_KEY_PROXY_RETRY,               G_TYPE_BOOLEAN, 0, 0, FALSE },
-	{ NM_OPENVPN_KEY_PUSH_PEER_INFO,            G_TYPE_BOOLEAN, 0, 0, FALSE },
-	{ NM_OPENVPN_KEY_HTTP_PROXY_USERNAME,       G_TYPE_STRING, 0, 0, FALSE },
-	{ NM_OPENVPN_KEY_REMOTE,                    G_TYPE_STRING, 0, 0, FALSE },
-	{ NM_OPENVPN_KEY_REMOTE_RANDOM,             G_TYPE_BOOLEAN, 0, 0, FALSE },
-	{ NM_OPENVPN_KEY_REMOTE_RANDOM_HOSTNAME,    G_TYPE_BOOLEAN, 0, 0, FALSE },
-	{ NM_OPENVPN_KEY_REMOTE_IP,                 G_TYPE_STRING, 0, 0, TRUE },
-	{ NM_OPENVPN_KEY_RENEG_SECONDS,             G_TYPE_INT, 0, G_MAXINT, FALSE },
-	{ NM_OPENVPN_KEY_STATIC_KEY,                G_TYPE_STRING, 0, 0, FALSE },
-	{ NM_OPENVPN_KEY_STATIC_KEY_DIRECTION,      G_TYPE_INT, 0, 1, FALSE },
-	{ NM_OPENVPN_KEY_TA,                        G_TYPE_STRING, 0, 0, FALSE },
-	{ NM_OPENVPN_KEY_TA_DIR,                    G_TYPE_INT, 0, 1, FALSE },
-	{ NM_OPENVPN_KEY_TAP_DEV,                   G_TYPE_BOOLEAN, 0, 0, FALSE },
-	{ NM_OPENVPN_KEY_DEV,                       G_TYPE_STRING, 0, 0, FALSE },
-	{ NM_OPENVPN_KEY_DEV_TYPE,                  G_TYPE_STRING, 0, 0, FALSE },
-	{ NM_OPENVPN_KEY_TUN_IPV6,                  G_TYPE_STRING, 0, 0, FALSE },
-	{ NM_OPENVPN_KEY_TLS_CIPHER,                G_TYPE_STRING, 0, 0, FALSE },
-	{ NM_OPENVPN_KEY_TLS_CRYPT,                 G_TYPE_STRING, 0, 0, FALSE },
-	{ NM_OPENVPN_KEY_TLS_CRYPT_V2,              G_TYPE_STRING, 0, 0, FALSE },
-	{ NM_OPENVPN_KEY_TLS_REMOTE,                G_TYPE_STRING, 0, 0, FALSE },
-	{ NM_OPENVPN_KEY_VERIFY_X509_NAME,          G_TYPE_STRING, 0, 0, FALSE },
-	{ NM_OPENVPN_KEY_REMOTE_CERT_TLS,           G_TYPE_STRING, 0, 0, FALSE },
-	{ NM_OPENVPN_KEY_NS_CERT_TYPE,              G_TYPE_STRING, 0, 0, FALSE },
-	{ NM_OPENVPN_KEY_TUNNEL_MTU,                G_TYPE_INT, 0, G_MAXINT, FALSE },
-	{ NM_OPENVPN_KEY_USERNAME,                  G_TYPE_STRING, 0, 0, FALSE },
-	{ NM_OPENVPN_KEY_PASSWORD_FLAGS,            G_TYPE_STRING, 0, 0, FALSE },
-	{ NM_OPENVPN_KEY_CERTPASS_FLAGS,            G_TYPE_STRING, 0, 0, FALSE },
-	{ NM_OPENVPN_KEY_NOSECRET,                  G_TYPE_STRING, 0, 0, FALSE },
-	{ NM_OPENVPN_KEY_HTTP_PROXY_PASSWORD_FLAGS, G_TYPE_STRING, 0, 0, FALSE },
-	{ NM_OPENVPN_KEY_TLS_VERSION_MIN,           G_TYPE_STRING, 0, 0, FALSE },
-	{ NM_OPENVPN_KEY_TLS_VERSION_MIN_OR_HIGHEST,G_TYPE_BOOLEAN, 0, 0, FALSE },
-	{ NM_OPENVPN_KEY_TLS_VERSION_MAX,           G_TYPE_STRING, 0, 0, FALSE },
-	{ NM_OPENVPN_KEY_CHALLENGE_RESPONSE_FLAGS,  G_TYPE_STRING, 0, 0, FALSE },
+	{ NM_OPENVPN3_KEY_ALLOW_COMPRESSION,         G_TYPE_STRING, 0, 0, FALSE },
+	{ NM_OPENVPN3_KEY_ALLOW_PULL_FQDN,           G_TYPE_BOOLEAN, 0, 0, FALSE },
+	{ NM_OPENVPN3_KEY_AUTH,                      G_TYPE_STRING, 0, 0, FALSE },
+	{ NM_OPENVPN3_KEY_CA,                        G_TYPE_STRING, 0, 0, FALSE },
+	{ NM_OPENVPN3_KEY_CERT,                      G_TYPE_STRING, 0, 0, FALSE },
+	{ NM_OPENVPN3_KEY_CIPHER,                    G_TYPE_STRING, 0, 0, FALSE },
+	{ NM_OPENVPN3_KEY_KEYSIZE,                   G_TYPE_INT, 1, 65535, FALSE },
+	{ NM_OPENVPN3_KEY_COMPRESS,                  G_TYPE_STRING, 0, 0, FALSE },
+	{ NM_OPENVPN3_KEY_COMP_LZO,                  G_TYPE_STRING, 0, 0, FALSE },
+	{ NM_OPENVPN3_KEY_CONNECT_TIMEOUT,           G_TYPE_INT, 0, G_MAXINT, FALSE },
+	{ NM_OPENVPN3_KEY_CONNECTION_TYPE,           G_TYPE_STRING, 0, 0, FALSE },
+	{ NM_OPENVPN3_KEY_CRL_VERIFY_FILE,           G_TYPE_STRING, 0, 0, FALSE },
+	{ NM_OPENVPN3_KEY_CRL_VERIFY_DIR,            G_TYPE_STRING, 0, 0, FALSE },
+	{ NM_OPENVPN3_KEY_DATA_CIPHERS,              G_TYPE_STRING, 0, 0, FALSE },
+	{ NM_OPENVPN3_KEY_DATA_CIPHERS_FALLBACK,     G_TYPE_STRING, 0, 0, FALSE },
+	{ NM_OPENVPN3_KEY_EXTRA_CERTS,               G_TYPE_STRING, 0, 0, FALSE },
+	{ NM_OPENVPN3_KEY_FLOAT,                     G_TYPE_BOOLEAN, 0, 0, FALSE },
+	{ NM_OPENVPN3_KEY_NCP_DISABLE,               G_TYPE_BOOLEAN, 0, 0, FALSE },
+	{ NM_OPENVPN3_KEY_FRAGMENT_SIZE,             G_TYPE_INT, 0, G_MAXINT, FALSE },
+	{ NM_OPENVPN3_KEY_KEY,                       G_TYPE_STRING, 0, 0, FALSE },
+	{ NM_OPENVPN3_KEY_LOCAL_IP,                  G_TYPE_STRING, 0, 0, TRUE },
+	{ NM_OPENVPN3_KEY_MSSFIX,                    G_TYPE_STRING, 0, 0, FALSE },
+	{ NM_OPENVPN3_KEY_MTU_DISC,                  G_TYPE_STRING, 0, 0, FALSE },
+	{ NM_OPENVPN3_KEY_PING,                      G_TYPE_INT, 0, G_MAXINT, FALSE },
+	{ NM_OPENVPN3_KEY_PING_EXIT,                 G_TYPE_INT, 0, G_MAXINT, FALSE },
+	{ NM_OPENVPN3_KEY_PING_RESTART,              G_TYPE_INT, 0, G_MAXINT, FALSE },
+	{ NM_OPENVPN3_KEY_MAX_ROUTES,                G_TYPE_INT, 0, 100000000, FALSE },
+	{ NM_OPENVPN3_KEY_PROTO_TCP,                 G_TYPE_BOOLEAN, 0, 0, FALSE },
+	{ NM_OPENVPN3_KEY_PORT,                      G_TYPE_INT, 1, 65535, FALSE },
+	{ NM_OPENVPN3_KEY_PROXY_TYPE,                G_TYPE_STRING, 0, 0, FALSE },
+	{ NM_OPENVPN3_KEY_PROXY_SERVER,              G_TYPE_STRING, 0, 0, FALSE },
+	{ NM_OPENVPN3_KEY_PROXY_PORT,                G_TYPE_INT, 1, 65535, FALSE },
+	{ NM_OPENVPN3_KEY_PROXY_RETRY,               G_TYPE_BOOLEAN, 0, 0, FALSE },
+	{ NM_OPENVPN3_KEY_PUSH_PEER_INFO,            G_TYPE_BOOLEAN, 0, 0, FALSE },
+	{ NM_OPENVPN3_KEY_HTTP_PROXY_USERNAME,       G_TYPE_STRING, 0, 0, FALSE },
+	{ NM_OPENVPN3_KEY_REMOTE,                    G_TYPE_STRING, 0, 0, FALSE },
+	{ NM_OPENVPN3_KEY_REMOTE_RANDOM,             G_TYPE_BOOLEAN, 0, 0, FALSE },
+	{ NM_OPENVPN3_KEY_REMOTE_RANDOM_HOSTNAME,    G_TYPE_BOOLEAN, 0, 0, FALSE },
+	{ NM_OPENVPN3_KEY_REMOTE_IP,                 G_TYPE_STRING, 0, 0, TRUE },
+	{ NM_OPENVPN3_KEY_RENEG_SECONDS,             G_TYPE_INT, 0, G_MAXINT, FALSE },
+	{ NM_OPENVPN3_KEY_STATIC_KEY,                G_TYPE_STRING, 0, 0, FALSE },
+	{ NM_OPENVPN3_KEY_STATIC_KEY_DIRECTION,      G_TYPE_INT, 0, 1, FALSE },
+	{ NM_OPENVPN3_KEY_TA,                        G_TYPE_STRING, 0, 0, FALSE },
+	{ NM_OPENVPN3_KEY_TA_DIR,                    G_TYPE_INT, 0, 1, FALSE },
+	{ NM_OPENVPN3_KEY_TAP_DEV,                   G_TYPE_BOOLEAN, 0, 0, FALSE },
+	{ NM_OPENVPN3_KEY_DEV,                       G_TYPE_STRING, 0, 0, FALSE },
+	{ NM_OPENVPN3_KEY_DEV_TYPE,                  G_TYPE_STRING, 0, 0, FALSE },
+	{ NM_OPENVPN3_KEY_TUN_IPV6,                  G_TYPE_STRING, 0, 0, FALSE },
+	{ NM_OPENVPN3_KEY_TLS_CIPHER,                G_TYPE_STRING, 0, 0, FALSE },
+	{ NM_OPENVPN3_KEY_TLS_CRYPT,                 G_TYPE_STRING, 0, 0, FALSE },
+	{ NM_OPENVPN3_KEY_TLS_CRYPT_V2,              G_TYPE_STRING, 0, 0, FALSE },
+	{ NM_OPENVPN3_KEY_TLS_REMOTE,                G_TYPE_STRING, 0, 0, FALSE },
+	{ NM_OPENVPN3_KEY_VERIFY_X509_NAME,          G_TYPE_STRING, 0, 0, FALSE },
+	{ NM_OPENVPN3_KEY_REMOTE_CERT_TLS,           G_TYPE_STRING, 0, 0, FALSE },
+	{ NM_OPENVPN3_KEY_NS_CERT_TYPE,              G_TYPE_STRING, 0, 0, FALSE },
+	{ NM_OPENVPN3_KEY_TUNNEL_MTU,                G_TYPE_INT, 0, G_MAXINT, FALSE },
+	{ NM_OPENVPN3_KEY_USERNAME,                  G_TYPE_STRING, 0, 0, FALSE },
+	{ NM_OPENVPN3_KEY_PASSWORD_FLAGS,            G_TYPE_STRING, 0, 0, FALSE },
+	{ NM_OPENVPN3_KEY_CERTPASS_FLAGS,            G_TYPE_STRING, 0, 0, FALSE },
+	{ NM_OPENVPN3_KEY_NOSECRET,                  G_TYPE_STRING, 0, 0, FALSE },
+	{ NM_OPENVPN3_KEY_HTTP_PROXY_PASSWORD_FLAGS, G_TYPE_STRING, 0, 0, FALSE },
+	{ NM_OPENVPN3_KEY_TLS_VERSION_MIN,           G_TYPE_STRING, 0, 0, FALSE },
+	{ NM_OPENVPN3_KEY_TLS_VERSION_MIN_OR_HIGHEST,G_TYPE_BOOLEAN, 0, 0, FALSE },
+	{ NM_OPENVPN3_KEY_TLS_VERSION_MAX,           G_TYPE_STRING, 0, 0, FALSE },
+	{ NM_OPENVPN3_KEY_CHALLENGE_RESPONSE_FLAGS,  G_TYPE_STRING, 0, 0, FALSE },
 	{ NULL,                                     G_TYPE_NONE, FALSE }
 };
 
 static const ValidProperty valid_secrets[] = {
-	{ NM_OPENVPN_KEY_PASSWORD,             G_TYPE_STRING, 0, 0, FALSE },
-	{ NM_OPENVPN_KEY_CERTPASS,             G_TYPE_STRING, 0, 0, FALSE },
-	{ NM_OPENVPN_KEY_NOSECRET,             G_TYPE_STRING, 0, 0, FALSE },
-	{ NM_OPENVPN_KEY_HTTP_PROXY_PASSWORD,  G_TYPE_STRING, 0, 0, FALSE },
-	{ NM_OPENVPN_KEY_CHALLENGE_RESPONSE,   G_TYPE_STRING, 0, 0, FALSE },
+	{ NM_OPENVPN3_KEY_PASSWORD,             G_TYPE_STRING, 0, 0, FALSE },
+	{ NM_OPENVPN3_KEY_CERTPASS,             G_TYPE_STRING, 0, 0, FALSE },
+	{ NM_OPENVPN3_KEY_NOSECRET,             G_TYPE_STRING, 0, 0, FALSE },
+	{ NM_OPENVPN3_KEY_HTTP_PROXY_PASSWORD,  G_TYPE_STRING, 0, 0, FALSE },
+	{ NM_OPENVPN3_KEY_CHALLENGE_RESPONSE,   G_TYPE_STRING, 0, 0, FALSE },
 	{ NULL,                                G_TYPE_NONE, FALSE }
 };
 
@@ -238,18 +238,18 @@ _LOGD_enabled (void)
 static gboolean
 validate_connection_type (const char *ctype)
 {
-	return NM_IN_STRSET (ctype, NM_OPENVPN_CONTYPE_TLS,
-	                            NM_OPENVPN_CONTYPE_STATIC_KEY,
-	                            NM_OPENVPN_CONTYPE_PASSWORD,
-	                            NM_OPENVPN_CONTYPE_PASSWORD_TLS);
+	return NM_IN_STRSET (ctype, NM_OPENVPN3_CONTYPE_TLS,
+	                            NM_OPENVPN3_CONTYPE_STATIC_KEY,
+	                            NM_OPENVPN3_CONTYPE_PASSWORD,
+	                            NM_OPENVPN3_CONTYPE_PASSWORD_TLS);
 }
 
 static gboolean
 connection_type_is_tls_mode (const char *connection_type)
 {
-	return NM_IN_STRSET (connection_type, NM_OPENVPN_CONTYPE_TLS,
-	                                      NM_OPENVPN_CONTYPE_PASSWORD,
-	                                      NM_OPENVPN_CONTYPE_PASSWORD_TLS);
+	return NM_IN_STRSET (connection_type, NM_OPENVPN3_CONTYPE_TLS,
+	                                      NM_OPENVPN3_CONTYPE_PASSWORD,
+	                                      NM_OPENVPN3_CONTYPE_PASSWORD_TLS);
 }
 
 /*****************************************************************************/
@@ -424,9 +424,9 @@ args_add_vpn_certs (GPtrArray *args,
 	nm_assert (args);
 	nm_assert (NM_IS_SETTING_VPN (s_vpn));
 
-	ca   = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_CA);
-	cert = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_CERT);
-	key  = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_KEY);
+	ca   = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_CA);
+	cert = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_CERT);
+	key  = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_KEY);
 
 	ca   = nm_utils_str_utf8safe_unescape (ca,   &ca_free);
 	cert = nm_utils_str_utf8safe_unescape (cert, &cert_free);
@@ -566,7 +566,7 @@ validate_one_property (const char *key, const char *value, gpointer user_data)
 }
 
 static gboolean
-nm_openvpn_properties_validate (NMSettingVpn *s_vpn, GError **error)
+nm_openvpn3_properties_validate (NMSettingVpn *s_vpn, GError **error)
 {
 	GError *validate_error = NULL;
 	ValidateInfo info = { &valid_properties[0], &validate_error, FALSE };
@@ -588,7 +588,7 @@ nm_openvpn_properties_validate (NMSettingVpn *s_vpn, GError **error)
 }
 
 static gboolean
-nm_openvpn_secrets_validate (NMSettingVpn *s_vpn, GError **error)
+nm_openvpn3_secrets_validate (NMSettingVpn *s_vpn, GError **error)
 {
 	GError *validate_error = NULL;
 	ValidateInfo info = { &valid_secrets[0], &validate_error, FALSE };
@@ -698,13 +698,13 @@ pids_pending_get (GPid pid)
 	g_return_val_if_reached (NULL);
 }
 
-static void openvpn_child_terminated (NMOpenvpnPlugin *plugin, GPid pid, gint status);
+static void openvpn_child_terminated (NMOpenvpn3Plugin *plugin, GPid pid, gint status);
 
 static void
 pids_pending_child_watch_cb (GPid pid, gint status, gpointer user_data)
 {
 	PidsPendingData *pid_data = user_data;
-	NMOpenvpnPlugin *plugin;
+	NMOpenvpn3Plugin *plugin;
 
 	if (WIFEXITED (status)) {
 		int exit_status;
@@ -737,11 +737,11 @@ pids_pending_child_watch_cb (GPid pid, gint status, gpointer user_data)
 }
 
 static void
-pids_pending_add (GPid pid, NMOpenvpnPlugin *plugin)
+pids_pending_add (GPid pid, NMOpenvpn3Plugin *plugin)
 {
 	PidsPendingData *pid_data;
 
-	g_return_if_fail (NM_IS_OPENVPN_PLUGIN (plugin));
+	g_return_if_fail (NM_IS_OPENVPN3_PLUGIN (plugin));
 	g_return_if_fail (pid > 0);
 
 	_LOGI ("openvpn[%ld] started", (long) pid);
@@ -831,10 +831,10 @@ pids_pending_wait_for_processes (void)
 /*****************************************************************************/
 
 static void
-nm_openvpn_disconnect_management_socket (NMOpenvpnPlugin *plugin)
+nm_openvpn3_disconnect_management_socket (NMOpenvpn3Plugin *plugin)
 {
-	NMOpenvpnPluginPrivate *priv = NM_OPENVPN_PLUGIN_GET_PRIVATE (plugin);
-	NMOpenvpnPluginIOData *io_data = priv->io_data;
+	NMOpenvpn3PluginPrivate *priv = NM_OPENVPN3_PLUGIN_GET_PRIVATE (plugin);
+	NMOpenvpn3PluginIOData *io_data = priv->io_data;
 
 	/* This should not throw a warning since this can happen in
 	   non-password modes */
@@ -970,7 +970,7 @@ write_user_pass (GIOChannel *channel,
 }
 
 static gboolean
-handle_auth (NMOpenvpnPluginIOData *io_data,
+handle_auth (NMOpenvpn3PluginIOData *io_data,
              const char *requested_auth,
              const char **out_message,
              const char ***out_hints)
@@ -1019,19 +1019,19 @@ handle_auth (NMOpenvpnPluginIOData *io_data,
 		} else {
 			hints = g_new0 (const char *, 3);
 			if (!username) {
-				hints[i++] = NM_OPENVPN_KEY_USERNAME;
+				hints[i++] = NM_OPENVPN3_KEY_USERNAME;
 				*out_message = _("A username is required.");
 			}
 
 			if (io_data->challenge_state_id) {
 				/* If we have a challenge we must have already authenticated with a password */
 				if (strstr (io_data->challenge_flags, "E"))
-					hints[i++] = NM_OPENVPN_HINT_CHALLENGE_RESPONSE_ECHO;
+					hints[i++] = NM_OPENVPN3_HINT_CHALLENGE_RESPONSE_ECHO;
 				else
-					hints[i++] = NM_OPENVPN_HINT_CHALLENGE_RESPONSE_NOECHO;
+					hints[i++] = NM_OPENVPN3_HINT_CHALLENGE_RESPONSE_NOECHO;
 				*out_message = io_data->challenge_text;
 			} else if (!io_data->password) {
-				hints[i++] = NM_OPENVPN_KEY_PASSWORD;
+				hints[i++] = NM_OPENVPN3_KEY_PASSWORD;
 				if (username)
 					*out_message = _ ("A password is required.");
 				else
@@ -1055,7 +1055,7 @@ handle_auth (NMOpenvpnPluginIOData *io_data,
 			g_free (buf);
 		} else {
 			hints = g_new0 (const char *, 2);
-			hints[i++] = NM_OPENVPN_KEY_CERTPASS;
+			hints[i++] = NM_OPENVPN3_KEY_CERTPASS;
 			*out_message = _("A private key password is required.");
 		}
 		handled = TRUE;
@@ -1068,11 +1068,11 @@ handle_auth (NMOpenvpnPluginIOData *io_data,
 		} else {
 			hints = g_new0 (const char *, 3);
 			if (!io_data->proxy_username) {
-				hints[i++] = NM_OPENVPN_KEY_HTTP_PROXY_USERNAME;
+				hints[i++] = NM_OPENVPN3_KEY_HTTP_PROXY_USERNAME;
 				*out_message = _("An HTTP Proxy username is required.");
 			}
 			if (!io_data->proxy_password) {
-				hints[i++] = NM_OPENVPN_KEY_HTTP_PROXY_PASSWORD;
+				hints[i++] = NM_OPENVPN3_KEY_HTTP_PROXY_PASSWORD;
 				*out_message = _("An HTTP Proxy password is required.");
 			}
 			if (!io_data->proxy_username && !io_data->proxy_password)
@@ -1086,7 +1086,7 @@ handle_auth (NMOpenvpnPluginIOData *io_data,
 }
 
 static void
-_request_secrets (NMOpenvpnPlugin *plugin,
+_request_secrets (NMOpenvpn3Plugin *plugin,
                   const char *message,
                   const char *const* hints)
 {
@@ -1098,12 +1098,12 @@ _request_secrets (NMOpenvpnPlugin *plugin,
 }
 
 static gboolean
-handle_management_socket (NMOpenvpnPlugin *plugin,
+handle_management_socket (NMOpenvpn3Plugin *plugin,
                           GIOChannel *source,
                           GIOCondition condition,
                           NMVpnPluginFailure *out_failure)
 {
-	NMOpenvpnPluginPrivate *priv = NM_OPENVPN_PLUGIN_GET_PRIVATE (plugin);
+	NMOpenvpn3PluginPrivate *priv = NM_OPENVPN3_PLUGIN_GET_PRIVATE (plugin);
 	gboolean again = TRUE;
 	char *str = NULL;
 	char *auth;
@@ -1197,9 +1197,9 @@ out:
 }
 
 static gboolean
-nm_openvpn_socket_data_cb (GIOChannel *source, GIOCondition condition, gpointer user_data)
+nm_openvpn3_socket_data_cb (GIOChannel *source, GIOCondition condition, gpointer user_data)
 {
-	NMOpenvpnPlugin *plugin = NM_OPENVPN_PLUGIN (user_data);
+	NMOpenvpn3Plugin *plugin = NM_OPENVPN3_PLUGIN (user_data);
 	NMVpnPluginFailure failure = NM_VPN_PLUGIN_FAILURE_CONNECT_FAILED;
 
 	if (!handle_management_socket (plugin, source, condition, &failure)) {
@@ -1211,11 +1211,11 @@ nm_openvpn_socket_data_cb (GIOChannel *source, GIOCondition condition, gpointer 
 }
 
 static gboolean
-nm_openvpn_connect_timer_cb (gpointer data)
+nm_openvpn3_connect_timer_cb (gpointer data)
 {
-	NMOpenvpnPlugin *plugin = NM_OPENVPN_PLUGIN (data);
-	NMOpenvpnPluginPrivate *priv = NM_OPENVPN_PLUGIN_GET_PRIVATE (plugin);
-	NMOpenvpnPluginIOData *io_data = priv->io_data;
+	NMOpenvpn3Plugin *plugin = NM_OPENVPN3_PLUGIN (data);
+	NMOpenvpn3PluginPrivate *priv = NM_OPENVPN3_PLUGIN_GET_PRIVATE (plugin);
+	NMOpenvpn3PluginIOData *io_data = priv->io_data;
 	struct sockaddr_un remote = { 0 };
 	int fd;
 
@@ -1245,7 +1245,7 @@ nm_openvpn_connect_timer_cb (gpointer data)
 		g_io_channel_set_encoding (io_data->socket_channel, NULL, NULL);
 		io_data->socket_channel_eventid = g_io_add_watch (io_data->socket_channel,
 		                                                  G_IO_IN,
-		                                                  nm_openvpn_socket_data_cb,
+		                                                  nm_openvpn3_socket_data_cb,
 		                                                  plugin);
 	}
 
@@ -1255,24 +1255,24 @@ out:
 }
 
 static void
-nm_openvpn_schedule_connect_timer (NMOpenvpnPlugin *plugin)
+nm_openvpn3_schedule_connect_timer (NMOpenvpn3Plugin *plugin)
 {
-	NMOpenvpnPluginPrivate *priv = NM_OPENVPN_PLUGIN_GET_PRIVATE (plugin);
+	NMOpenvpn3PluginPrivate *priv = NM_OPENVPN3_PLUGIN_GET_PRIVATE (plugin);
 
 	if (priv->connect_timer == 0)
-		priv->connect_timer = g_timeout_add (200, nm_openvpn_connect_timer_cb, plugin);
+		priv->connect_timer = g_timeout_add (200, nm_openvpn3_connect_timer_cb, plugin);
 }
 
 static void
-openvpn_child_terminated (NMOpenvpnPlugin *plugin, GPid pid, gint status)
+openvpn_child_terminated (NMOpenvpn3Plugin *plugin, GPid pid, gint status)
 {
-	NMOpenvpnPluginPrivate *priv;
+	NMOpenvpn3PluginPrivate *priv;
 	NMVpnPluginFailure failure = NM_VPN_PLUGIN_FAILURE_CONNECT_FAILED;
 	gboolean good_exit = FALSE;
 
-	g_return_if_fail (NM_IS_OPENVPN_PLUGIN (plugin));
+	g_return_if_fail (NM_IS_OPENVPN3_PLUGIN (plugin));
 
-	priv = NM_OPENVPN_PLUGIN_GET_PRIVATE (plugin);
+	priv = NM_OPENVPN3_PLUGIN_GET_PRIVATE (plugin);
 	/* Reap child if needed. */
 	if (priv->pid != pid) {
 		/* the dead child is not the currently active process. Nothing to do, we just
@@ -1308,7 +1308,7 @@ openvpn_child_terminated (NMOpenvpnPlugin *plugin, GPid pid, gint status)
 /*****************************************************************************/
 
 static void
-update_io_data_from_vpn_setting (NMOpenvpnPluginIOData *io_data,
+update_io_data_from_vpn_setting (NMOpenvpn3PluginIOData *io_data,
                                  NMSettingVpn *s_vpn,
                                  const char *default_username)
 {
@@ -1318,32 +1318,32 @@ update_io_data_from_vpn_setting (NMOpenvpnPluginIOData *io_data,
 	}
 
 	g_free (io_data->username);
-	io_data->username = g_strdup (nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_USERNAME));
+	io_data->username = g_strdup (nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_USERNAME));
 
 	if (io_data->password) {
 		memset (io_data->password, 0, strlen (io_data->password));
 		g_free (io_data->password);
 	}
-	io_data->password = g_strdup (nm_setting_vpn_get_secret (s_vpn, NM_OPENVPN_KEY_PASSWORD));
+	io_data->password = g_strdup (nm_setting_vpn_get_secret (s_vpn, NM_OPENVPN3_KEY_PASSWORD));
 	if (io_data->challenge_response) {
 		nm_clear_g_free (&io_data->challenge_response);
 	}
-	io_data->challenge_response = g_strdup (nm_setting_vpn_get_secret (s_vpn, NM_OPENVPN_KEY_CHALLENGE_RESPONSE));
+	io_data->challenge_response = g_strdup (nm_setting_vpn_get_secret (s_vpn, NM_OPENVPN3_KEY_CHALLENGE_RESPONSE));
 
 	if (io_data->priv_key_pass) {
 		memset (io_data->priv_key_pass, 0, strlen (io_data->priv_key_pass));
 		g_free (io_data->priv_key_pass);
 	}
-	io_data->priv_key_pass = g_strdup (nm_setting_vpn_get_secret (s_vpn, NM_OPENVPN_KEY_CERTPASS));
+	io_data->priv_key_pass = g_strdup (nm_setting_vpn_get_secret (s_vpn, NM_OPENVPN3_KEY_CERTPASS));
 
 	g_free (io_data->proxy_username);
-	io_data->proxy_username = g_strdup (nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_HTTP_PROXY_USERNAME));
+	io_data->proxy_username = g_strdup (nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_HTTP_PROXY_USERNAME));
 
 	if (io_data->proxy_password) {
 		memset (io_data->proxy_password, 0, strlen (io_data->proxy_password));
 		g_free (io_data->proxy_password);
 	}
-	io_data->proxy_password = g_strdup (nm_setting_vpn_get_secret (s_vpn, NM_OPENVPN_KEY_HTTP_PROXY_PASSWORD));
+	io_data->proxy_password = g_strdup (nm_setting_vpn_get_secret (s_vpn, NM_OPENVPN3_KEY_HTTP_PROXY_PASSWORD));
 }
 
 static char *
@@ -1453,11 +1453,11 @@ get_connection_permission_user (NMConnection *connection)
 }
 
 static gboolean
-nm_openvpn_start_openvpn_binary (NMOpenvpnPlugin *plugin,
+nm_openvpn3_start_openvpn_binary (NMOpenvpn3Plugin *plugin,
                                  NMConnection *connection,
                                  GError **error)
 {
-	NMOpenvpnPluginPrivate *priv = NM_OPENVPN_PLUGIN_GET_PRIVATE (plugin);
+	NMOpenvpn3PluginPrivate *priv = NM_OPENVPN3_PLUGIN_GET_PRIVATE (plugin);
 	const char *openvpn_binary, *tmp, *tmp2, *tmp3, *tmp4;
 	gs_unref_ptrarray GPtrArray *args = NULL;
 	GPid pid;
@@ -1466,7 +1466,7 @@ nm_openvpn_start_openvpn_binary (NMOpenvpnPlugin *plugin,
 	const char *allow_compression = NULL;
 	const char *compress;
 	const char *tls_remote = NULL;
-	const char *nm_openvpn_user, *nm_openvpn_group, *nm_openvpn_chroot;
+	const char *nm_openvpn3_user, *nm_openvpn3_group, *nm_openvpn3_chroot;
 	gs_free char *bus_name = NULL;
 	NMSettingVpn *s_vpn;
 	const char *connection_type;
@@ -1489,7 +1489,7 @@ nm_openvpn_start_openvpn_binary (NMOpenvpnPlugin *plugin,
 
 	private_user = get_connection_permission_user (connection);
 
-	connection_type = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_CONNECTION_TYPE);
+	connection_type = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_CONNECTION_TYPE);
 	if (!validate_connection_type (connection_type)) {
 		g_set_error_literal (error,
 		                     NM_VPN_PLUGIN_ERROR,
@@ -1499,11 +1499,11 @@ nm_openvpn_start_openvpn_binary (NMOpenvpnPlugin *plugin,
 	}
 
 	/* Validate the properties */
-	if (!nm_openvpn_properties_validate (s_vpn, error))
+	if (!nm_openvpn3_properties_validate (s_vpn, error))
 		return FALSE;
 
 	/* Validate secrets */
-	if (!nm_openvpn_secrets_validate (s_vpn, error))
+	if (!nm_openvpn3_secrets_validate (s_vpn, error))
 		return FALSE;
 
 	/* Find openvpn */
@@ -1520,15 +1520,15 @@ nm_openvpn_start_openvpn_binary (NMOpenvpnPlugin *plugin,
 
 	args_add_strv (args, openvpn_binary);
 
-	defport = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_PORT);
+	defport = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_PORT);
 	if (!nmovpn_arg_is_set (defport))
 		defport = NULL;
 
-	proto_tcp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_PROTO_TCP);
+	proto_tcp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_PROTO_TCP);
 	if (!nmovpn_arg_is_set (proto_tcp))
 		proto_tcp = NULL;
 
-	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_REMOTE);
+	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_REMOTE);
 	if (tmp && *tmp) {
 		gs_free char *tmp_clone = NULL;
 		char *tmp_remaining;
@@ -1592,26 +1592,26 @@ nm_openvpn_start_openvpn_binary (NMOpenvpnPlugin *plugin,
 		}
 	}
 
-	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_REMOTE_RANDOM);
+	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_REMOTE_RANDOM);
 	if (nm_streq0 (tmp, "yes"))
 		args_add_strv (args, "--remote-random");
 
-	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_REMOTE_RANDOM_HOSTNAME);
+	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_REMOTE_RANDOM_HOSTNAME);
 	if (nm_streq0 (tmp, "yes"))
 		args_add_strv (args, "--remote-random-hostname");
 
-	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_ALLOW_PULL_FQDN);
+	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_ALLOW_PULL_FQDN);
 	if (nm_streq0 (tmp, "yes"))
 		args_add_strv (args, "--allow-pull-fqdn");
 
-	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_TUN_IPV6);
+	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_TUN_IPV6);
 	if (nm_streq0 (tmp, "yes"))
 		args_add_strv (args, "--tun-ipv6");
 
-	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_PROXY_TYPE);
-	tmp2 = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_PROXY_SERVER);
-	tmp3 = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_PROXY_PORT);
-	tmp4 = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_PROXY_RETRY);
+	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_PROXY_TYPE);
+	tmp2 = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_PROXY_SERVER);
+	tmp3 = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_PROXY_PORT);
+	tmp4 = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_PROXY_RETRY);
 	if (   nmovpn_arg_is_set (tmp)
 	    && nmovpn_arg_is_set (tmp2)) {
 		if (nm_streq (tmp, "http")) {
@@ -1655,11 +1655,11 @@ nm_openvpn_start_openvpn_binary (NMOpenvpnPlugin *plugin,
 
 	/* New (2.5+) allow-compression option ("yes", "no", "asym") */
 	allow_compression = nm_setting_vpn_get_data_item (s_vpn,
-	                                                  NM_OPENVPN_KEY_ALLOW_COMPRESSION);
+	                                                  NM_OPENVPN3_KEY_ALLOW_COMPRESSION);
 	/* New (2.4+) compress option ("lz4", "lzo", ...) */
-	compress = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_COMPRESS);
+	compress = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_COMPRESS);
 	/* Legacy option ("yes", "adaptive", "no", ...) */
-	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_COMP_LZO);
+	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_COMP_LZO);
 
 	if (compress && tmp)
 		_LOGW ("'compress' option overrides 'comp-lzo'");
@@ -1711,16 +1711,16 @@ nm_openvpn_start_openvpn_binary (NMOpenvpnPlugin *plugin,
 			break;
 		}
 
-	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_FLOAT);
+	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_FLOAT);
 	if (nm_streq0 (tmp, "yes"))
 		args_add_strv (args, "--float");
 
-	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_NCP_DISABLE);
+	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_NCP_DISABLE);
 	if (nm_streq0 (tmp, "yes"))
 		args_add_strv (args, "--ncp-disable");
 
 	/* ping, ping-exit, ping-restart */
-	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_PING);
+	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_PING);
 	if (tmp) {
 		args_add_strv (args, "--ping");
 		if (!args_add_numstr (args, tmp)) {
@@ -1733,7 +1733,7 @@ nm_openvpn_start_openvpn_binary (NMOpenvpnPlugin *plugin,
 		}
 	}
 
-	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_PING_EXIT);
+	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_PING_EXIT);
 	if (tmp) {
 		args_add_strv (args, "--ping-exit");
 		if (!args_add_numstr (args, tmp)) {
@@ -1746,7 +1746,7 @@ nm_openvpn_start_openvpn_binary (NMOpenvpnPlugin *plugin,
 		}
 	}
 
-	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_PING_RESTART);
+	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_PING_RESTART);
 	if (tmp) {
 		args_add_strv (args, "--ping-restart");
 		if (!args_add_numstr (args, tmp)) {
@@ -1759,7 +1759,7 @@ nm_openvpn_start_openvpn_binary (NMOpenvpnPlugin *plugin,
 		}
 	}
 
-	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_CONNECT_TIMEOUT);
+	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_CONNECT_TIMEOUT);
 	if (tmp) {
 		args_add_strv (args, "--connect-timeout");
 		if (!args_add_numstr (args, tmp)) {
@@ -1781,7 +1781,7 @@ nm_openvpn_start_openvpn_binary (NMOpenvpnPlugin *plugin,
 	args_add_strv (args, "--nobind");
 
 	/* max routes allowed from openvpn server */
-	tmp = nm_setting_vpn_get_data_item(s_vpn, NM_OPENVPN_KEY_MAX_ROUTES);
+	tmp = nm_setting_vpn_get_data_item(s_vpn, NM_OPENVPN3_KEY_MAX_ROUTES);
 	if (tmp) {
 		/* max-routes option is deprecated in 2.4 release
 		 * https://github.com/OpenVPN/openvpn/commit/d0085293e709c8a722356cfa68ad74c962aef9a2
@@ -1798,9 +1798,9 @@ nm_openvpn_start_openvpn_binary (NMOpenvpnPlugin *plugin,
 	}
 
 	/* Device and device type, defaults to tun */
-	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_DEV);
-	tmp2 = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_DEV_TYPE);
-	tmp3 = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_TAP_DEV);
+	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_DEV);
+	tmp2 = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_DEV_TYPE);
+	tmp3 = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_TAP_DEV);
 	args_add_strv (args, "--dev");
 	if (tmp) {
 		const char *tmp_unescaped;
@@ -1824,15 +1824,15 @@ nm_openvpn_start_openvpn_binary (NMOpenvpnPlugin *plugin,
 		dev_type_is_tap = nm_streq (tmp2, "tap");
 	}
 
-	args_add_vpn_data (args, s_vpn, NM_OPENVPN_KEY_CIPHER, "--cipher");
+	args_add_vpn_data (args, s_vpn, NM_OPENVPN3_KEY_CIPHER, "--cipher");
 
-	args_add_vpn_data (args, s_vpn, NM_OPENVPN_KEY_DATA_CIPHERS, "--data-ciphers");
+	args_add_vpn_data (args, s_vpn, NM_OPENVPN3_KEY_DATA_CIPHERS, "--data-ciphers");
 
-	args_add_vpn_data (args, s_vpn, NM_OPENVPN_KEY_DATA_CIPHERS_FALLBACK, "--data-ciphers-fallback");
+	args_add_vpn_data (args, s_vpn, NM_OPENVPN3_KEY_DATA_CIPHERS_FALLBACK, "--data-ciphers-fallback");
 
-	args_add_vpn_data (args, s_vpn, NM_OPENVPN_KEY_TLS_CIPHER, "--tls-cipher");
+	args_add_vpn_data (args, s_vpn, NM_OPENVPN3_KEY_TLS_CIPHER, "--tls-cipher");
 
-	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_KEYSIZE);
+	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_KEYSIZE);
 	if (nmovpn_arg_is_set (tmp)) {
 		args_add_strv (args, "--keysize");
 		if (!args_add_numstr (args, tmp)) {
@@ -1845,54 +1845,54 @@ nm_openvpn_start_openvpn_binary (NMOpenvpnPlugin *plugin,
 		}
 	}
 
-	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_AUTH);
+	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_AUTH);
 	if (tmp)
 		args_add_strv (args, "--auth", tmp);
 
 	args_add_strv (args, "--auth-nocache");
 
-	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_TA);
+	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_TA);
 	if (nmovpn_arg_is_set (tmp)) {
 		if (!args_add_file (args, "--tls-auth", tmp, private_user, TRUE, error))
 			return FALSE;
 
-		tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_TA_DIR);
+		tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_TA_DIR);
 		if (nmovpn_arg_is_set (tmp))
 			args_add_strv (args, tmp);
 	}
 
-	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_TLS_CRYPT);
+	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_TLS_CRYPT);
 	if (nmovpn_arg_is_set (tmp)) {
 		if (!args_add_file (args, "--tls-crypt", tmp, private_user, TRUE, error))
 			return FALSE;
 	}
 
-	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_TLS_CRYPT_V2);
+	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_TLS_CRYPT_V2);
 	if (nmovpn_arg_is_set (tmp)) {
 		if (!args_add_file (args, "--tls-crypt-v2", tmp, private_user, TRUE, error))
 			return FALSE;
 	}
-	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_TLS_VERSION_MIN);
+	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_TLS_VERSION_MIN);
 	if (nmovpn_arg_is_set (tmp)) {
-		const char *or_highest = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_TLS_VERSION_MIN_OR_HIGHEST);
+		const char *or_highest = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_TLS_VERSION_MIN_OR_HIGHEST);
 
 		args_add_strv (args, "--tls-version-min");
 		args_add_strv0 (args, tmp, nm_streq0(or_highest, "yes") ? "or-highest" : NULL);
 
 	}
-	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_TLS_VERSION_MAX);
+	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_TLS_VERSION_MAX);
 	if (nmovpn_arg_is_set (tmp)) {
 		args_add_strv (args, "--tls-version-max");
 		args_add_strv (args, tmp);
 	}
 
-	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_EXTRA_CERTS);
+	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_EXTRA_CERTS);
 	if (nmovpn_arg_is_set (tmp)) {
 		if (!args_add_file(args, "--extra-certs", tmp, private_user, TRUE, error))
 			return FALSE;
 	}
 
-	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_TLS_REMOTE);
+	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_TLS_REMOTE);
 	if (nmovpn_arg_is_set (tmp)) {
 		if (openvpn_binary_detect_version_cached (openvpn_binary, &openvpn_binary_version) < nmovpn_version_encode (2, 4, 0)) {
 			_LOGW ("the tls-remote option is deprecated and removed from OpenVPN 2.4. Update your connection to use verify-x509-name (for example, \"verify-x509-name=name:%s\")", tmp);
@@ -1904,7 +1904,7 @@ nm_openvpn_start_openvpn_binary (NMOpenvpnPlugin *plugin,
 		tls_remote = tmp;
 	}
 
-	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_VERIFY_X509_NAME);
+	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_VERIFY_X509_NAME);
 	if (nmovpn_arg_is_set (tmp)) {
 		const char *name;
 		gs_free char *type = NULL;
@@ -1934,11 +1934,11 @@ nm_openvpn_start_openvpn_binary (NMOpenvpnPlugin *plugin,
 		                     type ?: "subject");
 	}
 
-	args_add_vpn_data (args, s_vpn, NM_OPENVPN_KEY_REMOTE_CERT_TLS, "--remote-cert-tls");
+	args_add_vpn_data (args, s_vpn, NM_OPENVPN3_KEY_REMOTE_CERT_TLS, "--remote-cert-tls");
 
-	args_add_vpn_data (args, s_vpn, NM_OPENVPN_KEY_NS_CERT_TYPE, "--ns-cert-type");
+	args_add_vpn_data (args, s_vpn, NM_OPENVPN3_KEY_NS_CERT_TYPE, "--ns-cert-type");
 
-	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_RENEG_SECONDS);
+	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_RENEG_SECONDS);
 	if (!connection_type_is_tls_mode (connection_type)) {
 		/* Ignore --reneg-sec option if we are not in TLS mode (as enabled
 		 * by --client below). openvpn will error out otherwise, see bgo#749050. */
@@ -1971,7 +1971,7 @@ nm_openvpn_start_openvpn_binary (NMOpenvpnPlugin *plugin,
 		                     "nm-openvpn");
 	}
 
-	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_TUNNEL_MTU);
+	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_TUNNEL_MTU);
 	if (nmovpn_arg_is_set (tmp)) {
 		args_add_strv (args, "--tun-mtu");
 		if (!args_add_numstr (args, tmp)) {
@@ -1984,7 +1984,7 @@ nm_openvpn_start_openvpn_binary (NMOpenvpnPlugin *plugin,
 		}
 	}
 
-	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_FRAGMENT_SIZE);
+	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_FRAGMENT_SIZE);
 	if (nmovpn_arg_is_set (tmp)) {
 		args_add_strv (args, "--fragment");
 		if (!args_add_numstr (args, tmp)) {
@@ -1997,7 +1997,7 @@ nm_openvpn_start_openvpn_binary (NMOpenvpnPlugin *plugin,
 		}
 	}
 
-	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_MSSFIX);
+	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_MSSFIX);
 	if (tmp) {
 		if (nm_streq (tmp, "yes"))
 			args_add_strv (args, "--mssfix");
@@ -2007,16 +2007,16 @@ nm_openvpn_start_openvpn_binary (NMOpenvpnPlugin *plugin,
 		}
 	}
 
-	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_MTU_DISC);
+	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_MTU_DISC);
 	if (NM_IN_STRSET (tmp, "no", "maybe", "yes"))
 		args_add_strv (args, "--mtu-disc", tmp);
 
-	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_CRL_VERIFY_FILE);
+	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_CRL_VERIFY_FILE);
 	if (tmp) {
 		if (!args_add_file (args, "--crl-verify", tmp, private_user, TRUE, error))
 			return FALSE;
 	} else {
-		tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_CRL_VERIFY_DIR);
+		tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_CRL_VERIFY_DIR);
 		if (tmp) {
 			if (private_user) {
 				g_set_error_literal (error,
@@ -2030,8 +2030,8 @@ nm_openvpn_start_openvpn_binary (NMOpenvpnPlugin *plugin,
 		}
 	}
 
-	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_LOCAL_IP);
-	tmp2 = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_REMOTE_IP);
+	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_LOCAL_IP);
+	tmp2 = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_REMOTE_IP);
 	if (tmp && tmp2)
 		args_add_strv (args, "--ifconfig", tmp, tmp2);
 
@@ -2045,7 +2045,7 @@ nm_openvpn_start_openvpn_binary (NMOpenvpnPlugin *plugin,
 	g_object_get (plugin, NM_VPN_SERVICE_PLUGIN_DBUS_SERVICE_NAME, &bus_name, NULL);
 	args_add_strv (args, "--up");
 	args_add_str_take (args, g_strdup_printf ("%s --debug %d %ld --bus-name %s %s --",
-	                                          NM_OPENVPN_HELPER_PATH,
+	                                          NM_OPENVPN3_HELPER_PATH,
 	                                          gl.log_level,
 	                                          (long) getpid(),
 	                                          bus_name,
@@ -2074,37 +2074,37 @@ nm_openvpn_start_openvpn_binary (NMOpenvpnPlugin *plugin,
 	args_add_strv (args, "--route-noexec");
 	args_add_strv (args, "--ifconfig-noexec");
 
-	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_PUSH_PEER_INFO);
+	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_PUSH_PEER_INFO);
 	if (nm_streq0 (tmp, "yes"))
 		args_add_strv (args, "--push-peer-info");
 
 	/* Now append configuration options which are dependent on the configuration type */
-	if (nm_streq (connection_type, NM_OPENVPN_CONTYPE_TLS)) {
+	if (nm_streq (connection_type, NM_OPENVPN3_CONTYPE_TLS)) {
 		args_add_strv (args, "--client");
 		if (!args_add_vpn_certs (args, s_vpn, private_user, error))
 			return FALSE;
-	} else if (nm_streq (connection_type, NM_OPENVPN_CONTYPE_STATIC_KEY)) {
-		tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_STATIC_KEY);
+	} else if (nm_streq (connection_type, NM_OPENVPN3_CONTYPE_STATIC_KEY)) {
+		tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_STATIC_KEY);
 		if (nmovpn_arg_is_set (tmp)) {
 			if (!args_add_file (args, "--secret", tmp, private_user, TRUE, error))
 				return FALSE;
 
-			tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_STATIC_KEY_DIRECTION);
+			tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_STATIC_KEY_DIRECTION);
 			if (nmovpn_arg_is_set (tmp))
 				args_add_strv (args, tmp);
 		}
-	} else if (nm_streq (connection_type, NM_OPENVPN_CONTYPE_PASSWORD)) {
+	} else if (nm_streq (connection_type, NM_OPENVPN3_CONTYPE_PASSWORD)) {
 		/* Client mode */
 		args_add_strv (args, "--client");
 		/* Use user/path authentication */
 		args_add_strv (args, "--auth-user-pass");
 
-		tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_CA);
+		tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_CA);
 		if (nmovpn_arg_is_set (tmp)) {
 			if (!args_add_file (args, "--ca", tmp, private_user, TRUE, error))
 				return FALSE;
 		}
-	} else if (nm_streq (connection_type, NM_OPENVPN_CONTYPE_PASSWORD_TLS)) {
+	} else if (nm_streq (connection_type, NM_OPENVPN3_CONTYPE_PASSWORD_TLS)) {
 		args_add_strv (args, "--client");
 		if (!args_add_vpn_certs (args, s_vpn, private_user, error))
 			return FALSE;
@@ -2122,43 +2122,43 @@ nm_openvpn_start_openvpn_binary (NMOpenvpnPlugin *plugin,
 	/* Allow openvpn to be run as a specified user:group.
 	 *
 	 * We do this by default. The only way to disable it is by setting
-	 * empty environment variables NM_OPENVPN_USER and NM_OPENVPN_GROUP. */
-	nm_openvpn_user = getenv ("NM_OPENVPN_USER") ?: NM_OPENVPN_USER;
-	nm_openvpn_group = getenv ("NM_OPENVPN_GROUP") ?: NM_OPENVPN_GROUP;
-	if (*nm_openvpn_user) {
-		if (getpwnam (nm_openvpn_user))
-			args_add_strv (args, "--user", nm_openvpn_user);
+	 * empty environment variables NM_OPENVPN3_USER and NM_OPENVPN3_GROUP. */
+	nm_openvpn3_user = getenv ("NM_OPENVPN3_USER") ?: NM_OPENVPN3_USER;
+	nm_openvpn3_group = getenv ("NM_OPENVPN3_GROUP") ?: NM_OPENVPN3_GROUP;
+	if (*nm_openvpn3_user) {
+		if (getpwnam (nm_openvpn3_user))
+			args_add_strv (args, "--user", nm_openvpn3_user);
 		else {
 			g_set_error (error,
 			             NM_VPN_PLUGIN_ERROR,
 			             NM_VPN_PLUGIN_ERROR_BAD_ARGUMENTS,
-			             _("User “%s” not found, check NM_OPENVPN_USER."),
-			             nm_openvpn_user);
+			             _("User “%s” not found, check NM_OPENVPN3_USER."),
+			             nm_openvpn3_user);
 			return FALSE;
 		}
 	}
-	if (*nm_openvpn_group) {
-		if (getgrnam (nm_openvpn_group))
-			args_add_strv (args, "--group", nm_openvpn_group);
+	if (*nm_openvpn3_group) {
+		if (getgrnam (nm_openvpn3_group))
+			args_add_strv (args, "--group", nm_openvpn3_group);
 		else {
 			g_set_error (error,
 			             NM_VPN_PLUGIN_ERROR,
 			             NM_VPN_PLUGIN_ERROR_BAD_ARGUMENTS,
-			             _("Group “%s” not found, check NM_OPENVPN_GROUP."),
-			             nm_openvpn_group);
+			             _("Group “%s” not found, check NM_OPENVPN3_GROUP."),
+			             nm_openvpn3_group);
 			return FALSE;
 		}
 	}
 
 	/* we try to chroot be default. The only way to disable that is by
-	 * setting the an empty environment variable NM_OPENVPN_CHROOT. */
-	nm_openvpn_chroot = getenv ("NM_OPENVPN_CHROOT") ?: NM_OPENVPN_CHROOT;
-	if (*nm_openvpn_chroot) {
-		if (check_chroot_dir_usability (nm_openvpn_chroot, nm_openvpn_user))
-			args_add_strv (args, "--chroot", nm_openvpn_chroot);
+	 * setting the an empty environment variable NM_OPENVPN3_CHROOT. */
+	nm_openvpn3_chroot = getenv ("NM_OPENVPN3_CHROOT") ?: NM_OPENVPN3_CHROOT;
+	if (*nm_openvpn3_chroot) {
+		if (check_chroot_dir_usability (nm_openvpn3_chroot, nm_openvpn3_user))
+			args_add_strv (args, "--chroot", nm_openvpn3_chroot);
 		else {
 			_LOGW ("Directory '%s' not usable for chroot by '%s', openvpn will not be chrooted.",
-			        nm_openvpn_chroot, nm_openvpn_user);
+			        nm_openvpn3_chroot, nm_openvpn3_user);
 		}
 	}
 
@@ -2180,15 +2180,15 @@ nm_openvpn_start_openvpn_binary (NMOpenvpnPlugin *plugin,
 	   X509USERPASS: Will require username and password and maybe certificate password
 	   X509: May require certificate password
 	*/
-	if (   NM_IN_STRSET (connection_type, NM_OPENVPN_CONTYPE_TLS,
-	                                      NM_OPENVPN_CONTYPE_PASSWORD,
-	                                      NM_OPENVPN_CONTYPE_PASSWORD_TLS)
-	    || nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_HTTP_PROXY_USERNAME)) {
+	if (   NM_IN_STRSET (connection_type, NM_OPENVPN3_CONTYPE_TLS,
+	                                      NM_OPENVPN3_CONTYPE_PASSWORD,
+	                                      NM_OPENVPN3_CONTYPE_PASSWORD_TLS)
+	    || nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_HTTP_PROXY_USERNAME)) {
 
-		priv->io_data = g_malloc0 (sizeof (NMOpenvpnPluginIOData));
+		priv->io_data = g_malloc0 (sizeof (NMOpenvpn3PluginIOData));
 		update_io_data_from_vpn_setting (priv->io_data, s_vpn,
 		                                 nm_setting_vpn_get_user_name (s_vpn));
-		nm_openvpn_schedule_connect_timer (plugin);
+		nm_openvpn3_schedule_connect_timer (plugin);
 	}
 
 	return TRUE;
@@ -2206,46 +2206,46 @@ check_need_secrets (NMSettingVpn *s_vpn, gboolean *need_secrets)
 
 	*need_secrets = FALSE;
 
-	ctype = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_CONNECTION_TYPE);
+	ctype = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_CONNECTION_TYPE);
 	if (!validate_connection_type (ctype))
 		return NULL;
 
-	if (nm_streq (ctype, NM_OPENVPN_CONTYPE_PASSWORD_TLS)) {
+	if (nm_streq (ctype, NM_OPENVPN3_CONTYPE_PASSWORD_TLS)) {
 		/* Will require a password and maybe private key password */
-		key = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_KEY);
+		key = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_KEY);
 		key = nm_utils_str_utf8safe_unescape (key, &key_free);
-		if (is_encrypted (key) && !nm_setting_vpn_get_secret (s_vpn, NM_OPENVPN_KEY_CERTPASS))
+		if (is_encrypted (key) && !nm_setting_vpn_get_secret (s_vpn, NM_OPENVPN3_KEY_CERTPASS))
 			*need_secrets = TRUE;
 
-		if (!nm_setting_vpn_get_secret (s_vpn, NM_OPENVPN_KEY_PASSWORD)) {
+		if (!nm_setting_vpn_get_secret (s_vpn, NM_OPENVPN3_KEY_PASSWORD)) {
 			*need_secrets = TRUE;
-			if (nm_setting_get_secret_flags (NM_SETTING (s_vpn), NM_OPENVPN_KEY_PASSWORD, &secret_flags, NULL)) {
+			if (nm_setting_get_secret_flags (NM_SETTING (s_vpn), NM_OPENVPN3_KEY_PASSWORD, &secret_flags, NULL)) {
 				if (secret_flags & NM_SETTING_SECRET_FLAG_NOT_REQUIRED)
 					*need_secrets = FALSE;
 			}
 		}
-	} else if (nm_streq (ctype, NM_OPENVPN_CONTYPE_PASSWORD)) {
+	} else if (nm_streq (ctype, NM_OPENVPN3_CONTYPE_PASSWORD)) {
 		/* Will require a password */
-		if (!nm_setting_vpn_get_secret (s_vpn, NM_OPENVPN_KEY_PASSWORD)) {
+		if (!nm_setting_vpn_get_secret (s_vpn, NM_OPENVPN3_KEY_PASSWORD)) {
 			*need_secrets = TRUE;
-			if (nm_setting_get_secret_flags (NM_SETTING (s_vpn), NM_OPENVPN_KEY_PASSWORD, &secret_flags, NULL)) {
+			if (nm_setting_get_secret_flags (NM_SETTING (s_vpn), NM_OPENVPN3_KEY_PASSWORD, &secret_flags, NULL)) {
 				if (secret_flags & NM_SETTING_SECRET_FLAG_NOT_REQUIRED)
 					*need_secrets = FALSE;
 			}
 		}
-	} else if (nm_streq (ctype, NM_OPENVPN_CONTYPE_TLS)) {
+	} else if (nm_streq (ctype, NM_OPENVPN3_CONTYPE_TLS)) {
 		/* May require private key password */
-		key = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_KEY);
+		key = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_KEY);
 		key = nm_utils_str_utf8safe_unescape (key, &key_free);
-		if (is_encrypted (key) && !nm_setting_vpn_get_secret (s_vpn, NM_OPENVPN_KEY_CERTPASS))
+		if (is_encrypted (key) && !nm_setting_vpn_get_secret (s_vpn, NM_OPENVPN3_KEY_CERTPASS))
 			*need_secrets = TRUE;
 	} else {
 		/* Static key doesn't need passwords */
 	}
 
 	/* HTTP Proxy might require a password; assume so if there's an HTTP proxy username */
-	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_HTTP_PROXY_USERNAME);
-	if (tmp && !nm_setting_vpn_get_secret (s_vpn, NM_OPENVPN_KEY_HTTP_PROXY_PASSWORD))
+	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_HTTP_PROXY_USERNAME);
+	if (tmp && !nm_setting_vpn_get_secret (s_vpn, NM_OPENVPN3_KEY_HTTP_PROXY_PASSWORD))
 		*need_secrets = TRUE;
 
 	return ctype;
@@ -2255,7 +2255,7 @@ static gboolean
 real_disconnect (NMVpnServicePlugin *plugin,
                  GError **err)
 {
-	NMOpenvpnPluginPrivate *priv = NM_OPENVPN_PLUGIN_GET_PRIVATE (plugin);
+	NMOpenvpn3PluginPrivate *priv = NM_OPENVPN3_PLUGIN_GET_PRIVATE (plugin);
 
 	if (priv->mgt_path) {
 		/* openvpn does not cleanup the management socket upon exit,
@@ -2281,7 +2281,7 @@ _connect_common (NMVpnServicePlugin *plugin,
 {
 	GError *local = NULL;
 
-	NM_OPENVPN_PLUGIN_GET_PRIVATE (plugin)->interactive = interactive;
+	NM_OPENVPN3_PLUGIN_GET_PRIVATE (plugin)->interactive = interactive;
 
 	_LOGD ("connect (interactive=%d)", interactive);
 
@@ -2290,7 +2290,7 @@ _connect_common (NMVpnServicePlugin *plugin,
 		g_error_free (local);
 	}
 
-	return nm_openvpn_start_openvpn_binary (NM_OPENVPN_PLUGIN (plugin),
+	return nm_openvpn3_start_openvpn_binary (NM_OPENVPN3_PLUGIN (plugin),
 	                                        connection,
 	                                        error);
 }
@@ -2359,8 +2359,8 @@ real_new_secrets (NMVpnServicePlugin *base_plugin,
                   NMConnection *connection,
                   GError **error)
 {
-	NMOpenvpnPlugin *plugin = NM_OPENVPN_PLUGIN (base_plugin);
-	NMOpenvpnPluginPrivate *priv = NM_OPENVPN_PLUGIN_GET_PRIVATE (plugin);
+	NMOpenvpn3Plugin *plugin = NM_OPENVPN3_PLUGIN (base_plugin);
+	NMOpenvpn3PluginPrivate *priv = NM_OPENVPN3_PLUGIN_GET_PRIVATE (plugin);
 	NMSettingVpn *s_vpn;
 	const char *message = NULL;
 	gs_free const char **hints = NULL;
@@ -2394,14 +2394,14 @@ real_new_secrets (NMVpnServicePlugin *base_plugin,
 }
 
 static void
-nm_openvpn_plugin_init (NMOpenvpnPlugin *plugin)
+nm_openvpn3_plugin_init (NMOpenvpn3Plugin *plugin)
 {
 }
 
 static void
 dispose (GObject *object)
 {
-	NMOpenvpnPluginPrivate *priv = NM_OPENVPN_PLUGIN_GET_PRIVATE (object);
+	NMOpenvpn3PluginPrivate *priv = NM_OPENVPN3_PLUGIN_GET_PRIVATE (object);
 
 	nm_clear_g_source (&priv->connect_timer);
 
@@ -2410,16 +2410,16 @@ dispose (GObject *object)
 		priv->pid = 0;
 	}
 
-	G_OBJECT_CLASS (nm_openvpn_plugin_parent_class)->dispose (object);
+	G_OBJECT_CLASS (nm_openvpn3_plugin_parent_class)->dispose (object);
 }
 
 static void
-nm_openvpn_plugin_class_init (NMOpenvpnPluginClass *plugin_class)
+nm_openvpn3_plugin_class_init (NMOpenvpn3PluginClass *plugin_class)
 {
 	GObjectClass *object_class = G_OBJECT_CLASS (plugin_class);
 	NMVpnServicePluginClass *parent_class = NM_VPN_SERVICE_PLUGIN_CLASS (plugin_class);
 
-	g_type_class_add_private (object_class, sizeof (NMOpenvpnPluginPrivate));
+	g_type_class_add_private (object_class, sizeof (NMOpenvpn3PluginPrivate));
 
 	object_class->dispose = dispose;
 
@@ -2432,11 +2432,11 @@ nm_openvpn_plugin_class_init (NMOpenvpnPluginClass *plugin_class)
 }
 
 static void
-plugin_state_changed (NMOpenvpnPlugin *plugin,
+plugin_state_changed (NMOpenvpn3Plugin *plugin,
                       NMVpnServiceState state,
                       gpointer user_data)
 {
-	NMOpenvpnPluginPrivate *priv = NM_OPENVPN_PLUGIN_GET_PRIVATE (plugin);
+	NMOpenvpn3PluginPrivate *priv = NM_OPENVPN3_PLUGIN_GET_PRIVATE (plugin);
 
 	switch (state) {
 	case NM_VPN_SERVICE_STATE_UNKNOWN:
@@ -2446,20 +2446,20 @@ plugin_state_changed (NMOpenvpnPlugin *plugin,
 	case NM_VPN_SERVICE_STATE_STOPPED:
 		/* Cleanup on failure */
 		nm_clear_g_source (&priv->connect_timer);
-		nm_openvpn_disconnect_management_socket (plugin);
+		nm_openvpn3_disconnect_management_socket (plugin);
 		break;
 	default:
 		break;
 	}
 }
 
-NMOpenvpnPlugin *
-nm_openvpn_plugin_new (const char *bus_name)
+NMOpenvpn3Plugin *
+nm_openvpn3_plugin_new (const char *bus_name)
 {
-	NMOpenvpnPlugin *plugin;
+	NMOpenvpn3Plugin *plugin;
 	GError *error = NULL;
 
-	plugin =  (NMOpenvpnPlugin *) g_initable_new (NM_TYPE_OPENVPN_PLUGIN, NULL, &error,
+	plugin =  (NMOpenvpn3Plugin *) g_initable_new (NM_TYPE_OPENVPN3_PLUGIN, NULL, &error,
 	                                              NM_VPN_SERVICE_PLUGIN_DBUS_SERVICE_NAME, bus_name,
 	                                              NM_VPN_SERVICE_PLUGIN_DBUS_WATCH_PEER, !gl.debug,
 	                                              NULL);
@@ -2490,7 +2490,7 @@ quit_mainloop (NMVpnServicePlugin *plugin, gpointer user_data)
 int
 main (int argc, char *argv[])
 {
-	gs_unref_object NMOpenvpnPlugin *plugin = NULL;
+	gs_unref_object NMOpenvpn3Plugin *plugin = NULL;
 	gboolean persist = FALSE;
 	GOptionContext *opt_ctx = NULL;
 	gchar *bus_name = NM_DBUS_SERVICE_OPENVPN;
@@ -2520,7 +2520,7 @@ main (int argc, char *argv[])
 	/* locale will be set according to environment LC_* variables */
 	setlocale (LC_ALL, "");
 
-	bindtextdomain (GETTEXT_PACKAGE, NM_OPENVPN_LOCALEDIR);
+	bindtextdomain (GETTEXT_PACKAGE, NM_OPENVPN3_LOCALEDIR);
 	bind_textdomain_codeset (GETTEXT_PACKAGE, "UTF-8");
 	textdomain (GETTEXT_PACKAGE);
 
@@ -2574,7 +2574,7 @@ main (int argc, char *argv[])
 	    && (system ("/sbin/modprobe tun") == -1))
 		return EXIT_FAILURE;
 
-	plugin = nm_openvpn_plugin_new (bus_name);
+	plugin = nm_openvpn3_plugin_new (bus_name);
 	if (!plugin)
 		return EXIT_FAILURE;
 

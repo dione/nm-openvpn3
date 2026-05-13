@@ -23,7 +23,7 @@
 
 #include "nm-default.h"
 
-#include "nm-openvpn-editor-plugin.h"
+#include "nm-openvpn3-editor-plugin.h"
 
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -133,13 +133,13 @@ get_editor (NMVpnEditorPlugin *iface, NMConnection *connection, GError **error)
 	g_module_close (self_module);
 
 	if (gtk3_only_symbol) {
-		editor = "libnm-vpn-plugin-openvpn-editor.so";
+		editor = "libnm-vpn-plugin-openvpn3-editor.so";
 	} else {
 		editor = "libnm-gtk4-vpn-plugin-openvpn-editor.so";
 	}
 
 	return nm_vpn_plugin_utils_load_editor (editor,
-						"nm_vpn_editor_factory_openvpn",
+						"nm_vpn_editor_factory_openvpn3",
 						_call_editor_factory,
 						iface,
 						connection,

@@ -157,7 +157,7 @@ eui_no_secrets_required (void)
 	keyfile = g_key_file_new ();
 
 	g_key_file_set_integer (keyfile, UI_KEYFILE_GROUP, "Version", 2);
-	keyfile_add_entry_info (keyfile, NM_OPENVPN_KEY_NOSECRET, "true", "", FALSE, FALSE);
+	keyfile_add_entry_info (keyfile, NM_OPENVPN3_KEY_NOSECRET, "true", "", FALSE, FALSE);
 	keyfile_print_stdout (keyfile);
 	g_key_file_unref (keyfile);
 }
@@ -188,29 +188,29 @@ eui_finish (const char *vpn_name,
 	g_free (title);
 
 	keyfile_add_entry_info (keyfile,
-	                        NM_OPENVPN_KEY_PASSWORD,
+	                        NM_OPENVPN3_KEY_PASSWORD,
 	                        existing_password ? existing_password : "",
 	                        _("Password"),
 	                        FALSE,
 	                        need_password && allow_interaction);
 
 	keyfile_add_entry_info (keyfile,
-	                        NM_OPENVPN_KEY_CERTPASS,
+	                        NM_OPENVPN3_KEY_CERTPASS,
 	                        existing_certpass ? existing_certpass : "",
 	                        _("Certificate password"),
 	                        FALSE,
 	                        need_certpass && allow_interaction);
 
 	keyfile_add_entry_info (keyfile,
-	                        NM_OPENVPN_KEY_HTTP_PROXY_PASSWORD,
+	                        NM_OPENVPN3_KEY_HTTP_PROXY_PASSWORD,
 	                        existing_proxypass ? existing_proxypass : "",
 	                        _("HTTP proxy password"),
 	                        FALSE,
 	                        need_proxypass && allow_interaction);
 
 	keyfile_add_entry_info (keyfile,
-	                        need_challengeresponse_echo ? NM_OPENVPN_HINT_CHALLENGE_RESPONSE_ECHO
-	                                                    : NM_OPENVPN_HINT_CHALLENGE_RESPONSE_NOECHO,
+	                        need_challengeresponse_echo ? NM_OPENVPN3_HINT_CHALLENGE_RESPONSE_ECHO
+	                                                    : NM_OPENVPN3_HINT_CHALLENGE_RESPONSE_NOECHO,
 	                        "",
 	                        _("Challenge response"),
 	                        need_challengeresponse_echo,
@@ -225,7 +225,7 @@ eui_finish (const char *vpn_name,
 static void
 std_no_secrets_required (void)
 {
-	printf ("%s\n%s\n\n\n", NM_OPENVPN_KEY_NOSECRET, "true");
+	printf ("%s\n%s\n\n\n", NM_OPENVPN3_KEY_NOSECRET, "true");
 }
 
 static gboolean
@@ -327,11 +327,11 @@ std_finish (const char *vpn_name,
 {
 	/* Send the passwords back to our parent */
 	if (password)
-		printf ("%s\n%s\n", NM_OPENVPN_KEY_PASSWORD, password);
+		printf ("%s\n%s\n", NM_OPENVPN3_KEY_PASSWORD, password);
 	if (certpass)
-		printf ("%s\n%s\n", NM_OPENVPN_KEY_CERTPASS, certpass);
+		printf ("%s\n%s\n", NM_OPENVPN3_KEY_CERTPASS, certpass);
 	if (proxypass)
-		printf ("%s\n%s\n", NM_OPENVPN_KEY_HTTP_PROXY_PASSWORD, proxypass);
+		printf ("%s\n%s\n", NM_OPENVPN3_KEY_HTTP_PROXY_PASSWORD, proxypass);
 	printf ("\n\n");
 
 	/* for good measure, flush stdout since Kansas is going Bye-Bye */
@@ -362,30 +362,30 @@ get_existing_passwords (GHashTable *vpn_data,
 	g_return_if_fail (out_certpass != NULL);
 	g_return_if_fail (out_proxypass != NULL);
 
-	nm_vpn_service_plugin_get_secret_flags (vpn_data, NM_OPENVPN_KEY_PASSWORD, &pw_flags);
+	nm_vpn_service_plugin_get_secret_flags (vpn_data, NM_OPENVPN3_KEY_PASSWORD, &pw_flags);
 	if (need_password) {
 		if (!(pw_flags & NM_SETTING_SECRET_FLAG_NOT_SAVED)) {
-			*out_password = g_strdup (g_hash_table_lookup (existing_secrets, NM_OPENVPN_KEY_PASSWORD));
+			*out_password = g_strdup (g_hash_table_lookup (existing_secrets, NM_OPENVPN3_KEY_PASSWORD));
 			if (!*out_password)
-				*out_password = keyring_lookup_secret (vpn_uuid, NM_OPENVPN_KEY_PASSWORD);
+				*out_password = keyring_lookup_secret (vpn_uuid, NM_OPENVPN3_KEY_PASSWORD);
 		}
 	}
 
-	nm_vpn_service_plugin_get_secret_flags (vpn_data, NM_OPENVPN_KEY_CERTPASS, &cp_flags);
+	nm_vpn_service_plugin_get_secret_flags (vpn_data, NM_OPENVPN3_KEY_CERTPASS, &cp_flags);
 	if (need_certpass) {
 		if (!(cp_flags & NM_SETTING_SECRET_FLAG_NOT_SAVED)) {
-			*out_certpass = g_strdup (g_hash_table_lookup (existing_secrets, NM_OPENVPN_KEY_CERTPASS));
+			*out_certpass = g_strdup (g_hash_table_lookup (existing_secrets, NM_OPENVPN3_KEY_CERTPASS));
 			if (!*out_certpass)
-				*out_certpass = keyring_lookup_secret (vpn_uuid, NM_OPENVPN_KEY_CERTPASS);
+				*out_certpass = keyring_lookup_secret (vpn_uuid, NM_OPENVPN3_KEY_CERTPASS);
 		}
 	}
 
-	nm_vpn_service_plugin_get_secret_flags (vpn_data, NM_OPENVPN_KEY_HTTP_PROXY_PASSWORD, &proxy_flags);
+	nm_vpn_service_plugin_get_secret_flags (vpn_data, NM_OPENVPN3_KEY_HTTP_PROXY_PASSWORD, &proxy_flags);
 	if (need_proxypass) {
 		if (!(proxy_flags & NM_SETTING_SECRET_FLAG_NOT_SAVED)) {
-			*out_proxypass = g_strdup (g_hash_table_lookup (existing_secrets, NM_OPENVPN_KEY_HTTP_PROXY_PASSWORD));
+			*out_proxypass = g_strdup (g_hash_table_lookup (existing_secrets, NM_OPENVPN3_KEY_HTTP_PROXY_PASSWORD));
 			if (!*out_proxypass)
-				*out_proxypass = keyring_lookup_secret (vpn_uuid, NM_OPENVPN_KEY_HTTP_PROXY_PASSWORD);
+				*out_proxypass = keyring_lookup_secret (vpn_uuid, NM_OPENVPN3_KEY_HTTP_PROXY_PASSWORD);
 		}
 	}
 }
@@ -417,15 +417,15 @@ get_passwords_required (GHashTable *data,
 		for (iter = hints; iter && *iter; iter++) {
 			if (!prompt && g_str_has_prefix (*iter, VPN_MSG_TAG))
 				prompt = g_strdup (*iter + strlen (VPN_MSG_TAG));
-			else if (strcmp (*iter, NM_OPENVPN_KEY_PASSWORD) == 0)
+			else if (strcmp (*iter, NM_OPENVPN3_KEY_PASSWORD) == 0)
 				*out_need_password = TRUE;
-			else if (strcmp (*iter, NM_OPENVPN_KEY_CERTPASS) == 0)
+			else if (strcmp (*iter, NM_OPENVPN3_KEY_CERTPASS) == 0)
 				*out_need_certpass = TRUE;
-			else if (strcmp (*iter, NM_OPENVPN_KEY_HTTP_PROXY_PASSWORD) == 0)
+			else if (strcmp (*iter, NM_OPENVPN3_KEY_HTTP_PROXY_PASSWORD) == 0)
 				*out_need_proxypass = TRUE;
-			else if (strcmp (*iter, NM_OPENVPN_HINT_CHALLENGE_RESPONSE_NOECHO) == 0)
+			else if (strcmp (*iter, NM_OPENVPN3_HINT_CHALLENGE_RESPONSE_NOECHO) == 0)
 				*out_need_challengeresponse = TRUE;
-			else if (strcmp (*iter, NM_OPENVPN_HINT_CHALLENGE_RESPONSE_ECHO) == 0) {
+			else if (strcmp (*iter, NM_OPENVPN3_HINT_CHALLENGE_RESPONSE_ECHO) == 0) {
 				*out_need_challengeresponse = TRUE;
 				*out_need_challengeresponse_echo = TRUE;
 			}
@@ -433,32 +433,32 @@ get_passwords_required (GHashTable *data,
 		return prompt;
 	}
 
-	ctype = g_hash_table_lookup (data, NM_OPENVPN_KEY_CONNECTION_TYPE);
+	ctype = g_hash_table_lookup (data, NM_OPENVPN3_KEY_CONNECTION_TYPE);
 	g_return_val_if_fail (ctype != NULL, NULL);
 
-	if (!strcmp (ctype, NM_OPENVPN_CONTYPE_TLS) || !strcmp (ctype, NM_OPENVPN_CONTYPE_PASSWORD_TLS)) {
+	if (!strcmp (ctype, NM_OPENVPN3_CONTYPE_TLS) || !strcmp (ctype, NM_OPENVPN3_CONTYPE_PASSWORD_TLS)) {
 		/* Normal user password */
 		flags = NM_SETTING_SECRET_FLAG_NONE;
-		nm_vpn_service_plugin_get_secret_flags (data, NM_OPENVPN_KEY_PASSWORD, &flags);
-		if (   !strcmp (ctype, NM_OPENVPN_CONTYPE_PASSWORD_TLS)
+		nm_vpn_service_plugin_get_secret_flags (data, NM_OPENVPN3_KEY_PASSWORD, &flags);
+		if (   !strcmp (ctype, NM_OPENVPN3_CONTYPE_PASSWORD_TLS)
 		    && !(flags & NM_SETTING_SECRET_FLAG_NOT_REQUIRED))
 			*out_need_password = TRUE;
 
 		/* Encrypted private key password */
-		val = g_hash_table_lookup (data, NM_OPENVPN_KEY_KEY);
+		val = g_hash_table_lookup (data, NM_OPENVPN3_KEY_KEY);
 		if (val)
 			*out_need_certpass = is_encrypted (val);
-	} else if (!strcmp (ctype, NM_OPENVPN_CONTYPE_PASSWORD)) {
+	} else if (!strcmp (ctype, NM_OPENVPN3_CONTYPE_PASSWORD)) {
 		flags = NM_SETTING_SECRET_FLAG_NONE;
-		nm_vpn_service_plugin_get_secret_flags (data, NM_OPENVPN_KEY_PASSWORD, &flags);
+		nm_vpn_service_plugin_get_secret_flags (data, NM_OPENVPN3_KEY_PASSWORD, &flags);
 		if (!(flags & NM_SETTING_SECRET_FLAG_NOT_REQUIRED))
 			*out_need_password = TRUE;
 	}
 
-	val = g_hash_table_lookup (data, NM_OPENVPN_KEY_PROXY_SERVER);
+	val = g_hash_table_lookup (data, NM_OPENVPN3_KEY_PROXY_SERVER);
 	if (val && val[0]) {
 		flags = NM_SETTING_SECRET_FLAG_NONE;
-		nm_vpn_service_plugin_get_secret_flags (data, NM_OPENVPN_KEY_HTTP_PROXY_PASSWORD, &flags);
+		nm_vpn_service_plugin_get_secret_flags (data, NM_OPENVPN3_KEY_HTTP_PROXY_PASSWORD, &flags);
 		if (!(flags & NM_SETTING_SECRET_FLAG_NOT_REQUIRED))
 			*out_need_proxypass = TRUE;
 	}

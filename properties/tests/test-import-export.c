@@ -27,8 +27,8 @@
 #include <locale.h>
 #include <sys/stat.h>
 
-#include "nm-openvpn-editor-plugin.h"
-#include "nm-openvpn-editor.h"
+#include "nm-openvpn3-editor-plugin.h"
+#include "nm-openvpn3-editor.h"
 #include "import-export.h"
 #include "utils.h"
 
@@ -205,32 +205,32 @@ test_password_import (void)
 
 	s_vpn = _get_setting_vpn (connection);
 
-	_check_item (s_vpn, NM_OPENVPN_KEY_CONNECTION_TYPE, NM_OPENVPN_CONTYPE_PASSWORD);
-	_check_item (s_vpn, NM_OPENVPN_KEY_DEV, "tun");
-	_check_item (s_vpn, NM_OPENVPN_KEY_PROTO_TCP, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_COMP_LZO, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_COMPRESS, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_FLOAT, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_RENEG_SECONDS, "0");
-	_check_item (s_vpn, NM_OPENVPN_KEY_REMOTE, "test.server.com:443");
-	_check_item (s_vpn, NM_OPENVPN_KEY_PORT, "2352");
-	_check_item (s_vpn, NM_OPENVPN_KEY_CERT, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_KEY, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_STATIC_KEY, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_STATIC_KEY_DIRECTION, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_TA, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_TA_DIR, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_CIPHER, "AES-256-CBC");
-	_check_item (s_vpn, NM_OPENVPN_KEY_DATA_CIPHERS, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_DATA_CIPHERS_FALLBACK, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_LOCAL_IP, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_REMOTE_IP, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_AUTH, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_CONNECTION_TYPE, NM_OPENVPN3_CONTYPE_PASSWORD);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_DEV, "tun");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_PROTO_TCP, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_COMP_LZO, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_COMPRESS, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_FLOAT, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_RENEG_SECONDS, "0");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_REMOTE, "test.server.com:443");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_PORT, "2352");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_CERT, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_KEY, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_STATIC_KEY, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_STATIC_KEY_DIRECTION, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_TA, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_TA_DIR, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_CIPHER, "AES-256-CBC");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_DATA_CIPHERS, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_DATA_CIPHERS_FALLBACK, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_LOCAL_IP, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_REMOTE_IP, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_AUTH, NULL);
 
-	_check_item (s_vpn, NM_OPENVPN_KEY_CA, SRCDIR"/cacert.pem");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_CA, SRCDIR"/cacert.pem");
 
-	_check_secret (s_vpn, NM_OPENVPN_KEY_PASSWORD, NULL);
-	_check_secret (s_vpn, NM_OPENVPN_KEY_CERTPASS, NULL);
+	_check_secret (s_vpn, NM_OPENVPN3_KEY_PASSWORD, NULL);
+	_check_secret (s_vpn, NM_OPENVPN3_KEY_CERTPASS, NULL);
 }
 
 static void
@@ -304,37 +304,37 @@ test_tls_import (void)
 
 	s_vpn = _get_setting_vpn (connection);
 
-	_check_item (s_vpn, NM_OPENVPN_KEY_CONNECTION_TYPE, NM_OPENVPN_CONTYPE_TLS);
-	_check_item (s_vpn, NM_OPENVPN_KEY_DEV, "tun");
-	_check_item (s_vpn, NM_OPENVPN_KEY_PROTO_TCP, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_COMP_LZO, "no-by-default");
-	_check_item (s_vpn, NM_OPENVPN_KEY_COMPRESS, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_FLOAT, "yes");
-	_check_item (s_vpn, NM_OPENVPN_KEY_RENEG_SECONDS, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_REMOTE, "173.8.149.245:1194");
-	_check_item (s_vpn, NM_OPENVPN_KEY_PORT, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_STATIC_KEY, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_STATIC_KEY_DIRECTION, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_CIPHER, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_DATA_CIPHERS, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_DATA_CIPHERS_FALLBACK, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_LOCAL_IP, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_REMOTE_IP, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_AUTH, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_TLS_REMOTE, "/CN=myvpn.company.com");
-	_check_item (s_vpn, NM_OPENVPN_KEY_VERIFY_X509_NAME,
+	_check_item (s_vpn, NM_OPENVPN3_KEY_CONNECTION_TYPE, NM_OPENVPN3_CONTYPE_TLS);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_DEV, "tun");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_PROTO_TCP, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_COMP_LZO, "no-by-default");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_COMPRESS, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_FLOAT, "yes");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_RENEG_SECONDS, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_REMOTE, "173.8.149.245:1194");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_PORT, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_STATIC_KEY, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_STATIC_KEY_DIRECTION, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_CIPHER, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_DATA_CIPHERS, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_DATA_CIPHERS_FALLBACK, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_LOCAL_IP, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_REMOTE_IP, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_AUTH, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_TLS_REMOTE, "/CN=myvpn.company.com");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_VERIFY_X509_NAME,
 	             "subject:C=US, L=Cambridge, CN=GNOME, emailAddress=networkmanager-list@gnome.org");
-	_check_item (s_vpn, NM_OPENVPN_KEY_REMOTE_CERT_TLS, "server");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_REMOTE_CERT_TLS, "server");
 
-	_check_item (s_vpn, NM_OPENVPN_KEY_CA,   SRCDIR"/keys/mg8.ca");
-	_check_item (s_vpn, NM_OPENVPN_KEY_CERT, SRCDIR"/keys/clee.crt");
-	_check_item (s_vpn, NM_OPENVPN_KEY_KEY,  SRCDIR"/keys/clee.key");
-	_check_item (s_vpn, NM_OPENVPN_KEY_TA,   SRCDIR"/keys/46.key");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_CA,   SRCDIR"/keys/mg8.ca");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_CERT, SRCDIR"/keys/clee.crt");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_KEY,  SRCDIR"/keys/clee.key");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_TA,   SRCDIR"/keys/46.key");
 
-	_check_item (s_vpn, NM_OPENVPN_KEY_TA_DIR, "1");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_TA_DIR, "1");
 
-	_check_secret (s_vpn, NM_OPENVPN_KEY_PASSWORD, NULL);
-	_check_secret (s_vpn, NM_OPENVPN_KEY_CERTPASS, NULL);
+	_check_secret (s_vpn, NM_OPENVPN3_KEY_PASSWORD, NULL);
+	_check_secret (s_vpn, NM_OPENVPN3_KEY_CERTPASS, NULL);
 }
 
 static void
@@ -353,35 +353,35 @@ test_tls_import_2 (void)
 
 	s_vpn = _get_setting_vpn (connection);
 
-	_check_item (s_vpn, NM_OPENVPN_KEY_CONNECTION_TYPE, NM_OPENVPN_CONTYPE_TLS);
-	_check_item (s_vpn, NM_OPENVPN_KEY_DEV, "tun");
-	_check_item (s_vpn, NM_OPENVPN_KEY_PROTO_TCP, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_COMP_LZO, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_COMPRESS, "lz4");
-	_check_item (s_vpn, NM_OPENVPN_KEY_FLOAT, "yes");
-	_check_item (s_vpn, NM_OPENVPN_KEY_RENEG_SECONDS, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_REMOTE, "173.8.149.245:1194");
-	_check_item (s_vpn, NM_OPENVPN_KEY_PORT, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_STATIC_KEY, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_STATIC_KEY_DIRECTION, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_CIPHER, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_DATA_CIPHERS, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_DATA_CIPHERS_FALLBACK, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_LOCAL_IP, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_REMOTE_IP, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_AUTH, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_TLS_REMOTE, "/CN=myvpn.company.com");
-	_check_item (s_vpn, NM_OPENVPN_KEY_VERIFY_X509_NAME,
+	_check_item (s_vpn, NM_OPENVPN3_KEY_CONNECTION_TYPE, NM_OPENVPN3_CONTYPE_TLS);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_DEV, "tun");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_PROTO_TCP, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_COMP_LZO, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_COMPRESS, "lz4");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_FLOAT, "yes");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_RENEG_SECONDS, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_REMOTE, "173.8.149.245:1194");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_PORT, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_STATIC_KEY, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_STATIC_KEY_DIRECTION, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_CIPHER, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_DATA_CIPHERS, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_DATA_CIPHERS_FALLBACK, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_LOCAL_IP, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_REMOTE_IP, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_AUTH, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_TLS_REMOTE, "/CN=myvpn.company.com");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_VERIFY_X509_NAME,
 	             "subject:C=US, L=Cambridge, CN=GNOME, emailAddress=networkmanager-list@gnome.org");
-	_check_item (s_vpn, NM_OPENVPN_KEY_REMOTE_CERT_TLS, "server");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_REMOTE_CERT_TLS, "server");
 
-	_check_item (s_vpn, NM_OPENVPN_KEY_CA,        SRCDIR"/keys/mg8.ca");
-	_check_item (s_vpn, NM_OPENVPN_KEY_CERT,      SRCDIR"/keys/clee.crt");
-	_check_item (s_vpn, NM_OPENVPN_KEY_KEY,       SRCDIR"/keys/clee.key");
-	_check_item (s_vpn, NM_OPENVPN_KEY_TLS_CRYPT, SRCDIR"/keys/46.key");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_CA,        SRCDIR"/keys/mg8.ca");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_CERT,      SRCDIR"/keys/clee.crt");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_KEY,       SRCDIR"/keys/clee.key");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_TLS_CRYPT, SRCDIR"/keys/46.key");
 
-	_check_secret (s_vpn, NM_OPENVPN_KEY_PASSWORD, NULL);
-	_check_secret (s_vpn, NM_OPENVPN_KEY_CERTPASS, NULL);
+	_check_secret (s_vpn, NM_OPENVPN3_KEY_PASSWORD, NULL);
+	_check_secret (s_vpn, NM_OPENVPN3_KEY_CERTPASS, NULL);
 }
 
 static void
@@ -400,37 +400,37 @@ test_tls_import_3 (void)
 
 	s_vpn = _get_setting_vpn (connection);
 
-	_check_item (s_vpn, NM_OPENVPN_KEY_CONNECTION_TYPE, NM_OPENVPN_CONTYPE_TLS);
-	_check_item (s_vpn, NM_OPENVPN_KEY_DEV, "tun");
-	_check_item (s_vpn, NM_OPENVPN_KEY_PROTO_TCP, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_COMP_LZO, "adaptive");
-	_check_item (s_vpn, NM_OPENVPN_KEY_FLOAT, "yes");
-	_check_item (s_vpn, NM_OPENVPN_KEY_RENEG_SECONDS, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_REMOTE, "173.8.149.245:1194");
-	_check_item (s_vpn, NM_OPENVPN_KEY_PORT, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_STATIC_KEY, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_STATIC_KEY_DIRECTION, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_CIPHER, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_DATA_CIPHERS, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_DATA_CIPHERS_FALLBACK, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_LOCAL_IP, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_REMOTE_IP, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_AUTH, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_TLS_REMOTE, "/CN=myvpn.company.com");
-	_check_item (s_vpn, NM_OPENVPN_KEY_VERIFY_X509_NAME,
+	_check_item (s_vpn, NM_OPENVPN3_KEY_CONNECTION_TYPE, NM_OPENVPN3_CONTYPE_TLS);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_DEV, "tun");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_PROTO_TCP, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_COMP_LZO, "adaptive");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_FLOAT, "yes");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_RENEG_SECONDS, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_REMOTE, "173.8.149.245:1194");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_PORT, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_STATIC_KEY, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_STATIC_KEY_DIRECTION, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_CIPHER, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_DATA_CIPHERS, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_DATA_CIPHERS_FALLBACK, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_LOCAL_IP, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_REMOTE_IP, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_AUTH, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_TLS_REMOTE, "/CN=myvpn.company.com");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_VERIFY_X509_NAME,
 	             "subject:C=US, L=Cambridge, CN=GNOME, emailAddress=networkmanager-list@gnome.org");
-	_check_item (s_vpn, NM_OPENVPN_KEY_REMOTE_CERT_TLS, "server");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_REMOTE_CERT_TLS, "server");
 
-	_check_item (s_vpn, NM_OPENVPN_KEY_CA,        SRCDIR"/keys/mg8.ca");
-	_check_item (s_vpn, NM_OPENVPN_KEY_CERT,      SRCDIR"/keys/clee.crt");
-	_check_item (s_vpn, NM_OPENVPN_KEY_KEY,       SRCDIR"/keys/clee.key");
-	_check_item (s_vpn, NM_OPENVPN_KEY_TLS_CRYPT, SRCDIR"/keys/46.key");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_CA,        SRCDIR"/keys/mg8.ca");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_CERT,      SRCDIR"/keys/clee.crt");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_KEY,       SRCDIR"/keys/clee.key");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_TLS_CRYPT, SRCDIR"/keys/46.key");
 
-	_check_secret (s_vpn, NM_OPENVPN_KEY_PASSWORD, NULL);
-	_check_secret (s_vpn, NM_OPENVPN_KEY_CERTPASS, NULL);
+	_check_secret (s_vpn, NM_OPENVPN3_KEY_PASSWORD, NULL);
+	_check_secret (s_vpn, NM_OPENVPN3_KEY_CERTPASS, NULL);
 
-	_check_item (s_vpn, NM_OPENVPN_KEY_TLS_VERSION_MIN, "1.0");
-	_check_item (s_vpn, NM_OPENVPN_KEY_TLS_VERSION_MAX, "1.2");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_TLS_VERSION_MIN, "1.0");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_TLS_VERSION_MAX, "1.2");
 
 }
 
@@ -450,38 +450,38 @@ test_tls_import_4 (void)
 
 	s_vpn = _get_setting_vpn (connection);
 
-	_check_item (s_vpn, NM_OPENVPN_KEY_CONNECTION_TYPE, NM_OPENVPN_CONTYPE_TLS);
-	_check_item (s_vpn, NM_OPENVPN_KEY_DEV, "tun");
-	_check_item (s_vpn, NM_OPENVPN_KEY_PROTO_TCP, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_COMP_LZO, "adaptive");
-	_check_item (s_vpn, NM_OPENVPN_KEY_FLOAT, "yes");
-	_check_item (s_vpn, NM_OPENVPN_KEY_RENEG_SECONDS, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_REMOTE, "173.8.149.245:1194");
-	_check_item (s_vpn, NM_OPENVPN_KEY_PORT, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_STATIC_KEY, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_STATIC_KEY_DIRECTION, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_CIPHER, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_DATA_CIPHERS, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_DATA_CIPHERS_FALLBACK, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_LOCAL_IP, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_REMOTE_IP, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_AUTH, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_TLS_REMOTE, "/CN=myvpn.company.com");
-	_check_item (s_vpn, NM_OPENVPN_KEY_VERIFY_X509_NAME,
+	_check_item (s_vpn, NM_OPENVPN3_KEY_CONNECTION_TYPE, NM_OPENVPN3_CONTYPE_TLS);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_DEV, "tun");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_PROTO_TCP, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_COMP_LZO, "adaptive");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_FLOAT, "yes");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_RENEG_SECONDS, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_REMOTE, "173.8.149.245:1194");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_PORT, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_STATIC_KEY, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_STATIC_KEY_DIRECTION, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_CIPHER, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_DATA_CIPHERS, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_DATA_CIPHERS_FALLBACK, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_LOCAL_IP, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_REMOTE_IP, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_AUTH, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_TLS_REMOTE, "/CN=myvpn.company.com");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_VERIFY_X509_NAME,
 	             "subject:C=US, L=Cambridge, CN=GNOME, emailAddress=networkmanager-list@gnome.org");
-	_check_item (s_vpn, NM_OPENVPN_KEY_REMOTE_CERT_TLS, "server");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_REMOTE_CERT_TLS, "server");
 
-	_check_item (s_vpn, NM_OPENVPN_KEY_CA,           SRCDIR"/keys/mg8.ca");
-	_check_item (s_vpn, NM_OPENVPN_KEY_CERT,         SRCDIR"/keys/clee.crt");
-	_check_item (s_vpn, NM_OPENVPN_KEY_KEY,          SRCDIR"/keys/clee.key");
-	_check_item (s_vpn, NM_OPENVPN_KEY_TLS_CRYPT_V2, SRCDIR"/keys/46.key");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_CA,           SRCDIR"/keys/mg8.ca");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_CERT,         SRCDIR"/keys/clee.crt");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_KEY,          SRCDIR"/keys/clee.key");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_TLS_CRYPT_V2, SRCDIR"/keys/46.key");
 
-	_check_secret (s_vpn, NM_OPENVPN_KEY_PASSWORD, NULL);
-	_check_secret (s_vpn, NM_OPENVPN_KEY_CERTPASS, NULL);
+	_check_secret (s_vpn, NM_OPENVPN3_KEY_PASSWORD, NULL);
+	_check_secret (s_vpn, NM_OPENVPN3_KEY_CERTPASS, NULL);
 
-	_check_item (s_vpn, NM_OPENVPN_KEY_TLS_VERSION_MIN, "1.0");
-	_check_item (s_vpn, NM_OPENVPN_KEY_TLS_VERSION_MIN_OR_HIGHEST, "yes");
-	_check_item (s_vpn, NM_OPENVPN_KEY_TLS_VERSION_MAX, "1.2");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_TLS_VERSION_MIN, "1.0");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_TLS_VERSION_MIN_OR_HIGHEST, "yes");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_TLS_VERSION_MAX, "1.2");
 
 }
 
@@ -523,35 +523,35 @@ test_tls_inline_import (void)
 
 	s_vpn = _get_setting_vpn (connection);
 
-	_check_item (s_vpn, NM_OPENVPN_KEY_CONNECTION_TYPE, NM_OPENVPN_CONTYPE_TLS);
-	_check_item (s_vpn, NM_OPENVPN_KEY_DEV, "tun");
-	_check_item (s_vpn, NM_OPENVPN_KEY_PROTO_TCP, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_COMP_LZO, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_COMPRESS, "lz4-v2");
-	_check_item (s_vpn, NM_OPENVPN_KEY_FLOAT, "yes");
-	_check_item (s_vpn, NM_OPENVPN_KEY_RENEG_SECONDS, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_REMOTE, "173.8.149.245:1194");
-	_check_item (s_vpn, NM_OPENVPN_KEY_PORT, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_STATIC_KEY, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_STATIC_KEY_DIRECTION, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_CIPHER, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_DATA_CIPHERS, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_DATA_CIPHERS_FALLBACK, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_LOCAL_IP, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_REMOTE_IP, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_AUTH, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_TLS_REMOTE, "/CN=myvpn.company.com");
-	_check_item (s_vpn, NM_OPENVPN_KEY_REMOTE_CERT_TLS, "server");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_CONNECTION_TYPE, NM_OPENVPN3_CONTYPE_TLS);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_DEV, "tun");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_PROTO_TCP, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_COMP_LZO, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_COMPRESS, "lz4-v2");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_FLOAT, "yes");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_RENEG_SECONDS, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_REMOTE, "173.8.149.245:1194");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_PORT, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_STATIC_KEY, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_STATIC_KEY_DIRECTION, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_CIPHER, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_DATA_CIPHERS, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_DATA_CIPHERS_FALLBACK, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_LOCAL_IP, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_REMOTE_IP, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_AUTH, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_TLS_REMOTE, "/CN=myvpn.company.com");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_REMOTE_CERT_TLS, "server");
 
-	test_file_contents (expected_id, SRCDIR, s_vpn, NM_OPENVPN_KEY_CA);
-	test_file_contents (expected_id, SRCDIR, s_vpn, NM_OPENVPN_KEY_CERT);
-	test_file_contents (expected_id, SRCDIR, s_vpn, NM_OPENVPN_KEY_KEY);
-	test_file_contents (expected_id, SRCDIR, s_vpn, NM_OPENVPN_KEY_TA);
-	test_file_contents (expected_id, SRCDIR, s_vpn, NM_OPENVPN_KEY_CRL_VERIFY_FILE);
-	_check_item (s_vpn, NM_OPENVPN_KEY_TA_DIR, "1");
+	test_file_contents (expected_id, SRCDIR, s_vpn, NM_OPENVPN3_KEY_CA);
+	test_file_contents (expected_id, SRCDIR, s_vpn, NM_OPENVPN3_KEY_CERT);
+	test_file_contents (expected_id, SRCDIR, s_vpn, NM_OPENVPN3_KEY_KEY);
+	test_file_contents (expected_id, SRCDIR, s_vpn, NM_OPENVPN3_KEY_TA);
+	test_file_contents (expected_id, SRCDIR, s_vpn, NM_OPENVPN3_KEY_CRL_VERIFY_FILE);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_TA_DIR, "1");
 
-	_check_secret (s_vpn, NM_OPENVPN_KEY_PASSWORD, NULL);
-	_check_secret (s_vpn, NM_OPENVPN_KEY_CERTPASS, NULL);
+	_check_secret (s_vpn, NM_OPENVPN3_KEY_PASSWORD, NULL);
+	_check_secret (s_vpn, NM_OPENVPN3_KEY_CERTPASS, NULL);
 
 	g_assert (unlink (TMPDIR"/tls-inline-ca.pem") == 0);
 	g_assert (unlink (TMPDIR"/tls-inline-cert.pem") == 0);
@@ -577,30 +577,30 @@ test_pkcs12_import (void)
 
 	s_vpn = _get_setting_vpn (connection);
 
-	_check_item (s_vpn, NM_OPENVPN_KEY_CONNECTION_TYPE, NM_OPENVPN_CONTYPE_TLS);
-	_check_item (s_vpn, NM_OPENVPN_KEY_DEV, "tun");
-	_check_item (s_vpn, NM_OPENVPN_KEY_PROTO_TCP, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_COMP_LZO, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_COMPRESS, "yes");
-	_check_item (s_vpn, NM_OPENVPN_KEY_FLOAT, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_RENEG_SECONDS, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_REMOTE, "173.8.149.245:1194");
-	_check_item (s_vpn, NM_OPENVPN_KEY_PORT, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_STATIC_KEY, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_STATIC_KEY_DIRECTION, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_CIPHER, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_DATA_CIPHERS, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_DATA_CIPHERS_FALLBACK, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_LOCAL_IP, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_REMOTE_IP, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_AUTH, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_CONNECTION_TYPE, NM_OPENVPN3_CONTYPE_TLS);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_DEV, "tun");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_PROTO_TCP, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_COMP_LZO, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_COMPRESS, "yes");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_FLOAT, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_RENEG_SECONDS, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_REMOTE, "173.8.149.245:1194");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_PORT, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_STATIC_KEY, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_STATIC_KEY_DIRECTION, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_CIPHER, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_DATA_CIPHERS, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_DATA_CIPHERS_FALLBACK, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_LOCAL_IP, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_REMOTE_IP, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_AUTH, NULL);
 
-	_check_item (s_vpn, NM_OPENVPN_KEY_CA,   SRCDIR"/keys/mine.p12");
-	_check_item (s_vpn, NM_OPENVPN_KEY_CERT, SRCDIR"/keys/mine.p12");
-	_check_item (s_vpn, NM_OPENVPN_KEY_KEY,  SRCDIR"/keys/mine.p12");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_CA,   SRCDIR"/keys/mine.p12");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_CERT, SRCDIR"/keys/mine.p12");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_KEY,  SRCDIR"/keys/mine.p12");
 
-	_check_secret (s_vpn, NM_OPENVPN_KEY_PASSWORD, NULL);
-	_check_secret (s_vpn, NM_OPENVPN_KEY_CERTPASS, NULL);
+	_check_secret (s_vpn, NM_OPENVPN3_KEY_PASSWORD, NULL);
+	_check_secret (s_vpn, NM_OPENVPN3_KEY_CERTPASS, NULL);
 }
 
 static void
@@ -620,30 +620,30 @@ test_pkcs12_with_ca_import (void)
 
 	s_vpn = _get_setting_vpn (connection);
 
-	_check_item (s_vpn, NM_OPENVPN_KEY_CONNECTION_TYPE, NM_OPENVPN_CONTYPE_TLS);
-	_check_item (s_vpn, NM_OPENVPN_KEY_DEV, "tun");
-	_check_item (s_vpn, NM_OPENVPN_KEY_PROTO_TCP, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_COMP_LZO, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_COMPRESS, "yes");
-	_check_item (s_vpn, NM_OPENVPN_KEY_FLOAT, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_RENEG_SECONDS, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_REMOTE, "173.8.149.245:1194");
-	_check_item (s_vpn, NM_OPENVPN_KEY_PORT, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_STATIC_KEY, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_STATIC_KEY_DIRECTION, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_CIPHER, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_DATA_CIPHERS, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_DATA_CIPHERS_FALLBACK, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_LOCAL_IP, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_REMOTE_IP, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_AUTH, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_CONNECTION_TYPE, NM_OPENVPN3_CONTYPE_TLS);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_DEV, "tun");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_PROTO_TCP, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_COMP_LZO, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_COMPRESS, "yes");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_FLOAT, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_RENEG_SECONDS, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_REMOTE, "173.8.149.245:1194");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_PORT, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_STATIC_KEY, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_STATIC_KEY_DIRECTION, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_CIPHER, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_DATA_CIPHERS, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_DATA_CIPHERS_FALLBACK, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_LOCAL_IP, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_REMOTE_IP, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_AUTH, NULL);
 
-	_check_item (s_vpn, NM_OPENVPN_KEY_CA,   SRCDIR"/ca.crt");
-	_check_item (s_vpn, NM_OPENVPN_KEY_CERT, SRCDIR"/keys/mine.p12");
-	_check_item (s_vpn, NM_OPENVPN_KEY_KEY,  SRCDIR"/keys/mine.p12");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_CA,   SRCDIR"/ca.crt");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_CERT, SRCDIR"/keys/mine.p12");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_KEY,  SRCDIR"/keys/mine.p12");
 
-	_check_secret (s_vpn, NM_OPENVPN_KEY_PASSWORD, NULL);
-	_check_secret (s_vpn, NM_OPENVPN_KEY_CERTPASS, NULL);
+	_check_secret (s_vpn, NM_OPENVPN3_KEY_PASSWORD, NULL);
+	_check_secret (s_vpn, NM_OPENVPN3_KEY_CERTPASS, NULL);
 }
 
 static void
@@ -667,7 +667,7 @@ test_non_utf8_import (void)
 
 	s_vpn = _get_setting_vpn (connection);
 
-	_check_item (s_vpn, NM_OPENVPN_KEY_CA, SRCDIR"/Att\\344taenko.pem");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_CA, SRCDIR"/Att\\344taenko.pem");
 }
 
 static void
@@ -689,29 +689,29 @@ test_static_key_import (gconstpointer test_data)
 
 	s_vpn = _get_setting_vpn (connection);
 
-	_check_item (s_vpn, NM_OPENVPN_KEY_CONNECTION_TYPE, NM_OPENVPN_CONTYPE_STATIC_KEY);
-	_check_item (s_vpn, NM_OPENVPN_KEY_DEV, "tun");
-	_check_item (s_vpn, NM_OPENVPN_KEY_PROTO_TCP, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_COMP_LZO, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_COMPRESS, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_FLOAT, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_RENEG_SECONDS, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_REMOTE, "10.11.12.13");
-	_check_item (s_vpn, NM_OPENVPN_KEY_PORT, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_STATIC_KEY_DIRECTION, expected_dir);
-	_check_item (s_vpn, NM_OPENVPN_KEY_TA, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_TA_DIR, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_CIPHER, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_DATA_CIPHERS, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_DATA_CIPHERS_FALLBACK, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_LOCAL_IP, "10.8.0.2");
-	_check_item (s_vpn, NM_OPENVPN_KEY_REMOTE_IP, "10.8.0.1");
-	_check_item (s_vpn, NM_OPENVPN_KEY_AUTH, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_CONNECTION_TYPE, NM_OPENVPN3_CONTYPE_STATIC_KEY);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_DEV, "tun");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_PROTO_TCP, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_COMP_LZO, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_COMPRESS, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_FLOAT, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_RENEG_SECONDS, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_REMOTE, "10.11.12.13");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_PORT, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_STATIC_KEY_DIRECTION, expected_dir);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_TA, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_TA_DIR, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_CIPHER, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_DATA_CIPHERS, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_DATA_CIPHERS_FALLBACK, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_LOCAL_IP, "10.8.0.2");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_REMOTE_IP, "10.8.0.1");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_AUTH, NULL);
 
-	_check_item (s_vpn, NM_OPENVPN_KEY_STATIC_KEY, SRCDIR"/static.key");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_STATIC_KEY, SRCDIR"/static.key");
 
-	_check_secret (s_vpn, NM_OPENVPN_KEY_PASSWORD, NULL);
-	_check_secret (s_vpn, NM_OPENVPN_KEY_CERTPASS, NULL);
+	_check_secret (s_vpn, NM_OPENVPN3_KEY_PASSWORD, NULL);
+	_check_secret (s_vpn, NM_OPENVPN3_KEY_CERTPASS, NULL);
 }
 
 static void
@@ -732,8 +732,8 @@ test_port_import (gconstpointer test_data)
 
 	s_vpn = _get_setting_vpn (connection);
 
-	_check_item (s_vpn, NM_OPENVPN_KEY_CONNECTION_TYPE, NM_OPENVPN_CONTYPE_TLS);
-	_check_item (s_vpn, NM_OPENVPN_KEY_PORT, expected_port);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_CONNECTION_TYPE, NM_OPENVPN3_CONTYPE_TLS);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_PORT, expected_port);
 }
 
 static void
@@ -750,7 +750,7 @@ test_connect_timeout_import (gconstpointer test_data)
 
 	s_vpn = _get_setting_vpn (connection);
 
-	_check_item (s_vpn, NM_OPENVPN_KEY_CONNECT_TIMEOUT, expected_timeout);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_CONNECT_TIMEOUT, expected_timeout);
 }
 
 static void
@@ -767,9 +767,9 @@ test_ping_import (gconstpointer test_data)
 
 	s_vpn = _get_setting_vpn (connection);
 
-	_check_item (s_vpn, NM_OPENVPN_KEY_PING, expected_ping);
-	_check_item (s_vpn, NM_OPENVPN_KEY_PING_EXIT, expected_ping_exit);
-	_check_item (s_vpn, NM_OPENVPN_KEY_PING_RESTART, expected_ping_restart);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_PING, expected_ping);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_PING_EXIT, expected_ping_exit);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_PING_RESTART, expected_ping_restart);
 }
 
 static void
@@ -783,9 +783,9 @@ test_tun_opts_import (void)
 
 	s_vpn = _get_setting_vpn (connection);
 
-	_check_item (s_vpn, NM_OPENVPN_KEY_MSSFIX, "yes");
-	_check_item (s_vpn, NM_OPENVPN_KEY_TUNNEL_MTU, "1300");
-	_check_item (s_vpn, NM_OPENVPN_KEY_FRAGMENT_SIZE, "1200");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_MSSFIX, "yes");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_TUNNEL_MTU, "1300");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_FRAGMENT_SIZE, "1200");
 }
 
 static void
@@ -799,33 +799,33 @@ test_proxy_http_import (void)
 
 	s_vpn = _get_setting_vpn (connection);
 
-	_check_item (s_vpn, NM_OPENVPN_KEY_CONNECTION_TYPE, NM_OPENVPN_CONTYPE_PASSWORD);
-	_check_item (s_vpn, NM_OPENVPN_KEY_DEV, "tun");
-	_check_item (s_vpn, NM_OPENVPN_KEY_PROTO_TCP, "yes");
-	_check_item (s_vpn, NM_OPENVPN_KEY_COMP_LZO, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_COMPRESS, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_FLOAT, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_RENEG_SECONDS, "0");
-	_check_item (s_vpn, NM_OPENVPN_KEY_REMOTE, "[aa:bb::1]:1194:udp");
-	_check_item (s_vpn, NM_OPENVPN_KEY_PORT, "2352");
-	_check_item (s_vpn, NM_OPENVPN_KEY_CERT, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_KEY, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_STATIC_KEY, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_STATIC_KEY_DIRECTION, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_TA, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_TA_DIR, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_CIPHER, "AES-256-CBC");
-	_check_item (s_vpn, NM_OPENVPN_KEY_DATA_CIPHERS, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_DATA_CIPHERS_FALLBACK, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_LOCAL_IP, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_REMOTE_IP, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_AUTH, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_AUTH, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_PROXY_TYPE, "http");
-	_check_item (s_vpn, NM_OPENVPN_KEY_PROXY_SERVER, "10.1.1.1");
-	_check_item (s_vpn, NM_OPENVPN_KEY_PROXY_PORT, "8080");
-	_check_item (s_vpn, NM_OPENVPN_KEY_HTTP_PROXY_USERNAME, "myusername");
-	_check_secret (s_vpn, NM_OPENVPN_KEY_HTTP_PROXY_PASSWORD, "mypassword");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_CONNECTION_TYPE, NM_OPENVPN3_CONTYPE_PASSWORD);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_DEV, "tun");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_PROTO_TCP, "yes");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_COMP_LZO, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_COMPRESS, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_FLOAT, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_RENEG_SECONDS, "0");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_REMOTE, "[aa:bb::1]:1194:udp");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_PORT, "2352");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_CERT, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_KEY, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_STATIC_KEY, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_STATIC_KEY_DIRECTION, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_TA, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_TA_DIR, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_CIPHER, "AES-256-CBC");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_DATA_CIPHERS, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_DATA_CIPHERS_FALLBACK, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_LOCAL_IP, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_REMOTE_IP, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_AUTH, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_AUTH, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_PROXY_TYPE, "http");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_PROXY_SERVER, "10.1.1.1");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_PROXY_PORT, "8080");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_HTTP_PROXY_USERNAME, "myusername");
+	_check_secret (s_vpn, NM_OPENVPN3_KEY_HTTP_PROXY_PASSWORD, "mypassword");
 }
 
 #define PROXY_HTTP_EXPORTED_NAME "proxy-http.ovpntest"
@@ -865,33 +865,33 @@ test_proxy_http_with_auth_import (void)
 
 	s_vpn = _get_setting_vpn (connection);
 
-	_check_item (s_vpn, NM_OPENVPN_KEY_CONNECTION_TYPE, NM_OPENVPN_CONTYPE_PASSWORD);
-	_check_item (s_vpn, NM_OPENVPN_KEY_DEV, "tun");
-	_check_item (s_vpn, NM_OPENVPN_KEY_PROTO_TCP, "yes");
-	_check_item (s_vpn, NM_OPENVPN_KEY_COMP_LZO, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_COMPRESS, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_FLOAT, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_RENEG_SECONDS, "0");
-	_check_item (s_vpn, NM_OPENVPN_KEY_REMOTE, "test.server.com:443");
-	_check_item (s_vpn, NM_OPENVPN_KEY_PORT, "2352");
-	_check_item (s_vpn, NM_OPENVPN_KEY_CERT, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_KEY, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_STATIC_KEY, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_STATIC_KEY_DIRECTION, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_TA, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_TA_DIR, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_CIPHER, "AES-256-CBC");
-	_check_item (s_vpn, NM_OPENVPN_KEY_DATA_CIPHERS, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_DATA_CIPHERS_FALLBACK, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_LOCAL_IP, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_REMOTE_IP, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_AUTH, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_AUTH, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_PROXY_TYPE, "http");
-	_check_item (s_vpn, NM_OPENVPN_KEY_PROXY_SERVER, "proxy.domain.tld");
-	_check_item (s_vpn, NM_OPENVPN_KEY_PROXY_PORT, "3128");
-	_check_item (s_vpn, NM_OPENVPN_KEY_HTTP_PROXY_USERNAME, "myusername");
-	_check_secret (s_vpn, NM_OPENVPN_KEY_HTTP_PROXY_PASSWORD, "mypassword");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_CONNECTION_TYPE, NM_OPENVPN3_CONTYPE_PASSWORD);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_DEV, "tun");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_PROTO_TCP, "yes");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_COMP_LZO, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_COMPRESS, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_FLOAT, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_RENEG_SECONDS, "0");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_REMOTE, "test.server.com:443");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_PORT, "2352");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_CERT, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_KEY, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_STATIC_KEY, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_STATIC_KEY_DIRECTION, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_TA, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_TA_DIR, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_CIPHER, "AES-256-CBC");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_DATA_CIPHERS, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_DATA_CIPHERS_FALLBACK, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_LOCAL_IP, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_REMOTE_IP, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_AUTH, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_AUTH, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_PROXY_TYPE, "http");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_PROXY_SERVER, "proxy.domain.tld");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_PROXY_PORT, "3128");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_HTTP_PROXY_USERNAME, "myusername");
+	_check_secret (s_vpn, NM_OPENVPN3_KEY_HTTP_PROXY_PASSWORD, "mypassword");
 }
 
 static void
@@ -905,31 +905,31 @@ test_proxy_socks_import (void)
 
 	s_vpn = _get_setting_vpn (connection);
 
-	_check_item (s_vpn, NM_OPENVPN_KEY_CONNECTION_TYPE, NM_OPENVPN_CONTYPE_PASSWORD);
-	_check_item (s_vpn, NM_OPENVPN_KEY_DEV, "tun");
-	_check_item (s_vpn, NM_OPENVPN_KEY_PROTO_TCP, "yes");
-	_check_item (s_vpn, NM_OPENVPN_KEY_COMP_LZO, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_COMPRESS, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_FLOAT, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_RENEG_SECONDS, "0");
-	_check_item (s_vpn, NM_OPENVPN_KEY_REMOTE, "test.server.com:443");
-	_check_item (s_vpn, NM_OPENVPN_KEY_PORT, "2352");
-	_check_item (s_vpn, NM_OPENVPN_KEY_CERT, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_KEY, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_STATIC_KEY, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_STATIC_KEY_DIRECTION, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_TA, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_TA_DIR, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_CIPHER, "AES-256-CBC");
-	_check_item (s_vpn, NM_OPENVPN_KEY_DATA_CIPHERS, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_DATA_CIPHERS_FALLBACK, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_LOCAL_IP, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_REMOTE_IP, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_AUTH, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_AUTH, NULL);
-	_check_item (s_vpn, NM_OPENVPN_KEY_PROXY_TYPE, "socks");
-	_check_item (s_vpn, NM_OPENVPN_KEY_PROXY_SERVER, "10.1.1.1");
-	_check_item (s_vpn, NM_OPENVPN_KEY_PROXY_PORT, "1080");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_CONNECTION_TYPE, NM_OPENVPN3_CONTYPE_PASSWORD);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_DEV, "tun");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_PROTO_TCP, "yes");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_COMP_LZO, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_COMPRESS, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_FLOAT, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_RENEG_SECONDS, "0");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_REMOTE, "test.server.com:443");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_PORT, "2352");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_CERT, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_KEY, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_STATIC_KEY, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_STATIC_KEY_DIRECTION, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_TA, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_TA_DIR, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_CIPHER, "AES-256-CBC");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_DATA_CIPHERS, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_DATA_CIPHERS_FALLBACK, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_LOCAL_IP, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_REMOTE_IP, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_AUTH, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_AUTH, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_PROXY_TYPE, "socks");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_PROXY_SERVER, "10.1.1.1");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_PROXY_PORT, "1080");
 }
 
 static void
@@ -943,8 +943,8 @@ test_keysize_import (void)
 
 	s_vpn = _get_setting_vpn (connection);
 
-	_check_item (s_vpn, NM_OPENVPN_KEY_KEYSIZE, "512");
-	_check_item (s_vpn, NM_OPENVPN_KEY_NCP_DISABLE, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_KEYSIZE, "512");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_NCP_DISABLE, NULL);
 }
 
 static void
@@ -961,8 +961,8 @@ test_device_import (gconstpointer test_data)
 
 	s_vpn = _get_setting_vpn (connection);
 
-	_check_item (s_vpn, NM_OPENVPN_KEY_DEV, expected_dev);
-	_check_item (s_vpn, NM_OPENVPN_KEY_DEV_TYPE, expected_devtype);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_DEV, expected_dev);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_DEV_TYPE, expected_devtype);
 }
 
 static void
@@ -979,7 +979,7 @@ test_mtu_disc_import (gconstpointer test_data)
 
 	s_vpn = _get_setting_vpn (connection);
 
-	_check_item (s_vpn, NM_OPENVPN_KEY_MTU_DISC, expected_val);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_MTU_DISC, expected_val);
 }
 
 
@@ -999,11 +999,11 @@ test_crl_verify_import (gconstpointer test_data)
 	s_vpn = _get_setting_vpn (connection);
 
 	if (GPOINTER_TO_INT (is_file)) {
-		_check_item (s_vpn, NM_OPENVPN_KEY_CRL_VERIFY_FILE, expected_val);
-		_check_item (s_vpn, NM_OPENVPN_KEY_CRL_VERIFY_DIR, NULL);
+		_check_item (s_vpn, NM_OPENVPN3_KEY_CRL_VERIFY_FILE, expected_val);
+		_check_item (s_vpn, NM_OPENVPN3_KEY_CRL_VERIFY_DIR, NULL);
 	} else {
-		_check_item (s_vpn, NM_OPENVPN_KEY_CRL_VERIFY_DIR, expected_val);
-		_check_item (s_vpn, NM_OPENVPN_KEY_CRL_VERIFY_FILE, NULL);
+		_check_item (s_vpn, NM_OPENVPN3_KEY_CRL_VERIFY_DIR, expected_val);
+		_check_item (s_vpn, NM_OPENVPN3_KEY_CRL_VERIFY_FILE, NULL);
 	}
 }
 
@@ -1032,7 +1032,7 @@ test_route_import (void)
 
 	s_vpn = _get_setting_vpn (connection);
 
-	_check_item (s_vpn, NM_OPENVPN_KEY_CONNECTION_TYPE, NM_OPENVPN_CONTYPE_TLS);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_CONNECTION_TYPE, NM_OPENVPN3_CONTYPE_TLS);
 
 	s_ip4 = _get_setting_ip4_config (connection);
 
@@ -1069,9 +1069,9 @@ test_compress_import (void)
 
 	s_vpn = nm_connection_get_setting_vpn (connection);
 
-	_check_item (s_vpn, NM_OPENVPN_KEY_ALLOW_COMPRESSION, "asym");
-	_check_item (s_vpn, NM_OPENVPN_KEY_COMP_LZO, "adaptive");
-	_check_item (s_vpn, NM_OPENVPN_KEY_COMPRESS, "lzo");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_ALLOW_COMPRESSION, "asym");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_COMP_LZO, "adaptive");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_COMPRESS, "lzo");
 }
 
 static void
@@ -1085,7 +1085,7 @@ test_push_peer_info_import (void)
 
 	s_vpn = nm_connection_get_setting_vpn (connection);
 
-	_check_item (s_vpn, NM_OPENVPN_KEY_PUSH_PEER_INFO, "yes");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_PUSH_PEER_INFO, "yes");
 }
 
 static void
@@ -1099,7 +1099,7 @@ test_proto_udp_import (void)
 
 	s_vpn = nm_connection_get_setting_vpn (connection);
 
-	_check_item (s_vpn, NM_OPENVPN_KEY_PROTO_TCP, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_PROTO_TCP, NULL);
 }
 
 static void
@@ -1113,7 +1113,7 @@ test_proto_udp4_import (void)
 
 	s_vpn = nm_connection_get_setting_vpn (connection);
 
-	_check_item (s_vpn, NM_OPENVPN_KEY_PROTO_TCP, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_PROTO_TCP, NULL);
 }
 
 static void
@@ -1127,7 +1127,7 @@ test_proto_udp6_import (void)
 
 	s_vpn = nm_connection_get_setting_vpn (connection);
 
-	_check_item (s_vpn, NM_OPENVPN_KEY_PROTO_TCP, NULL);
+	_check_item (s_vpn, NM_OPENVPN3_KEY_PROTO_TCP, NULL);
 }
 
 static void
@@ -1141,7 +1141,7 @@ test_proto_tcp_import (void)
 
 	s_vpn = nm_connection_get_setting_vpn (connection);
 
-	_check_item (s_vpn, NM_OPENVPN_KEY_PROTO_TCP, "yes");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_PROTO_TCP, "yes");
 }
 
 static void
@@ -1155,7 +1155,7 @@ test_proto_tcp4_import (void)
 
 	s_vpn = nm_connection_get_setting_vpn (connection);
 
-	_check_item (s_vpn, NM_OPENVPN_KEY_PROTO_TCP, "yes");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_PROTO_TCP, "yes");
 }
 
 static void
@@ -1169,7 +1169,7 @@ test_proto_tcp6_import (void)
 
 	s_vpn = nm_connection_get_setting_vpn (connection);
 
-	_check_item (s_vpn, NM_OPENVPN_KEY_PROTO_TCP, "yes");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_PROTO_TCP, "yes");
 }
 
 static void
@@ -1183,7 +1183,7 @@ test_proto_tcp4_client_import (void)
 
 	s_vpn = nm_connection_get_setting_vpn (connection);
 
-	_check_item (s_vpn, NM_OPENVPN_KEY_PROTO_TCP, "yes");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_PROTO_TCP, "yes");
 }
 
 static void
@@ -1197,7 +1197,7 @@ test_proto_tcp6_client_import (void)
 
 	s_vpn = nm_connection_get_setting_vpn (connection);
 
-	_check_item (s_vpn, NM_OPENVPN_KEY_PROTO_TCP, "yes");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_PROTO_TCP, "yes");
 }
 
 static void
@@ -1211,8 +1211,8 @@ test_data_ciphers_fallback_import (void)
 
 	s_vpn = _get_setting_vpn (connection);
 
-	_check_item (s_vpn, NM_OPENVPN_KEY_DATA_CIPHERS, "AES-256-CBC");
-	_check_item (s_vpn, NM_OPENVPN_KEY_DATA_CIPHERS_FALLBACK, "AES-128-CBC");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_DATA_CIPHERS, "AES-256-CBC");
+	_check_item (s_vpn, NM_OPENVPN3_KEY_DATA_CIPHERS_FALLBACK, "AES-128-CBC");
 }
 
 /*****************************************************************************/

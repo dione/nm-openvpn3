@@ -24,7 +24,7 @@
 
 #include "nm-default.h"
 
-#include "nm-openvpn-editor.h"
+#include "nm-openvpn3-editor.h"
 
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -210,21 +210,21 @@ tls_setup (GtkBuilder *builder,
 	g_signal_connect (G_OBJECT (cert), "changed", G_CALLBACK (changed_cb), user_data);
 
 	if (s_vpn) {
-		value = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_CERT);
+		value = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_CERT);
 		if (value && *value)
 			nma_cert_chooser_set_cert (cert, value, NM_SETTING_802_1X_CK_SCHEME_PATH);
 
-		value = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_KEY);
+		value = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_KEY);
 		if (value && *value)
 			nma_cert_chooser_set_key (cert, value, NM_SETTING_802_1X_CK_SCHEME_PATH);
-		value = nm_setting_vpn_get_secret (s_vpn, NM_OPENVPN_KEY_CERTPASS);
+		value = nm_setting_vpn_get_secret (s_vpn, NM_OPENVPN3_KEY_CERTPASS);
 		if (value)
 			nma_cert_chooser_set_key_password (cert, value);
 	}
 
 	nma_cert_chooser_setup_key_password_storage (cert, NM_SETTING_SECRET_FLAG_AGENT_OWNED,
 	                                             (NMSetting *) s_vpn,
-	                                             NM_OPENVPN_KEY_CERTPASS, TRUE, FALSE);
+	                                             NM_OPENVPN3_KEY_CERTPASS, TRUE, FALSE);
 
 	/* Link choosers to the PKCS#12 changer callbacks */
 	g_signal_connect_object (ca_chooser, "changed", G_CALLBACK (tls_ca_changed_cb), cert, 0);
@@ -246,7 +246,7 @@ pw_setup (GtkBuilder *builder,
 	widget = GTK_WIDGET (gtk_builder_get_object (builder, namebuf));
 
 	if (s_vpn) {
-		value = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_USERNAME);
+		value = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_USERNAME);
 		if (value && *value)
 			gtk_editable_set_text (GTK_EDITABLE (widget), value);
 	}
@@ -258,13 +258,13 @@ pw_setup (GtkBuilder *builder,
 	g_signal_connect (widget, "changed", G_CALLBACK (changed_cb), user_data);
 
 	if (s_vpn) {
-		value = nm_setting_vpn_get_secret (s_vpn, NM_OPENVPN_KEY_PASSWORD);
+		value = nm_setting_vpn_get_secret (s_vpn, NM_OPENVPN3_KEY_PASSWORD);
 		if (value)
 			gtk_editable_set_text (GTK_EDITABLE (widget), value);
 	}
 
 	nma_utils_setup_password_storage (widget, NM_SETTING_SECRET_FLAG_AGENT_OWNED,
-	                                  (NMSetting *) s_vpn, NM_OPENVPN_KEY_PASSWORD,
+	                                  (NMSetting *) s_vpn, NM_OPENVPN3_KEY_PASSWORD,
 	                                  TRUE, FALSE);
 }
 
@@ -290,14 +290,14 @@ tls_pw_init_auth_widget (GtkBuilder *builder,
 	nma_cert_chooser_add_to_size_group (ca, GTK_SIZE_GROUP (gtk_builder_get_object (builder, "labels")));
 
 	/* Three major connection types here: TLS-only, PW-only, and TLS + PW */
-	if (!strcmp (contype, NM_OPENVPN_CONTYPE_TLS) || !strcmp (contype, NM_OPENVPN_CONTYPE_PASSWORD_TLS))
+	if (!strcmp (contype, NM_OPENVPN3_CONTYPE_TLS) || !strcmp (contype, NM_OPENVPN3_CONTYPE_PASSWORD_TLS))
 		tls = TRUE;
-	if (!strcmp (contype, NM_OPENVPN_CONTYPE_PASSWORD) || !strcmp (contype, NM_OPENVPN_CONTYPE_PASSWORD_TLS))
+	if (!strcmp (contype, NM_OPENVPN3_CONTYPE_PASSWORD) || !strcmp (contype, NM_OPENVPN3_CONTYPE_PASSWORD_TLS))
 		pw = TRUE;
 
 	g_signal_connect (ca, "changed", G_CALLBACK (changed_cb), user_data);
 	if (s_vpn) {
-		value = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_CA);
+		value = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_CA);
 		if (value && *value)
 			nma_cert_chooser_set_cert (ca, value, NM_SETTING_802_1X_CK_SCHEME_PATH);
 	}
@@ -356,7 +356,7 @@ sk_init_auth_widget (GtkBuilder *builder,
 #endif
 	g_signal_connect (G_OBJECT (widget), "response", G_CALLBACK (chooser_response), label);
 	if (s_vpn) {
-		value = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_STATIC_KEY);
+		value = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_STATIC_KEY);
 		if (value && *value) {
 			file = g_file_new_for_path (value);
 			gtk_file_chooser_set_file (GTK_FILE_CHOOSER (widget), file, NULL);
@@ -370,7 +370,7 @@ sk_init_auth_widget (GtkBuilder *builder,
 	store = gtk_list_store_new (2, G_TYPE_STRING, G_TYPE_INT);
 
 	if (s_vpn) {
-		value = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_STATIC_KEY_DIRECTION);
+		value = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_STATIC_KEY_DIRECTION);
 		direction = _nm_utils_ascii_str_to_int64 (value, 10, 0, 1, -1);
 	} else
 		direction = -1;
@@ -397,7 +397,7 @@ sk_init_auth_widget (GtkBuilder *builder,
 	widget = GTK_WIDGET (gtk_builder_get_object (builder, "sk_local_address_entry"));
 	g_signal_connect (G_OBJECT (widget), "changed", G_CALLBACK (changed_cb), user_data);
 	if (s_vpn) {
-		value = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_LOCAL_IP);
+		value = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_LOCAL_IP);
 		if (value && *value)
 			gtk_editable_set_text (GTK_EDITABLE (widget), value);
 	}
@@ -405,7 +405,7 @@ sk_init_auth_widget (GtkBuilder *builder,
 	widget = GTK_WIDGET (gtk_builder_get_object (builder, "sk_remote_address_entry"));
 	g_signal_connect (G_OBJECT (widget), "changed", G_CALLBACK (changed_cb), user_data);
 	if (s_vpn) {
-		value = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_REMOTE_IP);
+		value = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_REMOTE_IP);
 		if (value && *value)
 			gtk_editable_set_text (GTK_EDITABLE (widget), value);
 	}
@@ -438,7 +438,7 @@ validate_tls (GtkBuilder *builder, const char *prefix, GError **error)
 		g_set_error (error,
 		             NMV_EDITOR_PLUGIN_ERROR,
 		             NMV_EDITOR_PLUGIN_ERROR_INVALID_PROPERTY,
-		             "%s: %s", NM_OPENVPN_KEY_CA, local->message);
+		             "%s: %s", NM_OPENVPN3_KEY_CA, local->message);
 		g_error_free (local);
 		return FALSE;
 	}
@@ -450,7 +450,7 @@ validate_tls (GtkBuilder *builder, const char *prefix, GError **error)
 		g_set_error (error,
 		             NMV_EDITOR_PLUGIN_ERROR,
 		             NMV_EDITOR_PLUGIN_ERROR_INVALID_PROPERTY,
-		             "%s: %s", NM_OPENVPN_KEY_CERT, local->message);
+		             "%s: %s", NM_OPENVPN3_KEY_CERT, local->message);
 		g_error_free (local);
 		return FALSE;
 	}
@@ -470,7 +470,7 @@ validate_tls (GtkBuilder *builder, const char *prefix, GError **error)
 			g_set_error (error,
 			             NMV_EDITOR_PLUGIN_ERROR,
 			             NMV_EDITOR_PLUGIN_ERROR_INVALID_PROPERTY,
-			             NM_OPENVPN_KEY_CERTPASS);
+			             NM_OPENVPN3_KEY_CERTPASS);
 			return FALSE;
 		}
 	}
@@ -486,29 +486,29 @@ auth_widget_check_validity (GtkBuilder *builder, const char *contype, GError **e
 	GFile *file;
 	GError *local = NULL;
 
-	if (!strcmp (contype, NM_OPENVPN_CONTYPE_TLS)) {
+	if (!strcmp (contype, NM_OPENVPN3_CONTYPE_TLS)) {
 		if (!validate_tls (builder, "tls", error))
 			return FALSE;
-	} else if (!strcmp (contype, NM_OPENVPN_CONTYPE_PASSWORD_TLS)) {
+	} else if (!strcmp (contype, NM_OPENVPN3_CONTYPE_PASSWORD_TLS)) {
 		if (!validate_tls (builder, "pw_tls", error))
 			return FALSE;
-	} else if (!strcmp (contype, NM_OPENVPN_CONTYPE_PASSWORD)) {
+	} else if (!strcmp (contype, NM_OPENVPN3_CONTYPE_PASSWORD)) {
 		if (!validate_cert_chooser (builder, "pw_ca_cert", &local)) {
 			g_set_error (error,
 			             NMV_EDITOR_PLUGIN_ERROR,
 			             NMV_EDITOR_PLUGIN_ERROR_INVALID_PROPERTY,
-			             "%s: %s", NM_OPENVPN_KEY_CA, local->message);
+			             "%s: %s", NM_OPENVPN3_KEY_CA, local->message);
 			g_error_free (local);
 			return FALSE;
 		}
-	} else if (!strcmp (contype, NM_OPENVPN_CONTYPE_STATIC_KEY)) {
+	} else if (!strcmp (contype, NM_OPENVPN3_CONTYPE_STATIC_KEY)) {
 		widget = GTK_WIDGET (gtk_builder_get_object (builder, "sk_key_chooser"));
 		file = gtk_file_chooser_get_file (GTK_FILE_CHOOSER (widget));
 		if (!file) {
 			g_set_error (error,
 			             NMV_EDITOR_PLUGIN_ERROR,
 			             NMV_EDITOR_PLUGIN_ERROR_INVALID_PROPERTY,
-			             NM_OPENVPN_KEY_STATIC_KEY);
+			             NM_OPENVPN3_KEY_STATIC_KEY);
 			return FALSE;
 		}
 		g_object_unref (file);
@@ -519,7 +519,7 @@ auth_widget_check_validity (GtkBuilder *builder, const char *contype, GError **e
 			g_set_error (error,
 			             NMV_EDITOR_PLUGIN_ERROR,
 			             NMV_EDITOR_PLUGIN_ERROR_INVALID_PROPERTY,
-			             NM_OPENVPN_KEY_LOCAL_IP);
+			             NM_OPENVPN3_KEY_LOCAL_IP);
 			return FALSE;
 		}
 
@@ -529,7 +529,7 @@ auth_widget_check_validity (GtkBuilder *builder, const char *contype, GError **e
 			g_set_error (error,
 			             NMV_EDITOR_PLUGIN_ERROR,
 			             NMV_EDITOR_PLUGIN_ERROR_INVALID_PROPERTY,
-			             NM_OPENVPN_KEY_REMOTE_IP);
+			             NM_OPENVPN3_KEY_REMOTE_IP);
 			return FALSE;
 		}
 	} else
@@ -589,15 +589,15 @@ static void
 update_tls (GtkBuilder *builder, const char *prefix, NMSettingVpn *s_vpn)
 {
 	update_from_cert_chooser (builder,
-	                          NM_OPENVPN_KEY_CA,
+	                          NM_OPENVPN3_KEY_CA,
 	                          NULL,
 	                          NULL,
 	                          prefix, "ca_cert", s_vpn);
 
 	update_from_cert_chooser (builder,
-	                          NM_OPENVPN_KEY_CERT,
-	                          NM_OPENVPN_KEY_KEY,
-	                          NM_OPENVPN_KEY_CERTPASS,
+	                          NM_OPENVPN3_KEY_CERT,
+	                          NM_OPENVPN3_KEY_KEY,
+	                          NM_OPENVPN3_KEY_CERTPASS,
 	                          prefix, "user_cert", s_vpn);
 }
 
@@ -617,15 +617,15 @@ update_pw (GtkBuilder *builder, const char *prefix, NMSettingVpn *s_vpn)
 	widget = GTK_WIDGET (gtk_builder_get_object (builder, namebuf));
 	str = gtk_editable_get_text (GTK_EDITABLE (widget));
 	if (str && *str)
-		nm_setting_vpn_add_data_item (s_vpn, NM_OPENVPN_KEY_USERNAME, str);
+		nm_setting_vpn_add_data_item (s_vpn, NM_OPENVPN3_KEY_USERNAME, str);
 
 	nm_sprintf_buf (namebuf, "%s_password_entry", prefix);
 	widget = (GtkWidget *) gtk_builder_get_object (builder, namebuf);
 	str = gtk_editable_get_text (GTK_EDITABLE (widget));
 	if (str && *str)
-		nm_setting_vpn_add_secret (s_vpn, NM_OPENVPN_KEY_PASSWORD, str);
+		nm_setting_vpn_add_secret (s_vpn, NM_OPENVPN3_KEY_PASSWORD, str);
 	pw_flags = nma_utils_menu_to_secret_flags (widget);
-	nm_setting_set_secret_flags (NM_SETTING (s_vpn), NM_OPENVPN_KEY_PASSWORD, pw_flags, NULL);
+	nm_setting_set_secret_flags (NM_SETTING (s_vpn), NM_OPENVPN3_KEY_PASSWORD, pw_flags, NULL);
 }
 
 static gboolean
@@ -640,16 +640,16 @@ auth_widget_update_connection (GtkBuilder *builder,
 	char *filename;
 	GFile *file;
 
-	if (!strcmp (contype, NM_OPENVPN_CONTYPE_TLS)) {
+	if (!strcmp (contype, NM_OPENVPN3_CONTYPE_TLS)) {
 		update_tls (builder, "tls", s_vpn);
-	} else if (!strcmp (contype, NM_OPENVPN_CONTYPE_PASSWORD)) {
-		update_from_cert_chooser (builder, NM_OPENVPN_KEY_CA, NULL, NULL,
+	} else if (!strcmp (contype, NM_OPENVPN3_CONTYPE_PASSWORD)) {
+		update_from_cert_chooser (builder, NM_OPENVPN3_KEY_CA, NULL, NULL,
 		                          "pw", "ca_cert", s_vpn);
 		update_pw (builder, "pw", s_vpn);
-	} else if (!strcmp (contype, NM_OPENVPN_CONTYPE_PASSWORD_TLS)) {
+	} else if (!strcmp (contype, NM_OPENVPN3_CONTYPE_PASSWORD_TLS)) {
 		update_tls (builder, "pw_tls", s_vpn);
 		update_pw (builder, "pw_tls", s_vpn);
-	} else if (!strcmp (contype, NM_OPENVPN_CONTYPE_STATIC_KEY)) {
+	} else if (!strcmp (contype, NM_OPENVPN3_CONTYPE_STATIC_KEY)) {
 		/* Update static key */
 		widget = GTK_WIDGET (gtk_builder_get_object (builder, "sk_key_chooser"));
 		file = gtk_file_chooser_get_file (GTK_FILE_CHOOSER (widget));
@@ -658,7 +658,7 @@ auth_widget_update_connection (GtkBuilder *builder,
 		else
 			filename = NULL;
 		if (filename && filename[0])
-			nm_setting_vpn_add_data_item (s_vpn, NM_OPENVPN_KEY_STATIC_KEY, filename);
+			nm_setting_vpn_add_data_item (s_vpn, NM_OPENVPN3_KEY_STATIC_KEY, filename);
 		g_free (filename);
 		g_clear_object (&file);
 
@@ -673,7 +673,7 @@ auth_widget_update_connection (GtkBuilder *builder,
 				char tmp[30];
 
 				nm_sprintf_buf (tmp, "%d", direction);
-				nm_setting_vpn_add_data_item (s_vpn, NM_OPENVPN_KEY_STATIC_KEY_DIRECTION, tmp);
+				nm_setting_vpn_add_data_item (s_vpn, NM_OPENVPN3_KEY_STATIC_KEY_DIRECTION, tmp);
 			}
 		}
 
@@ -681,17 +681,17 @@ auth_widget_update_connection (GtkBuilder *builder,
 		widget = GTK_WIDGET (gtk_builder_get_object (builder, "sk_local_address_entry"));
 		str = gtk_editable_get_text (GTK_EDITABLE (widget));
 		if (str && *str)
-			nm_setting_vpn_add_data_item (s_vpn, NM_OPENVPN_KEY_LOCAL_IP, str);
+			nm_setting_vpn_add_data_item (s_vpn, NM_OPENVPN3_KEY_LOCAL_IP, str);
 
 		/* Update remote address */
 		widget = GTK_WIDGET (gtk_builder_get_object (builder, "sk_remote_address_entry"));
 		str = gtk_editable_get_text (GTK_EDITABLE (widget));
 		if (str && *str)
-			nm_setting_vpn_add_data_item (s_vpn, NM_OPENVPN_KEY_REMOTE_IP, str);
+			nm_setting_vpn_add_data_item (s_vpn, NM_OPENVPN3_KEY_REMOTE_IP, str);
 	} else
 		g_return_val_if_reached (FALSE);
 
-	nm_setting_set_secret_flags (NM_SETTING (s_vpn), NM_OPENVPN_KEY_CHALLENGE_RESPONSE,
+	nm_setting_set_secret_flags (NM_SETTING (s_vpn), NM_OPENVPN3_KEY_CHALLENGE_RESPONSE,
 	                             NM_SETTING_SECRET_FLAG_NOT_SAVED, NULL);
 
 	return TRUE;
@@ -787,55 +787,55 @@ sk_file_chooser_filter_new (void)
 }
 
 static const char *const advanced_keys[] = {
-	NM_OPENVPN_KEY_ALLOW_PULL_FQDN,
-	NM_OPENVPN_KEY_AUTH,
-	NM_OPENVPN_KEY_CIPHER,
-	NM_OPENVPN_KEY_DATA_CIPHERS,
-	NM_OPENVPN_KEY_DATA_CIPHERS_FALLBACK,
-	NM_OPENVPN_KEY_COMPRESS,
-	NM_OPENVPN_KEY_COMP_LZO,
-	NM_OPENVPN_KEY_CONNECT_TIMEOUT,
-	NM_OPENVPN_KEY_CRL_VERIFY_DIR,
-	NM_OPENVPN_KEY_CRL_VERIFY_FILE,
-	NM_OPENVPN_KEY_DEV,
-	NM_OPENVPN_KEY_DEV_TYPE,
-	NM_OPENVPN_KEY_EXTRA_CERTS,
-	NM_OPENVPN_KEY_FLOAT,
-	NM_OPENVPN_KEY_FRAGMENT_SIZE,
-	NM_OPENVPN_KEY_HTTP_PROXY_USERNAME,
-	NM_OPENVPN_KEY_KEYSIZE,
-	NM_OPENVPN_KEY_MAX_ROUTES,
-	NM_OPENVPN_KEY_MSSFIX,
-	NM_OPENVPN_KEY_MTU_DISC,
-	NM_OPENVPN_KEY_NCP_DISABLE,
-	NM_OPENVPN_KEY_NS_CERT_TYPE,
-	NM_OPENVPN_KEY_PING,
-	NM_OPENVPN_KEY_PING_EXIT,
-	NM_OPENVPN_KEY_PING_RESTART,
-	NM_OPENVPN_KEY_PORT,
-	NM_OPENVPN_KEY_PROTO_TCP,
-	NM_OPENVPN_KEY_PROXY_PORT,
-	NM_OPENVPN_KEY_PROXY_RETRY,
-	NM_OPENVPN_KEY_PROXY_SERVER,
-	NM_OPENVPN_KEY_PROXY_TYPE,
-	NM_OPENVPN_KEY_PUSH_PEER_INFO,
-	NM_OPENVPN_KEY_REMOTE_CERT_TLS,
-	NM_OPENVPN_KEY_REMOTE_RANDOM,
-	NM_OPENVPN_KEY_REMOTE_RANDOM_HOSTNAME,
-	NM_OPENVPN_KEY_RENEG_SECONDS,
-	NM_OPENVPN_KEY_TA,
-	NM_OPENVPN_KEY_TAP_DEV,
-	NM_OPENVPN_KEY_TA_DIR,
-	NM_OPENVPN_KEY_TLS_CIPHER,
-	NM_OPENVPN_KEY_TLS_CRYPT,
-	NM_OPENVPN_KEY_TLS_CRYPT_V2,
-	NM_OPENVPN_KEY_TLS_REMOTE,
-	NM_OPENVPN_KEY_TLS_VERSION_MIN,
-	NM_OPENVPN_KEY_TLS_VERSION_MIN_OR_HIGHEST,
-	NM_OPENVPN_KEY_TLS_VERSION_MAX,
-	NM_OPENVPN_KEY_TUNNEL_MTU,
-	NM_OPENVPN_KEY_TUN_IPV6,
-	NM_OPENVPN_KEY_VERIFY_X509_NAME,
+	NM_OPENVPN3_KEY_ALLOW_PULL_FQDN,
+	NM_OPENVPN3_KEY_AUTH,
+	NM_OPENVPN3_KEY_CIPHER,
+	NM_OPENVPN3_KEY_DATA_CIPHERS,
+	NM_OPENVPN3_KEY_DATA_CIPHERS_FALLBACK,
+	NM_OPENVPN3_KEY_COMPRESS,
+	NM_OPENVPN3_KEY_COMP_LZO,
+	NM_OPENVPN3_KEY_CONNECT_TIMEOUT,
+	NM_OPENVPN3_KEY_CRL_VERIFY_DIR,
+	NM_OPENVPN3_KEY_CRL_VERIFY_FILE,
+	NM_OPENVPN3_KEY_DEV,
+	NM_OPENVPN3_KEY_DEV_TYPE,
+	NM_OPENVPN3_KEY_EXTRA_CERTS,
+	NM_OPENVPN3_KEY_FLOAT,
+	NM_OPENVPN3_KEY_FRAGMENT_SIZE,
+	NM_OPENVPN3_KEY_HTTP_PROXY_USERNAME,
+	NM_OPENVPN3_KEY_KEYSIZE,
+	NM_OPENVPN3_KEY_MAX_ROUTES,
+	NM_OPENVPN3_KEY_MSSFIX,
+	NM_OPENVPN3_KEY_MTU_DISC,
+	NM_OPENVPN3_KEY_NCP_DISABLE,
+	NM_OPENVPN3_KEY_NS_CERT_TYPE,
+	NM_OPENVPN3_KEY_PING,
+	NM_OPENVPN3_KEY_PING_EXIT,
+	NM_OPENVPN3_KEY_PING_RESTART,
+	NM_OPENVPN3_KEY_PORT,
+	NM_OPENVPN3_KEY_PROTO_TCP,
+	NM_OPENVPN3_KEY_PROXY_PORT,
+	NM_OPENVPN3_KEY_PROXY_RETRY,
+	NM_OPENVPN3_KEY_PROXY_SERVER,
+	NM_OPENVPN3_KEY_PROXY_TYPE,
+	NM_OPENVPN3_KEY_PUSH_PEER_INFO,
+	NM_OPENVPN3_KEY_REMOTE_CERT_TLS,
+	NM_OPENVPN3_KEY_REMOTE_RANDOM,
+	NM_OPENVPN3_KEY_REMOTE_RANDOM_HOSTNAME,
+	NM_OPENVPN3_KEY_RENEG_SECONDS,
+	NM_OPENVPN3_KEY_TA,
+	NM_OPENVPN3_KEY_TAP_DEV,
+	NM_OPENVPN3_KEY_TA_DIR,
+	NM_OPENVPN3_KEY_TLS_CIPHER,
+	NM_OPENVPN3_KEY_TLS_CRYPT,
+	NM_OPENVPN3_KEY_TLS_CRYPT_V2,
+	NM_OPENVPN3_KEY_TLS_REMOTE,
+	NM_OPENVPN3_KEY_TLS_VERSION_MIN,
+	NM_OPENVPN3_KEY_TLS_VERSION_MIN_OR_HIGHEST,
+	NM_OPENVPN3_KEY_TLS_VERSION_MAX,
+	NM_OPENVPN3_KEY_TUNNEL_MTU,
+	NM_OPENVPN3_KEY_TUN_IPV6,
+	NM_OPENVPN3_KEY_VERIFY_X509_NAME,
 };
 
 static void
@@ -862,16 +862,16 @@ advanced_dialog_new_hash_from_connection (NMConnection *connection)
 	nm_setting_vpn_foreach_data_item (s_vpn, copy_values, hash);
 
 	/* HTTP Proxy password is special */
-	secret = nm_setting_vpn_get_secret (s_vpn, NM_OPENVPN_KEY_HTTP_PROXY_PASSWORD);
+	secret = nm_setting_vpn_get_secret (s_vpn, NM_OPENVPN3_KEY_HTTP_PROXY_PASSWORD);
 	if (secret) {
 		g_hash_table_insert (hash,
-		                     NM_OPENVPN_KEY_HTTP_PROXY_PASSWORD,
+		                     NM_OPENVPN3_KEY_HTTP_PROXY_PASSWORD,
 		                     g_strdup (secret));
 	}
-	flags = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_HTTP_PROXY_PASSWORD_FLAGS);
+	flags = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_HTTP_PROXY_PASSWORD_FLAGS);
 	if (flags) {
 		g_hash_table_insert (hash,
-		                     NM_OPENVPN_KEY_HTTP_PROXY_PASSWORD_FLAGS,
+		                     NM_OPENVPN3_KEY_HTTP_PROXY_PASSWORD_FLAGS,
 		                     g_strdup (flags));
 	}
 
@@ -1018,15 +1018,15 @@ populate_hmacauth_combo (GtkComboBox *box, const char *hmacauth)
 		const char *name;
 		const char *pretty_name;
 	} items[] = {
-		{ NM_OPENVPN_AUTH_NONE,      N_("None") },
-		{ NM_OPENVPN_AUTH_RSA_MD4,   N_("RSA MD-4") },
-		{ NM_OPENVPN_AUTH_MD5,       N_("MD-5") },
-		{ NM_OPENVPN_AUTH_SHA1,      N_("SHA-1") },
-		{ NM_OPENVPN_AUTH_SHA224,    N_("SHA-224") },
-		{ NM_OPENVPN_AUTH_SHA256,    N_("SHA-256") },
-		{ NM_OPENVPN_AUTH_SHA384,    N_("SHA-384") },
-		{ NM_OPENVPN_AUTH_SHA512,    N_("SHA-512") },
-		{ NM_OPENVPN_AUTH_RIPEMD160, N_("RIPEMD-160") },
+		{ NM_OPENVPN3_AUTH_NONE,      N_("None") },
+		{ NM_OPENVPN3_AUTH_RSA_MD4,   N_("RSA MD-4") },
+		{ NM_OPENVPN3_AUTH_MD5,       N_("MD-5") },
+		{ NM_OPENVPN3_AUTH_SHA1,      N_("SHA-1") },
+		{ NM_OPENVPN3_AUTH_SHA224,    N_("SHA-224") },
+		{ NM_OPENVPN3_AUTH_SHA256,    N_("SHA-256") },
+		{ NM_OPENVPN3_AUTH_SHA384,    N_("SHA-384") },
+		{ NM_OPENVPN3_AUTH_SHA512,    N_("SHA-512") },
+		{ NM_OPENVPN3_AUTH_RIPEMD160, N_("RIPEMD-160") },
 	};
 
 	store = gtk_list_store_new (3, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_BOOLEAN);
@@ -1063,9 +1063,9 @@ populate_hmacauth_combo (GtkComboBox *box, const char *hmacauth)
 }
 
 #define TLS_REMOTE_MODE_NONE        "none"
-#define TLS_REMOTE_MODE_SUBJECT     NM_OPENVPN_VERIFY_X509_NAME_TYPE_SUBJECT
-#define TLS_REMOTE_MODE_NAME        NM_OPENVPN_VERIFY_X509_NAME_TYPE_NAME
-#define TLS_REMOTE_MODE_NAME_PREFIX NM_OPENVPN_VERIFY_X509_NAME_TYPE_NAME_PREFIX
+#define TLS_REMOTE_MODE_SUBJECT     NM_OPENVPN3_VERIFY_X509_NAME_TYPE_SUBJECT
+#define TLS_REMOTE_MODE_NAME        NM_OPENVPN3_VERIFY_X509_NAME_TYPE_NAME
+#define TLS_REMOTE_MODE_NAME_PREFIX NM_OPENVPN3_VERIFY_X509_NAME_TYPE_NAME_PREFIX
 #define TLS_REMOTE_MODE_LEGACY      "legacy"
 
 #define TLS_REMOTE_MODE_COL_NAME 0
@@ -1222,15 +1222,15 @@ populate_remote_cert_tls_combo (GtkComboBox *box, const char *remote_cert)
 	gtk_list_store_append (store, &iter);
 	gtk_list_store_set (store, &iter,
 	                    REMOTE_CERT_COL_NAME, _("Server"),
-	                    REMOTE_CERT_COL_VALUE, NM_OPENVPN_REM_CERT_TLS_SERVER,
+	                    REMOTE_CERT_COL_VALUE, NM_OPENVPN3_REM_CERT_TLS_SERVER,
 	                    -1);
 	gtk_list_store_append (store, &iter);
 	gtk_list_store_set (store, &iter,
 	                    REMOTE_CERT_COL_NAME, _("Client"),
-	                    REMOTE_CERT_COL_VALUE, NM_OPENVPN_REM_CERT_TLS_CLIENT,
+	                    REMOTE_CERT_COL_VALUE, NM_OPENVPN3_REM_CERT_TLS_CLIENT,
 	                    -1);
 
-	if (g_strcmp0 (remote_cert, NM_OPENVPN_REM_CERT_TLS_CLIENT) == 0)
+	if (g_strcmp0 (remote_cert, NM_OPENVPN3_REM_CERT_TLS_CLIENT) == 0)
 		gtk_combo_box_set_active (box, 1);
 	else
 		gtk_combo_box_set_active (box, 0);
@@ -1294,15 +1294,15 @@ populate_ns_cert_type_combo (GtkComboBox *box, const char *type)
 	gtk_list_store_append (store, &iter);
 	gtk_list_store_set (store, &iter,
 	                    NS_CERT_TYPE_COL_NAME, _("Server"),
-	                    NS_CERT_TYPE_COL_VALUE, NM_OPENVPN_NS_CERT_TYPE_SERVER,
+	                    NS_CERT_TYPE_COL_VALUE, NM_OPENVPN3_NS_CERT_TYPE_SERVER,
 	                    -1);
 	gtk_list_store_append (store, &iter);
 	gtk_list_store_set (store, &iter,
 	                    NS_CERT_TYPE_COL_NAME, _("Client"),
-	                    NS_CERT_TYPE_COL_VALUE, NM_OPENVPN_NS_CERT_TYPE_CLIENT,
+	                    NS_CERT_TYPE_COL_VALUE, NM_OPENVPN3_NS_CERT_TYPE_CLIENT,
 	                    -1);
 
-	if (g_strcmp0 (type, NM_OPENVPN_NS_CERT_TYPE_CLIENT) == 0)
+	if (g_strcmp0 (type, NM_OPENVPN3_NS_CERT_TYPE_CLIENT) == 0)
 		gtk_combo_box_set_active (box, 1);
 	else
 		gtk_combo_box_set_active (box, 0);
@@ -1593,7 +1593,7 @@ advanced_dialog_new (GHashTable *hash, const char *contype)
 
 	gtk_builder_set_translation_domain (builder, GETTEXT_PACKAGE);
 
-	if (!gtk_builder_add_from_resource (builder, "/org/freedesktop/network-manager-openvpn/nm-openvpn-dialog.ui", &error)) {
+	if (!gtk_builder_add_from_resource (builder, "/org/freedesktop/network-manager-openvpn3/nm-openvpn3-dialog.ui", &error)) {
 		g_error_free (error);
 		g_object_unref (G_OBJECT (builder));
 		g_return_val_if_reached (NULL);
@@ -1613,7 +1613,7 @@ advanced_dialog_new (GHashTable *hash, const char *contype)
 	ok_button = GTK_WIDGET (gtk_builder_get_object (builder, "ok_button"));
 
 
-	value = g_hash_table_lookup (hash, NM_OPENVPN_KEY_RENEG_SECONDS);
+	value = g_hash_table_lookup (hash, NM_OPENVPN3_KEY_RENEG_SECONDS);
 	_builder_init_optional_spinbutton (builder, "reneg_checkbutton", "reneg_spinbutton", !!value,
 	                                   _nm_utils_ascii_str_to_int64 (value, 10, 0, G_MAXINT, 0));
 
@@ -1629,8 +1629,8 @@ advanced_dialog_new (GHashTable *hash, const char *contype)
 	gtk_list_store_append (store, &iter);
 	gtk_list_store_set (store, &iter, 0, _("SOCKS"), -1);
 
-	value = g_hash_table_lookup (hash, NM_OPENVPN_KEY_PROXY_SERVER);
-	value2 = g_hash_table_lookup (hash, NM_OPENVPN_KEY_PROXY_PORT);
+	value = g_hash_table_lookup (hash, NM_OPENVPN3_KEY_PROXY_SERVER);
+	value2 = g_hash_table_lookup (hash, NM_OPENVPN3_KEY_PROXY_PORT);
 	if (   value && *value
 	    && value2 && *value2) {
 		widget = GTK_WIDGET (gtk_builder_get_object (builder, "proxy_server_entry"));
@@ -1641,23 +1641,23 @@ advanced_dialog_new (GHashTable *hash, const char *contype)
 		gtk_spin_button_set_value (GTK_SPIN_BUTTON (widget), (gdouble) vint);
 
 		widget = GTK_WIDGET (gtk_builder_get_object (builder, "proxy_retry_checkbutton"));
-		value = g_hash_table_lookup (hash, NM_OPENVPN_KEY_PROXY_RETRY);
+		value = g_hash_table_lookup (hash, NM_OPENVPN3_KEY_PROXY_RETRY);
 		if (value && !strcmp (value, "yes"))
 			gtk_check_button_set_active (GTK_CHECK_BUTTON (widget), TRUE);
 
-		value = g_hash_table_lookup (hash, NM_OPENVPN_KEY_HTTP_PROXY_USERNAME);
+		value = g_hash_table_lookup (hash, NM_OPENVPN3_KEY_HTTP_PROXY_USERNAME);
 		if (value && *value) {
 			widget = GTK_WIDGET (gtk_builder_get_object (builder, "proxy_username_entry"));
 			gtk_editable_set_text (GTK_EDITABLE (widget), value);
 		}
 
-		value = g_hash_table_lookup (hash, NM_OPENVPN_KEY_HTTP_PROXY_PASSWORD);
+		value = g_hash_table_lookup (hash, NM_OPENVPN3_KEY_HTTP_PROXY_PASSWORD);
 		if (value && *value) {
 			widget = GTK_WIDGET (gtk_builder_get_object (builder, "proxy_password_entry"));
 			gtk_editable_set_text (GTK_EDITABLE (widget), value);
 		}
 
-		value = g_hash_table_lookup (hash, NM_OPENVPN_KEY_HTTP_PROXY_PASSWORD_FLAGS);
+		value = g_hash_table_lookup (hash, NM_OPENVPN3_KEY_HTTP_PROXY_PASSWORD_FLAGS);
 		G_STATIC_ASSERT_EXPR (((guint) (NMSettingSecretFlags) 0xFFFFu) == 0xFFFFu);
 		pw_flags = _nm_utils_ascii_str_to_int64 (value, 10, 0, 0xFFFF, NM_SETTING_SECRET_FLAG_NONE);
 	} else
@@ -1667,7 +1667,7 @@ advanced_dialog_new (GHashTable *hash, const char *contype)
 	nma_utils_setup_password_storage (widget, pw_flags, NULL, NULL,
 	                                  TRUE, FALSE);
 
-	value = g_hash_table_lookup (hash, NM_OPENVPN_KEY_PROXY_TYPE);
+	value = g_hash_table_lookup (hash, NM_OPENVPN3_KEY_PROXY_TYPE);
 	active = PROXY_TYPE_NONE;
 	if (value) {
 		if (!strcmp (value, "http"))
@@ -1686,31 +1686,31 @@ advanced_dialog_new (GHashTable *hash, const char *contype)
 	g_signal_connect (G_OBJECT (widget), "toggled", G_CALLBACK (show_proxy_password_toggled_cb), builder);
 
 
-	value = g_hash_table_lookup (hash, NM_OPENVPN_KEY_PORT);
+	value = g_hash_table_lookup (hash, NM_OPENVPN3_KEY_PORT);
 	_builder_init_optional_spinbutton (builder, "port_checkbutton", "port_spinbutton", !!value,
 	                                   _nm_utils_ascii_str_to_int64 (value, 10, 1, 65535, 1194));
 
 
-	value = g_hash_table_lookup (hash, NM_OPENVPN_KEY_TUNNEL_MTU);
+	value = g_hash_table_lookup (hash, NM_OPENVPN3_KEY_TUNNEL_MTU);
 	_builder_init_optional_spinbutton (builder, "tunmtu_checkbutton", "tunmtu_spinbutton", !!value,
 	                                   _nm_utils_ascii_str_to_int64 (value, 10, 1, 65535, 1500));
 
-	value = g_hash_table_lookup (hash, NM_OPENVPN_KEY_CONNECT_TIMEOUT);
+	value = g_hash_table_lookup (hash, NM_OPENVPN3_KEY_CONNECT_TIMEOUT);
 	_builder_init_optional_spinbutton (builder, "connect_timeout_checkbutton", "connect_timeout_spinbutton", !!value,
 	                                   _nm_utils_ascii_str_to_int64 (value, 10, 0, G_MAXINT, 120));
 
-	value = g_hash_table_lookup (hash, NM_OPENVPN_KEY_FRAGMENT_SIZE);
+	value = g_hash_table_lookup (hash, NM_OPENVPN3_KEY_FRAGMENT_SIZE);
 	_builder_init_optional_spinbutton (builder, "fragment_checkbutton", "fragment_spinbutton", !!value,
 	                                   _nm_utils_ascii_str_to_int64 (value, 10, 0, 65535, 1300));
 
-	allow_compression = nmovpn_allow_compression_from_options (g_hash_table_lookup (hash, NM_OPENVPN_KEY_ALLOW_COMPRESSION));
+	allow_compression = nmovpn_allow_compression_from_options (g_hash_table_lookup (hash, NM_OPENVPN3_KEY_ALLOW_COMPRESSION));
 	combo = GTK_WIDGET (gtk_builder_get_object (builder, "compression-direction-combo"));
 
 	if (allow_compression != NMOVPN_ALLOW_COMPRESSION_NO)
 		gtk_combo_box_set_active (GTK_COMBO_BOX (combo), allow_compression - 1);
 
-	comp = nmovpn_compression_from_options (g_hash_table_lookup (hash, NM_OPENVPN_KEY_COMP_LZO),
-	                                        g_hash_table_lookup (hash, NM_OPENVPN_KEY_COMPRESS));
+	comp = nmovpn_compression_from_options (g_hash_table_lookup (hash, NM_OPENVPN3_KEY_COMP_LZO),
+	                                        g_hash_table_lookup (hash, NM_OPENVPN3_KEY_COMPRESS));
 
 	combo = GTK_WIDGET (gtk_builder_get_object (builder, "compress_combo"));
 	widget = _builder_init_toggle_button (builder, "compress_checkbutton",
@@ -1719,15 +1719,15 @@ advanced_dialog_new (GHashTable *hash, const char *contype)
 	if (comp != NMOVPN_COMP_DISABLED)
 		gtk_combo_box_set_active (GTK_COMBO_BOX (combo), comp - 1);
 
-	_builder_init_toggle_button (builder, "mssfix_checkbutton", _hash_get_boolean (hash, NM_OPENVPN_KEY_MSSFIX));
-	_builder_init_toggle_button (builder, "float_checkbutton", _hash_get_boolean (hash, NM_OPENVPN_KEY_FLOAT));
-	_builder_init_toggle_button (builder, "tcp_checkbutton", _hash_get_boolean (hash, NM_OPENVPN_KEY_PROTO_TCP));
-	_builder_init_toggle_button (builder, "ncp_disable_checkbutton", _hash_get_boolean (hash, NM_OPENVPN_KEY_NCP_DISABLE));
+	_builder_init_toggle_button (builder, "mssfix_checkbutton", _hash_get_boolean (hash, NM_OPENVPN3_KEY_MSSFIX));
+	_builder_init_toggle_button (builder, "float_checkbutton", _hash_get_boolean (hash, NM_OPENVPN3_KEY_FLOAT));
+	_builder_init_toggle_button (builder, "tcp_checkbutton", _hash_get_boolean (hash, NM_OPENVPN3_KEY_PROTO_TCP));
+	_builder_init_toggle_button (builder, "ncp_disable_checkbutton", _hash_get_boolean (hash, NM_OPENVPN3_KEY_NCP_DISABLE));
 
 	/* Populate device-related widgets */
-	dev =      g_hash_table_lookup (hash, NM_OPENVPN_KEY_DEV);
-	dev_type = g_hash_table_lookup (hash, NM_OPENVPN_KEY_DEV_TYPE);
-	tap_dev =  g_hash_table_lookup (hash, NM_OPENVPN_KEY_TAP_DEV);
+	dev =      g_hash_table_lookup (hash, NM_OPENVPN3_KEY_DEV);
+	dev_type = g_hash_table_lookup (hash, NM_OPENVPN3_KEY_DEV_TYPE);
+	tap_dev =  g_hash_table_lookup (hash, NM_OPENVPN3_KEY_TAP_DEV);
 
 	widget = GTK_WIDGET (gtk_builder_get_object (builder, "dev_checkbutton"));
 	gtk_check_button_set_active (GTK_CHECK_BUTTON (widget), (dev && *dev) || dev_type || tap_dev);
@@ -1757,63 +1757,63 @@ advanced_dialog_new (GHashTable *hash, const char *contype)
 	gtk_editable_set_text (GTK_EDITABLE (entry), dev ?: "");
 
 
-	_builder_init_toggle_button (builder, "remote_random_checkbutton", _hash_get_boolean (hash, NM_OPENVPN_KEY_REMOTE_RANDOM));
-	_builder_init_toggle_button (builder, "remote_random_hostname_checkbutton", _hash_get_boolean (hash, NM_OPENVPN_KEY_REMOTE_RANDOM_HOSTNAME));
-	_builder_init_toggle_button (builder, "allow_pull_fqdn_checkbutton", _hash_get_boolean (hash, NM_OPENVPN_KEY_ALLOW_PULL_FQDN));
-	_builder_init_toggle_button (builder, "tun_ipv6_checkbutton", _hash_get_boolean (hash, NM_OPENVPN_KEY_TUN_IPV6));
+	_builder_init_toggle_button (builder, "remote_random_checkbutton", _hash_get_boolean (hash, NM_OPENVPN3_KEY_REMOTE_RANDOM));
+	_builder_init_toggle_button (builder, "remote_random_hostname_checkbutton", _hash_get_boolean (hash, NM_OPENVPN3_KEY_REMOTE_RANDOM_HOSTNAME));
+	_builder_init_toggle_button (builder, "allow_pull_fqdn_checkbutton", _hash_get_boolean (hash, NM_OPENVPN3_KEY_ALLOW_PULL_FQDN));
+	_builder_init_toggle_button (builder, "tun_ipv6_checkbutton", _hash_get_boolean (hash, NM_OPENVPN3_KEY_TUN_IPV6));
 
 	widget = GTK_WIDGET (gtk_builder_get_object (builder, "cipher_combo"));
-	value = g_hash_table_lookup (hash, NM_OPENVPN_KEY_CIPHER);
+	value = g_hash_table_lookup (hash, NM_OPENVPN3_KEY_CIPHER);
 	populate_cipher_combo (GTK_COMBO_BOX (widget), value);
 
-	value = g_hash_table_lookup (hash, NM_OPENVPN_KEY_DATA_CIPHERS);
+	value = g_hash_table_lookup (hash, NM_OPENVPN3_KEY_DATA_CIPHERS);
 	if (value && *value) {
 		widget = GTK_WIDGET (gtk_builder_get_object (builder, "data_ciphers_entry"));
 		gtk_editable_set_text (GTK_EDITABLE (widget), value);
 	}
 
 	widget = GTK_WIDGET (gtk_builder_get_object (builder, "data_ciphers_fallback_combo"));
-	value = g_hash_table_lookup (hash, NM_OPENVPN_KEY_DATA_CIPHERS_FALLBACK);
+	value = g_hash_table_lookup (hash, NM_OPENVPN3_KEY_DATA_CIPHERS_FALLBACK);
 	populate_cipher_combo (GTK_COMBO_BOX (widget), value);
 
-	value = g_hash_table_lookup (hash, NM_OPENVPN_KEY_KEYSIZE);
+	value = g_hash_table_lookup (hash, NM_OPENVPN3_KEY_KEYSIZE);
 	_builder_init_optional_spinbutton (builder, "keysize_checkbutton", "keysize_spinbutton", !!value,
 	                                   _nm_utils_ascii_str_to_int64 (value, 10, 1, 65535, 128));
 
 
 	widget = GTK_WIDGET (gtk_builder_get_object (builder, "hmacauth_combo"));
-	value = g_hash_table_lookup (hash, NM_OPENVPN_KEY_AUTH);
+	value = g_hash_table_lookup (hash, NM_OPENVPN3_KEY_AUTH);
 	populate_hmacauth_combo (GTK_COMBO_BOX (widget), value);
 
 	entry = GTK_WIDGET (gtk_builder_get_object (builder, "tls_remote_entry"));
 	combo = GTK_WIDGET (gtk_builder_get_object (builder, "tls_remote_mode_combo"));
 	populate_tls_remote_mode_entry_combo (GTK_EDITABLE (entry), GTK_COMBO_BOX (combo),
-	                                      g_hash_table_lookup (hash, NM_OPENVPN_KEY_TLS_REMOTE),
-	                                      g_hash_table_lookup (hash, NM_OPENVPN_KEY_VERIFY_X509_NAME));
+	                                      g_hash_table_lookup (hash, NM_OPENVPN3_KEY_TLS_REMOTE),
+	                                      g_hash_table_lookup (hash, NM_OPENVPN3_KEY_VERIFY_X509_NAME));
 	g_signal_connect (G_OBJECT (entry), "changed", G_CALLBACK (tls_remote_changed), builder);
 	g_signal_connect (G_OBJECT (combo), "changed", G_CALLBACK (tls_remote_changed), builder);
 	tls_remote_changed (entry, builder);
 
 	widget = GTK_WIDGET (gtk_builder_get_object (builder, "remote_cert_tls_checkbutton"));
-	value = g_hash_table_lookup (hash, NM_OPENVPN_KEY_REMOTE_CERT_TLS);
+	value = g_hash_table_lookup (hash, NM_OPENVPN3_KEY_REMOTE_CERT_TLS);
 	if (value && *value)
 		gtk_check_button_set_active (GTK_CHECK_BUTTON (widget), TRUE);
 	g_signal_connect (G_OBJECT (widget), "toggled", G_CALLBACK (remote_tls_cert_toggled_cb), builder);
 	remote_tls_cert_toggled_cb (widget, builder);
 
 	widget = GTK_WIDGET (gtk_builder_get_object (builder, "remote_cert_tls_combo"));
-	value = g_hash_table_lookup (hash, NM_OPENVPN_KEY_REMOTE_CERT_TLS);
+	value = g_hash_table_lookup (hash, NM_OPENVPN3_KEY_REMOTE_CERT_TLS);
 	populate_remote_cert_tls_combo (GTK_COMBO_BOX (widget), value);
 
 	widget = GTK_WIDGET (gtk_builder_get_object (builder, "ns_cert_type_checkbutton"));
-	value = g_hash_table_lookup (hash, NM_OPENVPN_KEY_NS_CERT_TYPE);
+	value = g_hash_table_lookup (hash, NM_OPENVPN3_KEY_NS_CERT_TYPE);
 	if (value && *value)
 		gtk_check_button_set_active (GTK_CHECK_BUTTON (widget), TRUE);
 	g_signal_connect (G_OBJECT (widget), "toggled", G_CALLBACK (ns_cert_type_toggled_cb), builder);
 	ns_cert_type_toggled_cb (widget, builder);
 
 	widget = GTK_WIDGET (gtk_builder_get_object (builder, "ns_cert_type_combo"));
-	value = g_hash_table_lookup (hash, NM_OPENVPN_KEY_NS_CERT_TYPE);
+	value = g_hash_table_lookup (hash, NM_OPENVPN3_KEY_NS_CERT_TYPE);
 	populate_ns_cert_type_combo (GTK_COMBO_BOX (widget), value);
 
 	/* TLS auth chooser */
@@ -1825,9 +1825,9 @@ advanced_dialog_new (GHashTable *hash, const char *contype)
 	g_signal_connect_swapped (gtk_builder_get_object (builder, "tls_auth_chooser_button"),
 	                          "clicked", G_CALLBACK (gtk_widget_show), chooser);
 	if (NM_IN_STRSET (contype,
-	                  NM_OPENVPN_CONTYPE_TLS,
-	                  NM_OPENVPN_CONTYPE_PASSWORD_TLS,
-	                  NM_OPENVPN_CONTYPE_PASSWORD)) {
+	                  NM_OPENVPN3_CONTYPE_TLS,
+	                  NM_OPENVPN3_CONTYPE_PASSWORD_TLS,
+	                  NM_OPENVPN3_CONTYPE_PASSWORD)) {
 		/* Initialize direction combo */
 		combo = GTK_WIDGET (gtk_builder_get_object (builder, "direction_combo"));
 		store = gtk_list_store_new (2, G_TYPE_STRING, G_TYPE_INT);
@@ -1842,9 +1842,9 @@ advanced_dialog_new (GHashTable *hash, const char *contype)
 		gtk_combo_box_set_active (GTK_COMBO_BOX (combo), 0);
 
 		combo = GTK_WIDGET (gtk_builder_get_object (builder, "tls_auth_mode"));
-		value = g_hash_table_lookup (hash, NM_OPENVPN_KEY_TA);
-		value2 = g_hash_table_lookup (hash, NM_OPENVPN_KEY_TLS_CRYPT);
-		value3 = g_hash_table_lookup (hash, NM_OPENVPN_KEY_TLS_CRYPT_V2);
+		value = g_hash_table_lookup (hash, NM_OPENVPN3_KEY_TA);
+		value2 = g_hash_table_lookup (hash, NM_OPENVPN3_KEY_TLS_CRYPT);
+		value3 = g_hash_table_lookup (hash, NM_OPENVPN3_KEY_TLS_CRYPT_V2);
 		if (value3 && value3[0]) {
 			gtk_combo_box_set_active (GTK_COMBO_BOX (combo), TLS_AUTH_MODE_CRYPT_V2);
 			file = g_file_new_for_path (value3);
@@ -1856,7 +1856,7 @@ advanced_dialog_new (GHashTable *hash, const char *contype)
 
 			gtk_combo_box_set_active (GTK_COMBO_BOX (combo), TLS_AUTH_MODE_AUTH);
 			file = g_file_new_for_path (value);
-			value = g_hash_table_lookup (hash, NM_OPENVPN_KEY_TA_DIR);
+			value = g_hash_table_lookup (hash, NM_OPENVPN3_KEY_TA_DIR);
 			direction = _nm_utils_ascii_str_to_int64 (value, 10, 0, 1, -1);
 			widget = GTK_WIDGET (gtk_builder_get_object (builder, "direction_combo"));
 			gtk_combo_box_set_active (GTK_COMBO_BOX (widget), direction + 1);
@@ -1877,10 +1877,10 @@ advanced_dialog_new (GHashTable *hash, const char *contype)
 	g_signal_connect_swapped (gtk_builder_get_object (builder, "extra_certs_chooser_button"),
 	                          "clicked", G_CALLBACK (gtk_widget_show), chooser);
 	if (NM_IN_STRSET (contype,
-	                  NM_OPENVPN_CONTYPE_TLS,
-	                  NM_OPENVPN_CONTYPE_PASSWORD_TLS,
-	                  NM_OPENVPN_CONTYPE_PASSWORD)) {
-		value = g_hash_table_lookup (hash, NM_OPENVPN_KEY_EXTRA_CERTS);
+	                  NM_OPENVPN3_CONTYPE_TLS,
+	                  NM_OPENVPN3_CONTYPE_PASSWORD_TLS,
+	                  NM_OPENVPN3_CONTYPE_PASSWORD)) {
+		value = g_hash_table_lookup (hash, NM_OPENVPN3_KEY_EXTRA_CERTS);
 		if (value && value[0]) {
 			file = g_file_new_for_path (value);
 			gtk_file_chooser_set_file (GTK_FILE_CHOOSER (chooser), file, NULL);
@@ -1895,14 +1895,14 @@ advanced_dialog_new (GHashTable *hash, const char *contype)
 	g_clear_object (&file);
 
 	/* TLS cipher string */
-	value = g_hash_table_lookup (hash, NM_OPENVPN_KEY_TLS_CIPHER);
+	value = g_hash_table_lookup (hash, NM_OPENVPN3_KEY_TLS_CIPHER);
 	if (value && *value) {
 		widget = GTK_WIDGET (gtk_builder_get_object (builder, "tls_cipher"));
 		gtk_editable_set_text (GTK_EDITABLE (widget), value);
 	}
 
 	/* ping check */
-	value = g_hash_table_lookup (hash, NM_OPENVPN_KEY_PING);
+	value = g_hash_table_lookup (hash, NM_OPENVPN3_KEY_PING);
 	_builder_init_optional_spinbutton (builder, "ping_checkbutton", "ping_spinbutton", !!value,
 	                                   _nm_utils_ascii_str_to_int64 (value, 10, 1, 65535, 30));
 
@@ -1913,10 +1913,10 @@ advanced_dialog_new (GHashTable *hash, const char *contype)
 	combo = GTK_WIDGET (gtk_builder_get_object (builder, "ping_exit_restart_combo"));
 	g_signal_connect ((GObject *) widget, "toggled", G_CALLBACK (ping_exit_restart_checkbox_toggled_cb), builder);
 
-	value = g_hash_table_lookup (hash, NM_OPENVPN_KEY_PING_EXIT);
+	value = g_hash_table_lookup (hash, NM_OPENVPN3_KEY_PING_EXIT);
 	active = PING_EXIT;
 	if (!value) {
-		value = g_hash_table_lookup (hash, NM_OPENVPN_KEY_PING_RESTART);
+		value = g_hash_table_lookup (hash, NM_OPENVPN3_KEY_PING_RESTART);
 		if (value)
 			active = PING_RESTART;
 	}
@@ -1938,7 +1938,7 @@ advanced_dialog_new (GHashTable *hash, const char *contype)
 
 	/* MTU discovery */
 	widget = GTK_WIDGET (gtk_builder_get_object (builder, "mtu_disc_checkbutton"));
-	value = g_hash_table_lookup (hash, NM_OPENVPN_KEY_MTU_DISC);
+	value = g_hash_table_lookup (hash, NM_OPENVPN3_KEY_MTU_DISC);
 	if (value && value[0]) {
 		gtk_check_button_set_active (GTK_CHECK_BUTTON (widget), TRUE);
 		combo = GTK_WIDGET (gtk_builder_get_object (builder, "mtu_disc_combo"));
@@ -1960,7 +1960,7 @@ advanced_dialog_new (GHashTable *hash, const char *contype)
 	                  G_CALLBACK (chooser_response), label);
 	g_signal_connect_swapped (gtk_builder_get_object (builder, "crl_file_chooser_button"),
 	                          "clicked", G_CALLBACK (gtk_widget_show), widget);
-	value = g_hash_table_lookup (hash, NM_OPENVPN_KEY_CRL_VERIFY_FILE);
+	value = g_hash_table_lookup (hash, NM_OPENVPN3_KEY_CRL_VERIFY_FILE);
 	if (value)
 		file = g_file_new_for_path (value);
 	chooser_button_update_file (label, file);
@@ -1983,7 +1983,7 @@ advanced_dialog_new (GHashTable *hash, const char *contype)
 		 * then we ignore the CRL directory */
 		value = NULL;
 	} else {
-		value = g_hash_table_lookup (hash, NM_OPENVPN_KEY_CRL_VERIFY_DIR);
+		value = g_hash_table_lookup (hash, NM_OPENVPN3_KEY_CRL_VERIFY_DIR);
 	}
 	if (value) {
 		file = g_file_new_for_path (value);
@@ -1997,27 +1997,27 @@ advanced_dialog_new (GHashTable *hash, const char *contype)
 	crl_dir_checkbox_toggled_cb (widget, builder);
 
 	/* Max routes */
-	value = g_hash_table_lookup (hash, NM_OPENVPN_KEY_MAX_ROUTES);
+	value = g_hash_table_lookup (hash, NM_OPENVPN3_KEY_MAX_ROUTES);
 	_builder_init_optional_spinbutton (builder, "max_routes_checkbutton", "max_routes_spinbutton", !!value,
 	                                   _nm_utils_ascii_str_to_int64 (value, 10, 0, 100000000, 100));
 
-	value = g_hash_table_lookup (hash, NM_OPENVPN_KEY_TLS_VERSION_MIN);
+	value = g_hash_table_lookup (hash, NM_OPENVPN3_KEY_TLS_VERSION_MIN);
 	if (value && *value) {
 		widget = GTK_WIDGET (gtk_builder_get_object (builder, "tls_version_min"));
 		gtk_editable_set_text (GTK_EDITABLE (widget), value);
 
-		value = g_hash_table_lookup (hash, NM_OPENVPN_KEY_TLS_VERSION_MIN_OR_HIGHEST);
+		value = g_hash_table_lookup (hash, NM_OPENVPN3_KEY_TLS_VERSION_MIN_OR_HIGHEST);
 		widget = GTK_WIDGET (gtk_builder_get_object (builder, "tls_version_min_or_highest"));
 		gtk_check_button_set_active(GTK_CHECK_BUTTON (widget), nm_streq0 (value, "yes"));
 	}
-	value = g_hash_table_lookup (hash, NM_OPENVPN_KEY_TLS_VERSION_MAX);
+	value = g_hash_table_lookup (hash, NM_OPENVPN3_KEY_TLS_VERSION_MAX);
 	if (value && *value) {
 		widget = GTK_WIDGET (gtk_builder_get_object (builder, "tls_version_max"));
 		gtk_editable_set_text (GTK_EDITABLE (widget), value);
 	}
 
 	_builder_init_toggle_button (builder, "push_peer_info_checkbutton",
-	                             _hash_get_boolean (hash, NM_OPENVPN_KEY_PUSH_PEER_INFO));
+	                             _hash_get_boolean (hash, NM_OPENVPN3_KEY_PUSH_PEER_INFO));
 
 	g_signal_connect_swapped (G_OBJECT (gtk_builder_get_object (builder, "sk_key_chooser_button")),
 	                  "clicked", G_CALLBACK (gtk_widget_show),
@@ -2051,7 +2051,7 @@ advanced_dialog_new_hash_from_dialog (GtkWidget *dialog)
 
 		widget = GTK_WIDGET (gtk_builder_get_object (builder, "reneg_spinbutton"));
 		reneg_seconds = gtk_spin_button_get_value_as_int (GTK_SPIN_BUTTON (widget));
-		g_hash_table_insert (hash, NM_OPENVPN_KEY_RENEG_SECONDS, g_strdup_printf ("%d", reneg_seconds));
+		g_hash_table_insert (hash, NM_OPENVPN3_KEY_RENEG_SECONDS, g_strdup_printf ("%d", reneg_seconds));
 	}
 
 	widget = GTK_WIDGET (gtk_builder_get_object (builder, "tunmtu_checkbutton"));
@@ -2060,7 +2060,7 @@ advanced_dialog_new_hash_from_dialog (GtkWidget *dialog)
 
 		widget = GTK_WIDGET (gtk_builder_get_object (builder, "tunmtu_spinbutton"));
 		tunmtu_size = gtk_spin_button_get_value_as_int (GTK_SPIN_BUTTON (widget));
-		g_hash_table_insert (hash, NM_OPENVPN_KEY_TUNNEL_MTU, g_strdup_printf ("%d", tunmtu_size));
+		g_hash_table_insert (hash, NM_OPENVPN3_KEY_TUNNEL_MTU, g_strdup_printf ("%d", tunmtu_size));
 	}
 
 	widget = GTK_WIDGET (gtk_builder_get_object (builder, "connect_timeout_checkbutton"));
@@ -2069,7 +2069,7 @@ advanced_dialog_new_hash_from_dialog (GtkWidget *dialog)
 
 		widget = GTK_WIDGET (gtk_builder_get_object (builder, "connect_timeout_spinbutton"));
 		timeout = gtk_spin_button_get_value_as_int (GTK_SPIN_BUTTON (widget));
-		g_hash_table_insert (hash, NM_OPENVPN_KEY_CONNECT_TIMEOUT, g_strdup_printf ("%d", timeout));
+		g_hash_table_insert (hash, NM_OPENVPN3_KEY_CONNECT_TIMEOUT, g_strdup_printf ("%d", timeout));
 	}
 
 	widget = GTK_WIDGET (gtk_builder_get_object (builder, "fragment_checkbutton"));
@@ -2078,7 +2078,7 @@ advanced_dialog_new_hash_from_dialog (GtkWidget *dialog)
 
 		widget = GTK_WIDGET (gtk_builder_get_object (builder, "fragment_spinbutton"));
 		fragment_size = gtk_spin_button_get_value_as_int (GTK_SPIN_BUTTON (widget));
-		g_hash_table_insert (hash, NM_OPENVPN_KEY_FRAGMENT_SIZE, g_strdup_printf ("%d", fragment_size));
+		g_hash_table_insert (hash, NM_OPENVPN3_KEY_FRAGMENT_SIZE, g_strdup_printf ("%d", fragment_size));
 	}
 
 	widget = GTK_WIDGET (gtk_builder_get_object (builder, "port_checkbutton"));
@@ -2087,7 +2087,7 @@ advanced_dialog_new_hash_from_dialog (GtkWidget *dialog)
 
 		widget = GTK_WIDGET (gtk_builder_get_object (builder, "port_spinbutton"));
 		port = gtk_spin_button_get_value_as_int (GTK_SPIN_BUTTON (widget));
-		g_hash_table_insert (hash, NM_OPENVPN_KEY_PORT, g_strdup_printf ("%d", port));
+		g_hash_table_insert (hash, NM_OPENVPN3_KEY_PORT, g_strdup_printf ("%d", port));
 	}
 
 	/* Proxy support */
@@ -2100,22 +2100,22 @@ advanced_dialog_new_hash_from_dialog (GtkWidget *dialog)
 			int proxy_port;
 
 			if (proxy_type == PROXY_TYPE_HTTP)
-				g_hash_table_insert (hash, NM_OPENVPN_KEY_PROXY_TYPE, g_strdup ("http"));
+				g_hash_table_insert (hash, NM_OPENVPN3_KEY_PROXY_TYPE, g_strdup ("http"));
 			else if (proxy_type == PROXY_TYPE_SOCKS)
-				g_hash_table_insert (hash, NM_OPENVPN_KEY_PROXY_TYPE, g_strdup ("socks"));
+				g_hash_table_insert (hash, NM_OPENVPN3_KEY_PROXY_TYPE, g_strdup ("socks"));
 
-			g_hash_table_insert (hash, NM_OPENVPN_KEY_PROXY_SERVER, g_strdup (value));
+			g_hash_table_insert (hash, NM_OPENVPN3_KEY_PROXY_SERVER, g_strdup (value));
 
 			widget = GTK_WIDGET (gtk_builder_get_object (builder, "proxy_port_spinbutton"));
 			proxy_port = gtk_spin_button_get_value_as_int (GTK_SPIN_BUTTON (widget));
 			if (proxy_port > 0) {
-				g_hash_table_insert (hash, NM_OPENVPN_KEY_PROXY_PORT,
+				g_hash_table_insert (hash, NM_OPENVPN3_KEY_PROXY_PORT,
 				                     g_strdup_printf ("%d", proxy_port));
 			}
 
 			widget = GTK_WIDGET (gtk_builder_get_object (builder, "proxy_retry_checkbutton"));
 			if (gtk_check_button_get_active (GTK_CHECK_BUTTON (widget)))
-				g_hash_table_insert (hash, NM_OPENVPN_KEY_PROXY_RETRY, g_strdup ("yes"));
+				g_hash_table_insert (hash, NM_OPENVPN3_KEY_PROXY_RETRY, g_strdup ("yes"));
 
 			if (proxy_type == PROXY_TYPE_HTTP) {
 				guint32 pw_flags;
@@ -2123,17 +2123,17 @@ advanced_dialog_new_hash_from_dialog (GtkWidget *dialog)
 				widget = GTK_WIDGET (gtk_builder_get_object (builder, "proxy_username_entry"));
 				value = gtk_editable_get_text (GTK_EDITABLE (widget));
 				if (value && *value)
-					g_hash_table_insert (hash, NM_OPENVPN_KEY_HTTP_PROXY_USERNAME, g_strdup (value));
+					g_hash_table_insert (hash, NM_OPENVPN3_KEY_HTTP_PROXY_USERNAME, g_strdup (value));
 
 				widget = GTK_WIDGET (gtk_builder_get_object (builder, "proxy_password_entry"));
 				value = gtk_editable_get_text (GTK_EDITABLE (widget));
 				if (value && *value)
-					g_hash_table_insert (hash, NM_OPENVPN_KEY_HTTP_PROXY_PASSWORD, g_strdup (value));
+					g_hash_table_insert (hash, NM_OPENVPN3_KEY_HTTP_PROXY_PASSWORD, g_strdup (value));
 
 				pw_flags = nma_utils_menu_to_secret_flags (widget);
 				if (pw_flags != NM_SETTING_SECRET_FLAG_NONE) {
 					g_hash_table_insert (hash,
-					                     NM_OPENVPN_KEY_HTTP_PROXY_PASSWORD_FLAGS,
+					                     NM_OPENVPN3_KEY_HTTP_PROXY_PASSWORD_FLAGS,
 					                     g_strdup_printf ("%d", pw_flags));
 				}
 			}
@@ -2152,34 +2152,34 @@ advanced_dialog_new_hash_from_dialog (GtkWidget *dialog)
 		allow_compression = gtk_combo_box_get_active (GTK_COMBO_BOX (combo)) + 1;
 		nmovpn_allow_compression_to_options (allow_compression, &opt_allow_compression);
 		if (opt_allow_compression)
-			g_hash_table_insert (hash, NM_OPENVPN_KEY_ALLOW_COMPRESSION, g_strdup (opt_allow_compression));
+			g_hash_table_insert (hash, NM_OPENVPN3_KEY_ALLOW_COMPRESSION, g_strdup (opt_allow_compression));
 
 		combo = GTK_WIDGET (gtk_builder_get_object (builder, "compress_combo"));
 		comp = gtk_combo_box_get_active (GTK_COMBO_BOX (combo)) + 1;
 		nmovpn_compression_to_options (comp, &opt_comp_lzo, &opt_compress);
 		if (opt_compress)
-			g_hash_table_insert (hash, NM_OPENVPN_KEY_COMPRESS, g_strdup (opt_compress));
+			g_hash_table_insert (hash, NM_OPENVPN3_KEY_COMPRESS, g_strdup (opt_compress));
 		if (opt_comp_lzo)
-			g_hash_table_insert (hash, NM_OPENVPN_KEY_COMP_LZO, g_strdup (opt_comp_lzo));
+			g_hash_table_insert (hash, NM_OPENVPN3_KEY_COMP_LZO, g_strdup (opt_comp_lzo));
 	} else {
-		g_hash_table_insert (hash, NM_OPENVPN_KEY_ALLOW_COMPRESSION, g_strdup ("no"));
+		g_hash_table_insert (hash, NM_OPENVPN3_KEY_ALLOW_COMPRESSION, g_strdup ("no"));
 	}
 
 	widget = GTK_WIDGET (gtk_builder_get_object (builder, "mssfix_checkbutton"));
 	if (gtk_check_button_get_active (GTK_CHECK_BUTTON (widget)))
-		g_hash_table_insert (hash, NM_OPENVPN_KEY_MSSFIX, g_strdup ("yes"));
+		g_hash_table_insert (hash, NM_OPENVPN3_KEY_MSSFIX, g_strdup ("yes"));
 
 	widget = GTK_WIDGET (gtk_builder_get_object (builder, "float_checkbutton"));
 	if (gtk_check_button_get_active (GTK_CHECK_BUTTON (widget)))
-		g_hash_table_insert (hash, NM_OPENVPN_KEY_FLOAT, g_strdup ("yes"));
+		g_hash_table_insert (hash, NM_OPENVPN3_KEY_FLOAT, g_strdup ("yes"));
 
 	widget = GTK_WIDGET (gtk_builder_get_object (builder, "tcp_checkbutton"));
 	if (gtk_check_button_get_active (GTK_CHECK_BUTTON (widget)))
-		g_hash_table_insert (hash, NM_OPENVPN_KEY_PROTO_TCP, g_strdup ("yes"));
+		g_hash_table_insert (hash, NM_OPENVPN3_KEY_PROTO_TCP, g_strdup ("yes"));
 
 	widget = GTK_WIDGET (gtk_builder_get_object (builder, "ncp_disable_checkbutton"));
 	if (gtk_check_button_get_active (GTK_CHECK_BUTTON (widget)))
-		g_hash_table_insert (hash, NM_OPENVPN_KEY_NCP_DISABLE, g_strdup ("yes"));
+		g_hash_table_insert (hash, NM_OPENVPN3_KEY_NCP_DISABLE, g_strdup ("yes"));
 
 	widget = GTK_WIDGET (gtk_builder_get_object (builder, "dev_checkbutton"));
 	if (gtk_check_button_get_active (GTK_CHECK_BUTTON (widget))) {
@@ -2188,30 +2188,30 @@ advanced_dialog_new_hash_from_dialog (GtkWidget *dialog)
 		widget = GTK_WIDGET (gtk_builder_get_object (builder, "dev_type_combo"));
 		device_type = gtk_combo_box_get_active (GTK_COMBO_BOX (widget));
 		g_hash_table_insert (hash,
-		                     NM_OPENVPN_KEY_DEV_TYPE,
+		                     NM_OPENVPN3_KEY_DEV_TYPE,
 		                     g_strdup (device_type == DEVICE_TYPE_IDX_TUN ? "tun" : "tap"));
 
 		widget = GTK_WIDGET (gtk_builder_get_object (builder, "dev_entry"));
 		value = gtk_editable_get_text (GTK_EDITABLE (widget));
 		if (value && value[0] != '\0')
-			g_hash_table_insert (hash, NM_OPENVPN_KEY_DEV, g_strdup (value));
+			g_hash_table_insert (hash, NM_OPENVPN3_KEY_DEV, g_strdup (value));
 	}
 
 	widget = GTK_WIDGET (gtk_builder_get_object (builder, "remote_random_checkbutton"));
 	if (gtk_check_button_get_active (GTK_CHECK_BUTTON (widget)))
-		g_hash_table_insert (hash, NM_OPENVPN_KEY_REMOTE_RANDOM, g_strdup ("yes"));
+		g_hash_table_insert (hash, NM_OPENVPN3_KEY_REMOTE_RANDOM, g_strdup ("yes"));
 
 	widget = GTK_WIDGET (gtk_builder_get_object (builder, "remote_random_hostname_checkbutton"));
 	if (gtk_check_button_get_active (GTK_CHECK_BUTTON (widget)))
-		g_hash_table_insert (hash, NM_OPENVPN_KEY_REMOTE_RANDOM_HOSTNAME, g_strdup ("yes"));
+		g_hash_table_insert (hash, NM_OPENVPN3_KEY_REMOTE_RANDOM_HOSTNAME, g_strdup ("yes"));
 
 	widget = GTK_WIDGET (gtk_builder_get_object (builder, "allow_pull_fqdn_checkbutton"));
 	if (gtk_check_button_get_active (GTK_CHECK_BUTTON (widget)))
-		g_hash_table_insert (hash, NM_OPENVPN_KEY_ALLOW_PULL_FQDN, g_strdup ("yes"));
+		g_hash_table_insert (hash, NM_OPENVPN3_KEY_ALLOW_PULL_FQDN, g_strdup ("yes"));
 
 	widget = GTK_WIDGET (gtk_builder_get_object (builder, "tun_ipv6_checkbutton"));
 	if (gtk_check_button_get_active (GTK_CHECK_BUTTON (widget)))
-		g_hash_table_insert (hash, NM_OPENVPN_KEY_TUN_IPV6, g_strdup ("yes"));
+		g_hash_table_insert (hash, NM_OPENVPN3_KEY_TUN_IPV6, g_strdup ("yes"));
 
 	widget = GTK_WIDGET (gtk_builder_get_object (builder, "cipher_combo"));
 	model = gtk_combo_box_get_model (GTK_COMBO_BOX (widget));
@@ -2223,7 +2223,7 @@ advanced_dialog_new_hash_from_dialog (GtkWidget *dialog)
 		                    TLS_CIPHER_COL_NAME, &cipher,
 		                    TLS_CIPHER_COL_DEFAULT, &is_default, -1);
 		if (!is_default && cipher) {
-			g_hash_table_insert (hash, NM_OPENVPN_KEY_CIPHER,
+			g_hash_table_insert (hash, NM_OPENVPN3_KEY_CIPHER,
 			                     g_steal_pointer (&cipher));
 		}
 	}
@@ -2231,7 +2231,7 @@ advanced_dialog_new_hash_from_dialog (GtkWidget *dialog)
 	widget = GTK_WIDGET (gtk_builder_get_object (builder, "data_ciphers_entry"));
 	value = gtk_editable_get_text (GTK_EDITABLE (widget));
 	if (value && value[0] != '\0')
-		g_hash_table_insert (hash, NM_OPENVPN_KEY_DATA_CIPHERS, g_strdup (value));
+		g_hash_table_insert (hash, NM_OPENVPN3_KEY_DATA_CIPHERS, g_strdup (value));
 
 	widget = GTK_WIDGET (gtk_builder_get_object (builder, "data_ciphers_fallback_combo"));
 	model = gtk_combo_box_get_model (GTK_COMBO_BOX (widget));
@@ -2243,7 +2243,7 @@ advanced_dialog_new_hash_from_dialog (GtkWidget *dialog)
 		                    TLS_CIPHER_COL_NAME, &cipher,
 		                    TLS_CIPHER_COL_DEFAULT, &is_default, -1);
 		if (!is_default && cipher) {
-			g_hash_table_insert (hash, NM_OPENVPN_KEY_DATA_CIPHERS_FALLBACK,
+			g_hash_table_insert (hash, NM_OPENVPN3_KEY_DATA_CIPHERS_FALLBACK,
 			                     g_steal_pointer (&cipher));
 		}
 	}
@@ -2254,7 +2254,7 @@ advanced_dialog_new_hash_from_dialog (GtkWidget *dialog)
 
 		widget = GTK_WIDGET (gtk_builder_get_object (builder, "keysize_spinbutton"));
 		keysize_val = gtk_spin_button_get_value_as_int (GTK_SPIN_BUTTON (widget));
-		g_hash_table_insert (hash, NM_OPENVPN_KEY_KEYSIZE, g_strdup_printf ("%d", keysize_val));
+		g_hash_table_insert (hash, NM_OPENVPN3_KEY_KEYSIZE, g_strdup_printf ("%d", keysize_val));
 	}
 
 	widget = GTK_WIDGET (gtk_builder_get_object (builder, "hmacauth_combo"));
@@ -2266,29 +2266,29 @@ advanced_dialog_new_hash_from_dialog (GtkWidget *dialog)
 		                    HMACAUTH_COL_VALUE, &hmacauth,
 		                    -1);
 		if (hmacauth)
-			g_hash_table_insert (hash, NM_OPENVPN_KEY_AUTH, hmacauth);
+			g_hash_table_insert (hash, NM_OPENVPN3_KEY_AUTH, hmacauth);
 	}
 	entry = GTK_WIDGET (gtk_builder_get_object (builder, "tls_version_min"));
 	value = gtk_editable_get_text (GTK_EDITABLE (entry));
 	if (value && *value)
-		g_hash_table_insert (hash, NM_OPENVPN_KEY_TLS_VERSION_MIN, g_strdup (value));
+		g_hash_table_insert (hash, NM_OPENVPN3_KEY_TLS_VERSION_MIN, g_strdup (value));
 
 	widget = GTK_WIDGET (gtk_builder_get_object (builder, "tls_version_min_or_highest"));
 	if (gtk_check_button_get_active (GTK_CHECK_BUTTON(widget))) {
-		g_hash_table_insert (hash, NM_OPENVPN_KEY_TLS_VERSION_MIN_OR_HIGHEST, g_strdup ("yes"));
+		g_hash_table_insert (hash, NM_OPENVPN3_KEY_TLS_VERSION_MIN_OR_HIGHEST, g_strdup ("yes"));
 	} else {
-		g_hash_table_remove (hash, NM_OPENVPN_KEY_TLS_VERSION_MIN_OR_HIGHEST);
+		g_hash_table_remove (hash, NM_OPENVPN3_KEY_TLS_VERSION_MIN_OR_HIGHEST);
 	}
 
 	entry = GTK_WIDGET (gtk_builder_get_object (builder, "tls_version_max"));
 	value = gtk_editable_get_text (GTK_EDITABLE (entry));
 	if (value && *value)
-		g_hash_table_insert (hash, NM_OPENVPN_KEY_TLS_VERSION_MAX, g_strdup (value));
+		g_hash_table_insert (hash, NM_OPENVPN3_KEY_TLS_VERSION_MAX, g_strdup (value));
 
 	contype = g_object_get_data (G_OBJECT (dialog), "connection-type");
-	if (   !strcmp (contype, NM_OPENVPN_CONTYPE_TLS)
-	    || !strcmp (contype, NM_OPENVPN_CONTYPE_PASSWORD_TLS)
-	    || !strcmp (contype, NM_OPENVPN_CONTYPE_PASSWORD)) {
+	if (   !strcmp (contype, NM_OPENVPN3_CONTYPE_TLS)
+	    || !strcmp (contype, NM_OPENVPN3_CONTYPE_PASSWORD_TLS)
+	    || !strcmp (contype, NM_OPENVPN3_CONTYPE_PASSWORD)) {
 		char *filename;
 		GFile *file;
 
@@ -2306,10 +2306,10 @@ advanced_dialog_new_hash_from_dialog (GtkWidget *dialog)
 			if (nm_streq (tls_remote_mode, TLS_REMOTE_MODE_NONE)) {
 				// pass
 			} else if (nm_streq (tls_remote_mode, TLS_REMOTE_MODE_LEGACY)) {
-				g_hash_table_insert (hash, NM_OPENVPN_KEY_TLS_REMOTE, g_strdup (value));
+				g_hash_table_insert (hash, NM_OPENVPN3_KEY_TLS_REMOTE, g_strdup (value));
 			} else {
 				g_hash_table_insert (hash,
-				                     NM_OPENVPN_KEY_VERIFY_X509_NAME,
+				                     NM_OPENVPN3_KEY_VERIFY_X509_NAME,
 				                     g_strdup_printf ("%s:%s", tls_remote_mode, value));
 			}
 		}
@@ -2324,7 +2324,7 @@ advanced_dialog_new_hash_from_dialog (GtkWidget *dialog)
 				gtk_tree_model_get (model, &iter, REMOTE_CERT_COL_VALUE, &remote_cert, -1);
 				if (remote_cert) {
 					g_hash_table_insert (hash,
-					                     NM_OPENVPN_KEY_REMOTE_CERT_TLS,
+					                     NM_OPENVPN3_KEY_REMOTE_CERT_TLS,
 					                     remote_cert);
 				}
 			}
@@ -2340,7 +2340,7 @@ advanced_dialog_new_hash_from_dialog (GtkWidget *dialog)
 				gtk_tree_model_get (model, &iter, NS_CERT_TYPE_COL_VALUE, &type, -1);
 				if (type) {
 					g_hash_table_insert (hash,
-					                     NM_OPENVPN_KEY_NS_CERT_TYPE,
+					                     NM_OPENVPN3_KEY_NS_CERT_TYPE,
 					                     type);
 				}
 			}
@@ -2357,7 +2357,7 @@ advanced_dialog_new_hash_from_dialog (GtkWidget *dialog)
 			else
 				filename = NULL;
 			if (filename && filename[0])
-				g_hash_table_insert (hash, NM_OPENVPN_KEY_TA, g_strdup (filename));
+				g_hash_table_insert (hash, NM_OPENVPN3_KEY_TA, g_strdup (filename));
 			g_free (filename);
 			g_clear_object (&file);
 
@@ -2368,7 +2368,7 @@ advanced_dialog_new_hash_from_dialog (GtkWidget *dialog)
 
 				gtk_tree_model_get (model, &iter, TA_DIR_COL_NUM, &direction, -1);
 				if (direction >= 0) {
-					g_hash_table_insert (hash, NM_OPENVPN_KEY_TA_DIR,
+					g_hash_table_insert (hash, NM_OPENVPN3_KEY_TA_DIR,
 					                     g_strdup_printf ("%d", direction));
 				}
 			}
@@ -2381,7 +2381,7 @@ advanced_dialog_new_hash_from_dialog (GtkWidget *dialog)
 			else
 				filename = NULL;
 			if (filename && filename[0])
-				g_hash_table_insert (hash, NM_OPENVPN_KEY_TLS_CRYPT, g_strdup (filename));
+				g_hash_table_insert (hash, NM_OPENVPN3_KEY_TLS_CRYPT, g_strdup (filename));
 			g_free (filename);
 			g_clear_object (&file);
 			break;
@@ -2393,7 +2393,7 @@ advanced_dialog_new_hash_from_dialog (GtkWidget *dialog)
 			else
 				filename = NULL;
 			if (filename && filename[0])
-				g_hash_table_insert (hash, NM_OPENVPN_KEY_TLS_CRYPT_V2, g_strdup (filename));
+				g_hash_table_insert (hash, NM_OPENVPN3_KEY_TLS_CRYPT_V2, g_strdup (filename));
 			g_free (filename);
 			g_clear_object (&file);
 			break;
@@ -2408,7 +2408,7 @@ advanced_dialog_new_hash_from_dialog (GtkWidget *dialog)
 		else
 			filename = NULL;
 		if (filename && filename[0])
-			g_hash_table_insert (hash, NM_OPENVPN_KEY_EXTRA_CERTS, g_strdup (filename));
+			g_hash_table_insert (hash, NM_OPENVPN3_KEY_EXTRA_CERTS, g_strdup (filename));
 		g_free (filename);
 		g_clear_object (&file);
 	}
@@ -2416,7 +2416,7 @@ advanced_dialog_new_hash_from_dialog (GtkWidget *dialog)
 	entry = GTK_WIDGET (gtk_builder_get_object (builder, "tls_cipher"));
 	value = gtk_editable_get_text (GTK_EDITABLE (entry));
 	if (value && *value)
-		g_hash_table_insert (hash, NM_OPENVPN_KEY_TLS_CIPHER, g_strdup (value));
+		g_hash_table_insert (hash, NM_OPENVPN3_KEY_TLS_CIPHER, g_strdup (value));
 
 	widget = GTK_WIDGET (gtk_builder_get_object (builder, "ping_checkbutton"));
 	if (gtk_check_button_get_active (GTK_CHECK_BUTTON (widget))) {
@@ -2426,7 +2426,7 @@ advanced_dialog_new_hash_from_dialog (GtkWidget *dialog)
 		ping_val = gtk_spin_button_get_value_as_int (GTK_SPIN_BUTTON (widget));
 
 		g_hash_table_insert (hash,
-		                     NM_OPENVPN_KEY_PING,
+		                     NM_OPENVPN3_KEY_PING,
 		                     g_strdup_printf ("%d", ping_val));
 	}
 
@@ -2442,8 +2442,8 @@ advanced_dialog_new_hash_from_dialog (GtkWidget *dialog)
 
 		g_hash_table_insert (hash,
 		                     ping_exit_type == PING_EXIT
-		                       ? NM_OPENVPN_KEY_PING_EXIT
-		                       : NM_OPENVPN_KEY_PING_RESTART,
+		                       ? NM_OPENVPN3_KEY_PING_EXIT
+		                       : NM_OPENVPN3_KEY_PING_RESTART,
 		                     g_strdup_printf ("%d", ping_val));
 	}
 
@@ -2454,7 +2454,7 @@ advanced_dialog_new_hash_from_dialog (GtkWidget *dialog)
 
 		widget = GTK_WIDGET (gtk_builder_get_object (builder, "max_routes_spinbutton"));
 		max_routes = gtk_spin_button_get_value_as_int (GTK_SPIN_BUTTON (widget));
-		g_hash_table_insert (hash, NM_OPENVPN_KEY_MAX_ROUTES, g_strdup_printf ("%d", max_routes));
+		g_hash_table_insert (hash, NM_OPENVPN3_KEY_MAX_ROUTES, g_strdup_printf ("%d", max_routes));
 	}
 
 	/* MTU discovery */
@@ -2476,7 +2476,7 @@ advanced_dialog_new_hash_from_dialog (GtkWidget *dialog)
 		}
 		if (val) {
 			g_hash_table_insert (hash,
-			                     NM_OPENVPN_KEY_MTU_DISC,
+			                     NM_OPENVPN3_KEY_MTU_DISC,
 			                     g_strdup (val));
 		}
 	}
@@ -2492,7 +2492,7 @@ advanced_dialog_new_hash_from_dialog (GtkWidget *dialog)
 		if (file)
 			filename = g_file_get_path (file);
 		if (filename && filename[0])
-			g_hash_table_insert (hash, NM_OPENVPN_KEY_CRL_VERIFY_FILE, g_steal_pointer (&filename));
+			g_hash_table_insert (hash, NM_OPENVPN3_KEY_CRL_VERIFY_FILE, g_steal_pointer (&filename));
 	} else {
 		widget = GTK_WIDGET (gtk_builder_get_object (builder, "crl_dir_check"));
 		if (gtk_check_button_get_active (GTK_CHECK_BUTTON (widget))) {
@@ -2504,13 +2504,13 @@ advanced_dialog_new_hash_from_dialog (GtkWidget *dialog)
 			if (file)
 				filename = g_file_get_path (file);
 			if (filename && filename[0])
-				g_hash_table_insert (hash, NM_OPENVPN_KEY_CRL_VERIFY_DIR, g_steal_pointer (&filename));
+				g_hash_table_insert (hash, NM_OPENVPN3_KEY_CRL_VERIFY_DIR, g_steal_pointer (&filename));
 		}
 	}
 
 	widget = GTK_WIDGET (gtk_builder_get_object (builder, "push_peer_info_checkbutton"));
 	if (gtk_check_button_get_active (GTK_CHECK_BUTTON (widget)))
-		g_hash_table_insert (hash, NM_OPENVPN_KEY_PUSH_PEER_INFO, g_strdup ("yes"));
+		g_hash_table_insert (hash, NM_OPENVPN3_KEY_PUSH_PEER_INFO, g_strdup ("yes"));
 
 	return hash;
 }
@@ -2589,7 +2589,7 @@ check_validity (OpenvpnEditor *self, GError **error)
 		g_set_error (error,
 		             NMV_EDITOR_PLUGIN_ERROR,
 		             NMV_EDITOR_PLUGIN_ERROR_INVALID_PROPERTY,
-		             NM_OPENVPN_KEY_REMOTE);
+		             NM_OPENVPN3_KEY_REMOTE);
 		return FALSE;
 	}
 
@@ -2721,14 +2721,14 @@ init_editor_plugin (OpenvpnEditor *self, NMConnection *connection)
 	GtkTreeIter iter;
 	int active = -1;
 	const char *value;
-	const char *contype = NM_OPENVPN_CONTYPE_TLS;
+	const char *contype = NM_OPENVPN3_CONTYPE_TLS;
 
 	s_vpn = nm_connection_get_setting_vpn (connection);
 
 	widget = GTK_WIDGET (gtk_builder_get_object (priv->builder, "gateway_entry"));
 	g_return_val_if_fail (widget != NULL, FALSE);
 	if (s_vpn) {
-		value = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_REMOTE);
+		value = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_REMOTE);
 		if (value)
 			gtk_editable_set_text (GTK_EDITABLE (widget), value);
 	}
@@ -2740,51 +2740,51 @@ init_editor_plugin (OpenvpnEditor *self, NMConnection *connection)
 	store = gtk_list_store_new (3, G_TYPE_STRING, G_TYPE_INT, G_TYPE_STRING);
 
 	if (s_vpn) {
-		contype = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_CONNECTION_TYPE);
-		if (!NM_IN_STRSET (contype, NM_OPENVPN_CONTYPE_TLS,
-		                            NM_OPENVPN_CONTYPE_STATIC_KEY,
-		                            NM_OPENVPN_CONTYPE_PASSWORD,
-		                            NM_OPENVPN_CONTYPE_PASSWORD_TLS))
-			contype = NM_OPENVPN_CONTYPE_TLS;
+		contype = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_CONNECTION_TYPE);
+		if (!NM_IN_STRSET (contype, NM_OPENVPN3_CONTYPE_TLS,
+		                            NM_OPENVPN3_CONTYPE_STATIC_KEY,
+		                            NM_OPENVPN3_CONTYPE_PASSWORD,
+		                            NM_OPENVPN3_CONTYPE_PASSWORD_TLS))
+			contype = NM_OPENVPN3_CONTYPE_TLS;
 	}
 
 	/* TLS auth widget */
 	tls_pw_init_auth_widget (priv->builder, s_vpn,
-	                         NM_OPENVPN_CONTYPE_TLS, "tls",
+	                         NM_OPENVPN3_CONTYPE_TLS, "tls",
 	                         stuff_changed_cb, self);
 	gtk_list_store_append (store, &iter);
 	gtk_list_store_set (store, &iter,
 	                    COL_AUTH_NAME, _("Certificates (TLS)"),
 	                    COL_AUTH_PAGE, 0,
-	                    COL_AUTH_TYPE, NM_OPENVPN_CONTYPE_TLS,
+	                    COL_AUTH_TYPE, NM_OPENVPN3_CONTYPE_TLS,
 	                    -1);
 
 	/* Password auth widget */
 	tls_pw_init_auth_widget (priv->builder, s_vpn,
-	                         NM_OPENVPN_CONTYPE_PASSWORD, "pw",
+	                         NM_OPENVPN3_CONTYPE_PASSWORD, "pw",
 	                         stuff_changed_cb, self);
 	gtk_list_store_append (store, &iter);
 	gtk_list_store_set (store, &iter,
 	                    COL_AUTH_NAME, _("Password"),
 	                    COL_AUTH_PAGE, 1,
-	                    COL_AUTH_TYPE, NM_OPENVPN_CONTYPE_PASSWORD,
+	                    COL_AUTH_TYPE, NM_OPENVPN3_CONTYPE_PASSWORD,
 	                    -1);
 	if (   active < 0
-	    && nm_streq (contype, NM_OPENVPN_CONTYPE_PASSWORD))
+	    && nm_streq (contype, NM_OPENVPN3_CONTYPE_PASSWORD))
 		active = 1;
 
 	/* Password+TLS auth widget */
 	tls_pw_init_auth_widget (priv->builder, s_vpn,
-	                         NM_OPENVPN_CONTYPE_PASSWORD_TLS, "pw_tls",
+	                         NM_OPENVPN3_CONTYPE_PASSWORD_TLS, "pw_tls",
 	                         stuff_changed_cb, self);
 	gtk_list_store_append (store, &iter);
 	gtk_list_store_set (store, &iter,
 	                    COL_AUTH_NAME, _("Password with Certificates (TLS)"),
 	                    COL_AUTH_PAGE, 2,
-	                    COL_AUTH_TYPE, NM_OPENVPN_CONTYPE_PASSWORD_TLS,
+	                    COL_AUTH_TYPE, NM_OPENVPN3_CONTYPE_PASSWORD_TLS,
 	                    -1);
 	if (   active < 0
-	    && nm_streq (contype, NM_OPENVPN_CONTYPE_PASSWORD_TLS))
+	    && nm_streq (contype, NM_OPENVPN3_CONTYPE_PASSWORD_TLS))
 		active = 2;
 
 	/* Static key auth widget */
@@ -2794,10 +2794,10 @@ init_editor_plugin (OpenvpnEditor *self, NMConnection *connection)
 	gtk_list_store_set (store, &iter,
 	                    COL_AUTH_NAME, _("Static Key"),
 	                    COL_AUTH_PAGE, 3,
-	                    COL_AUTH_TYPE, NM_OPENVPN_CONTYPE_STATIC_KEY,
+	                    COL_AUTH_TYPE, NM_OPENVPN3_CONTYPE_STATIC_KEY,
 	                    -1);
 	if (   active < 0
-	    && nm_streq (contype, NM_OPENVPN_CONTYPE_STATIC_KEY))
+	    && nm_streq (contype, NM_OPENVPN3_CONTYPE_STATIC_KEY))
 		active = 3;
 
 	gtk_combo_box_set_model (GTK_COMBO_BOX (widget), GTK_TREE_MODEL (store));
@@ -2832,7 +2832,7 @@ hash_copy_advanced (gpointer key, gpointer data, gpointer user_data)
 	g_return_if_fail (value && *value);
 
 	/* HTTP Proxy password is a secret, not a data item */
-	if (nm_streq0 (key, NM_OPENVPN_KEY_HTTP_PROXY_PASSWORD))
+	if (nm_streq0 (key, NM_OPENVPN3_KEY_HTTP_PROXY_PASSWORD))
 		nm_setting_vpn_add_secret (s_vpn, (const char *) key, value);
 	else
 		nm_setting_vpn_add_data_item (s_vpn, (const char *) key, value);
@@ -2878,11 +2878,11 @@ update_connection (NMVpnEditor *iface,
 	widget = GTK_WIDGET (gtk_builder_get_object (priv->builder, "gateway_entry"));
 	str = gtk_editable_get_text (GTK_EDITABLE (widget));
 	if (str && str[0])
-		nm_setting_vpn_add_data_item (s_vpn, NM_OPENVPN_KEY_REMOTE, str);
+		nm_setting_vpn_add_data_item (s_vpn, NM_OPENVPN3_KEY_REMOTE, str);
 
 	auth_type = get_auth_type (priv->builder);
 	if (auth_type) {
-		nm_setting_vpn_add_data_item (s_vpn, NM_OPENVPN_KEY_CONNECTION_TYPE, auth_type);
+		nm_setting_vpn_add_data_item (s_vpn, NM_OPENVPN3_KEY_CONNECTION_TYPE, auth_type);
 		auth_widget_update_connection (priv->builder, auth_type, s_vpn);
 	}
 
@@ -2930,7 +2930,7 @@ openvpn_editor_new (NMConnection *connection, GError **error)
 
 	gtk_builder_set_translation_domain (priv->builder, GETTEXT_PACKAGE);
 
-	if (!gtk_builder_add_from_resource (priv->builder, "/org/freedesktop/network-manager-openvpn/nm-openvpn-dialog.ui", error))
+	if (!gtk_builder_add_from_resource (priv->builder, "/org/freedesktop/network-manager-openvpn3/nm-openvpn3-dialog.ui", error))
 		g_return_val_if_reached (NULL);
 
 	priv->widget = GTK_WIDGET (gtk_builder_get_object (priv->builder, "openvpn-vbox"));
@@ -2948,11 +2948,11 @@ openvpn_editor_new (NMConnection *connection, GError **error)
 
 	if (new && s_vpn) {
 		nm_setting_set_secret_flags (NM_SETTING (s_vpn),
-		                             NM_OPENVPN_KEY_PASSWORD,
+		                             NM_OPENVPN3_KEY_PASSWORD,
 		                             NM_SETTING_SECRET_FLAG_AGENT_OWNED,
 		                             NULL);
 		nm_setting_set_secret_flags (NM_SETTING (s_vpn),
-		                             NM_OPENVPN_KEY_CERTPASS,
+		                             NM_OPENVPN3_KEY_CERTPASS,
 		                             NM_SETTING_SECRET_FLAG_AGENT_OWNED,
 		                             NULL);
 	}
@@ -3010,10 +3010,10 @@ openvpn_editor_plugin_widget_class_init (OpenvpnEditorClass *req_class)
 
 /*****************************************************************************/
 
-#include "nm-openvpn-editor-plugin.h"
+#include "nm-openvpn3-editor-plugin.h"
 
 G_MODULE_EXPORT NMVpnEditor *
-nm_vpn_editor_factory_openvpn (NMVpnEditorPlugin *editor_plugin,
+nm_vpn_editor_factory_openvpn3 (NMVpnEditorPlugin *editor_plugin,
                                NMConnection *connection,
                                GError **error)
 {
