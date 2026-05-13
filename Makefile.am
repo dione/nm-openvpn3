@@ -24,18 +24,18 @@ plugindir = $(libdir)/NetworkManager
 plugin_LTLIBRARIES =
 
 dbusservicedir = $(datadir)/dbus-1/system.d
-dbusservice_DATA = nm-openvpn-service.conf
+dbusservice_DATA = nm-openvpn3-service.conf
 
 nmvpnservicedir = $(NM_VPN_SERVICE_DIR)
-nmvpnservice_DATA = nm-openvpn-service.name
+nmvpnservice_DATA = nm-openvpn3-service.name
 
 nmvpnsysusersdir = $(prefix)/lib/sysusers.d
-nmvpnsysusers_DATA = nm-openvpn-sysusers.conf
+nmvpnsysusers_DATA = nm-openvpn3-sysusers.conf
 
 nmvpntmpfilesdir = $(prefix)/lib/tmpfiles.d
-nmvpntmpfiles_DATA = nm-openvpn-tmpfiles.conf
+nmvpntmpfiles_DATA = nm-openvpn3-tmpfiles.conf
 
-uidir = $(datadir)/gnome-vpn-properties/openvpn
+uidir = $(datadir)/gnome-vpn-properties/openvpn3
 ui_DATA =
 
 ###############################################################################
@@ -54,8 +54,8 @@ src_cppflags = \
 	-DLIBEXECDIR=\""$(libexecdir)"\" \
 	-DLOCALSTATEDIR=\""$(localstatedir)"\" \
 	-DDATADIR=\"$(datadir)\" \
-	-DNM_OPENVPN_LOCALEDIR=\"$(datadir)/locale\" \
-	-DG_LOG_DOMAIN=\"nm-openvpn\" \
+	-DNM_OPENVPN3_LOCALEDIR=\"$(datadir)/locale\" \
+	-DG_LOG_DOMAIN=\"nm-openvpn3\" \
 	-DNETWORKMANAGER_COMPILATION=NM_NETWORKMANAGER_COMPILATION_DEFAULT \
 	-I$(srcdir)/shared \
 	$(GLIB_CFLAGS) \
@@ -69,28 +69,28 @@ src_libnm_utils_la_LIBADD = \
 	$(GLIB_LIBS) \
 	$(LIBNM_LIBS)
 
-libexec_PROGRAMS += src/nm-openvpn-service
+libexec_PROGRAMS += src/nm-openvpn3-service
 
-src_nm_openvpn_service_CPPFLAGS = $(src_cppflags)
-src_nm_openvpn_service_LDFLAGS = \
+src_nm_openvpn3_service_CPPFLAGS = $(src_cppflags)
+src_nm_openvpn3_service_LDFLAGS = \
 	-Wl,--version-script="$(srcdir)/linker-script-binary.ver"
-src_nm_openvpn_service_LDADD = \
+src_nm_openvpn3_service_LDADD = \
 	src/libnm-utils.la \
 	$(GLIB_LIBS) \
 	$(LIBNM_LIBS)
-EXTRA_src_nm_openvpn_service_DEPENDENCIES = \
+EXTRA_src_nm_openvpn3_service_DEPENDENCIES = \
 	linker-script-binary.ver
 
-libexec_PROGRAMS += src/nm-openvpn-service-openvpn-helper
+libexec_PROGRAMS += src/nm-openvpn3-service-helper
 
-src_nm_openvpn_service_openvpn_helper_CPPFLAGS = $(src_cppflags)
-src_nm_openvpn_service_openvpn_helper_LDFLAGS = \
+src_nm_openvpn3_service_helper_CPPFLAGS = $(src_cppflags)
+src_nm_openvpn3_service_helper_LDFLAGS = \
 	-Wl,--version-script="$(srcdir)/linker-script-binary.ver"
-src_nm_openvpn_service_openvpn_helper_LDADD = \
+src_nm_openvpn3_service_helper_LDADD = \
 	src/libnm-utils.la \
 	$(GLIB_LIBS) \
 	$(LIBNM_LIBS)
-EXTRA_src_nm_openvpn_service_openvpn_helper_DEPENDENCIES = \
+EXTRA_src_nm_openvpn3_service_helper_DEPENDENCIES = \
 	linker-script-binary.ver
 
 ###############################################################################
@@ -112,10 +112,10 @@ gtk4/%.ui: properties/%.ui
 # Include a prebuilt file in tarball, to avoid hitting
 # https://gitlab.gnome.org/GNOME/gtk/-/merge_requests/4415
 EXTRA_DIST += \
-	gtk4/nm-openvpn-dialog.ui
+	gtk4/nm-openvpn3-dialog.ui
 
 CLEANFILES += \
-	gtk4/nm-openvpn-dialog.ui \
+	gtk4/nm-openvpn3-dialog.ui \
 	gtk4/resources.c \
 	properties/resources.c \
 	properties/resources.h
@@ -124,14 +124,14 @@ EXTRA_DIST += \
 	properties/gresource.xml
 
 plugin_sources = \
-	properties/nm-openvpn-editor-plugin.c \
-	properties/nm-openvpn-editor-plugin.h \
+	properties/nm-openvpn3-editor-plugin.c \
+	properties/nm-openvpn3-editor-plugin.h \
 	properties/import-export.c \
 	properties/import-export.h
 
 editor_sources = \
-	properties/nm-openvpn-editor.c \
-	properties/nm-openvpn-editor.h
+	properties/nm-openvpn3-editor.c \
+	properties/nm-openvpn3-editor.h
 
 properties_cppflags = \
 	-DICONDIR=\""$(datadir)/pixmaps"\" \
@@ -141,116 +141,116 @@ properties_cppflags = \
 
 ###############################################################################
 
-noinst_LTLIBRARIES += properties/libnm-vpn-plugin-openvpn-utils.la
+noinst_LTLIBRARIES += properties/libnm-vpn-plugin-openvpn3-utils.la
 
-properties_libnm_vpn_plugin_openvpn_utils_la_SOURCES = \
+properties_libnm_vpn_plugin_openvpn3_utils_la_SOURCES = \
 	$(shared_sources)
 
-properties_libnm_vpn_plugin_openvpn_utils_la_CPPFLAGS = \
+properties_libnm_vpn_plugin_openvpn3_utils_la_CPPFLAGS = \
 	-DNETWORKMANAGER_COMPILATION=NM_NETWORKMANAGER_COMPILATION_LIB_BASE \
 	$(properties_cppflags) \
 	$(LIBNM_CFLAGS)
 
-properties_libnm_vpn_plugin_openvpn_utils_la_LIBADD = \
+properties_libnm_vpn_plugin_openvpn3_utils_la_LIBADD = \
 	$(LIBNM_LIBS) \
 	$(DL_LIBS)
 
-noinst_LTLIBRARIES += properties/libnm-vpn-plugin-openvpn-core.la
+noinst_LTLIBRARIES += properties/libnm-vpn-plugin-openvpn3-core.la
 
-properties_libnm_vpn_plugin_openvpn_core_la_SOURCES = \
+properties_libnm_vpn_plugin_openvpn3_core_la_SOURCES = \
 	shared/nm-utils/nm-vpn-plugin-utils.c \
 	shared/nm-utils/nm-vpn-plugin-utils.h \
 	shared/nm-utils/nm-vpn-plugin-macros.h \
 	$(plugin_sources)
 
-properties_libnm_vpn_plugin_openvpn_core_la_CPPFLAGS = \
+properties_libnm_vpn_plugin_openvpn3_core_la_CPPFLAGS = \
 	-DNETWORKMANAGER_COMPILATION=NM_NETWORKMANAGER_COMPILATION_LIB_BASE \
 	$(properties_cppflags) \
 	$(LIBNM_CFLAGS)
 
-properties_libnm_vpn_plugin_openvpn_core_la_LIBADD = \
-	properties/libnm-vpn-plugin-openvpn-utils.la \
+properties_libnm_vpn_plugin_openvpn3_core_la_LIBADD = \
+	properties/libnm-vpn-plugin-openvpn3-utils.la \
 	$(GLIB_LIBS) \
 	$(LIBNM_LIBS) \
 	$(DL_LIBS)
 
-plugin_LTLIBRARIES += properties/libnm-vpn-plugin-openvpn.la
+plugin_LTLIBRARIES += properties/libnm-vpn-plugin-openvpn3.la
 
-properties_libnm_vpn_plugin_openvpn_la_SOURCES =
-properties_libnm_vpn_plugin_openvpn_la_LIBADD = \
-	properties/libnm-vpn-plugin-openvpn-core.la
-properties_libnm_vpn_plugin_openvpn_la_LDFLAGS = \
+properties_libnm_vpn_plugin_openvpn3_la_SOURCES =
+properties_libnm_vpn_plugin_openvpn3_la_LIBADD = \
+	properties/libnm-vpn-plugin-openvpn3-core.la
+properties_libnm_vpn_plugin_openvpn3_la_LDFLAGS = \
 	-avoid-version \
-	-Wl,--version-script=$(srcdir)/properties/libnm-vpn-plugin-openvpn.ver
+	-Wl,--version-script=$(srcdir)/properties/libnm-vpn-plugin-openvpn3.ver
 
 ###############################################################################
 
 if WITH_GNOME
-plugin_LTLIBRARIES += properties/libnm-vpn-plugin-openvpn-editor.la
+plugin_LTLIBRARIES += properties/libnm-vpn-plugin-openvpn3-editor.la
 endif
 
-properties_libnm_vpn_plugin_openvpn_editor_la_SOURCES = \
+properties_libnm_vpn_plugin_openvpn3_editor_la_SOURCES = \
 	$(editor_sources)
 
-nodist_properties_libnm_vpn_plugin_openvpn_editor_la_SOURCES = \
+nodist_properties_libnm_vpn_plugin_openvpn3_editor_la_SOURCES = \
 	properties/resources.c \
 	properties/resources.h
 
-properties_libnm_vpn_plugin_openvpn_editor_la_CPPFLAGS = \
+properties_libnm_vpn_plugin_openvpn3_editor_la_CPPFLAGS = \
 	-DNETWORKMANAGER_COMPILATION=NM_NETWORKMANAGER_COMPILATION_LIB_EDITOR \
 	$(properties_cppflags) \
 	$(GTK_CFLAGS) \
 	$(LIBNM_CFLAGS) \
 	$(LIBNMA_CFLAGS)
 
-properties_libnm_vpn_plugin_openvpn_editor_la_LIBADD = \
-	properties/libnm-vpn-plugin-openvpn-utils.la \
+properties_libnm_vpn_plugin_openvpn3_editor_la_LIBADD = \
+	properties/libnm-vpn-plugin-openvpn3-utils.la \
 	$(GLIB_LIBS) \
 	$(GTK_LIBS) \
 	$(LIBNM_LIBS) \
 	$(LIBNMA_LIBS)
 
-properties_libnm_vpn_plugin_openvpn_editor_la_LDFLAGS = \
+properties_libnm_vpn_plugin_openvpn3_editor_la_LDFLAGS = \
 	-avoid-version \
-	-Wl,--version-script=$(srcdir)/properties/libnm-vpn-plugin-openvpn-editor.ver
+	-Wl,--version-script=$(srcdir)/properties/libnm-vpn-plugin-openvpn3-editor.ver
 
 ###############################################################################
 
 if WITH_GTK4
-plugin_LTLIBRARIES += properties/libnm-gtk4-vpn-plugin-openvpn-editor.la
+plugin_LTLIBRARIES += properties/libnm-gtk4-vpn-plugin-openvpn3-editor.la
 endif
 
-properties_libnm_gtk4_vpn_plugin_openvpn_editor_la_SOURCES = \
+properties_libnm_gtk4_vpn_plugin_openvpn3_editor_la_SOURCES = \
 	$(editor_sources)
 
-nodist_properties_libnm_gtk4_vpn_plugin_openvpn_editor_la_SOURCES = \
+nodist_properties_libnm_gtk4_vpn_plugin_openvpn3_editor_la_SOURCES = \
 	gtk4/resources.c \
 	properties/resources.h
 
-properties_libnm_gtk4_vpn_plugin_openvpn_editor_la_CPPFLAGS = \
+properties_libnm_gtk4_vpn_plugin_openvpn3_editor_la_CPPFLAGS = \
 	-DNETWORKMANAGER_COMPILATION=NM_NETWORKMANAGER_COMPILATION_LIB_EDITOR \
 	$(properties_cppflags) \
 	$(GTK4_CFLAGS) \
 	$(LIBNM_CFLAGS) \
 	$(LIBNMA_GTK4_CFLAGS)
 
-properties_libnm_gtk4_vpn_plugin_openvpn_editor_la_LIBADD = \
-	properties/libnm-vpn-plugin-openvpn-utils.la \
+properties_libnm_gtk4_vpn_plugin_openvpn3_editor_la_LIBADD = \
+	properties/libnm-vpn-plugin-openvpn3-utils.la \
 	$(GLIB_LIBS) \
 	$(GTK4_LIBS) \
 	$(LIBNM_LIBS) \
 	$(LIBNMA_GTK4_LIBS)
 
-properties_libnm_gtk4_vpn_plugin_openvpn_editor_la_LDFLAGS = \
+properties_libnm_gtk4_vpn_plugin_openvpn3_editor_la_LDFLAGS = \
 	-avoid-version \
-	-Wl,--version-script=$(srcdir)/properties/libnm-vpn-plugin-openvpn-editor.ver
+	-Wl,--version-script=$(srcdir)/properties/libnm-vpn-plugin-openvpn3-editor.ver
 
 ###############################################################################
 
 EXTRA_DIST += \
-	properties/libnm-vpn-plugin-openvpn.ver \
-	properties/libnm-vpn-plugin-openvpn-editor.ver \
-	properties/nm-openvpn-dialog.ui
+	properties/libnm-vpn-plugin-openvpn3.ver \
+	properties/libnm-vpn-plugin-openvpn3-editor.ver \
+	properties/nm-openvpn3-dialog.ui
 
 ###############################################################################
 
@@ -274,7 +274,7 @@ properties_tests_test_import_export_CPPFLAGS = \
 	$(LIBNMA_CFLAGS)
 
 properties_tests_test_import_export_LDADD = \
-	properties/libnm-vpn-plugin-openvpn-core.la \
+	properties/libnm-vpn-plugin-openvpn3-core.la \
 	$(GLIB_LIBS) \
 	$(LIBNM_LIBS) \
 	$(LIBNMA_LIBS)
@@ -331,14 +331,14 @@ EXTRA_DIST += \
 ###############################################################################
 
 if WITH_GNOME
-libexec_PROGRAMS += auth-dialog/nm-openvpn-auth-dialog
+libexec_PROGRAMS += auth-dialog/nm-openvpn3-auth-dialog
 endif
 
-auth_dialog_nm_openvpn_auth_dialog_SOURCES = \
+auth_dialog_nm_openvpn3_auth_dialog_SOURCES = \
 	$(shared_sources) \
 	auth-dialog/main.c
 if WITH_GTK4
-auth_dialog_nm_openvpn_auth_dialog_CPPFLAGS = \
+auth_dialog_nm_openvpn3_auth_dialog_CPPFLAGS = \
 	-DICONDIR=\""$(datadir)/pixmaps"\" \
 	-DBINDIR=\""$(bindir)"\" \
 	-DGNOMELOCALEDIR=\"$(datadir)/locale\" \
@@ -349,14 +349,14 @@ auth_dialog_nm_openvpn_auth_dialog_CPPFLAGS = \
 	$(LIBNM_CFLAGS) \
 	$(LIBNMA_GTK4_CFLAGS) \
 	$(LIBSECRET_CFLAGS)
-auth_dialog_nm_openvpn_auth_dialog_LDADD = \
+auth_dialog_nm_openvpn3_auth_dialog_LDADD = \
 	$(GLIB_LIBS) \
 	$(GTK4_LIBS) \
 	$(LIBNM_LIBS) \
 	$(LIBNMA_GTK4_LIBS) \
 	$(LIBSECRET_LIBS)
 else
-auth_dialog_nm_openvpn_auth_dialog_CPPFLAGS = \
+auth_dialog_nm_openvpn3_auth_dialog_CPPFLAGS = \
 	-DICONDIR=\""$(datadir)/pixmaps"\" \
 	-DBINDIR=\""$(bindir)"\" \
 	-DGNOMELOCALEDIR=\"$(datadir)/locale\" \
@@ -367,16 +367,16 @@ auth_dialog_nm_openvpn_auth_dialog_CPPFLAGS = \
 	$(LIBNM_CFLAGS) \
 	$(LIBNMA_CFLAGS) \
 	$(LIBSECRET_CFLAGS)
-auth_dialog_nm_openvpn_auth_dialog_LDADD = \
+auth_dialog_nm_openvpn3_auth_dialog_LDADD = \
 	$(GLIB_LIBS) \
 	$(GTK_LIBS) \
 	$(LIBNM_LIBS) \
 	$(LIBNMA_LIBS) \
 	$(LIBSECRET_LIBS)
 endif
-auth_dialog_nm_openvpn_auth_dialog_LDFLAGS = \
+auth_dialog_nm_openvpn3_auth_dialog_LDFLAGS = \
 	-Wl,--version-script="$(srcdir)/linker-script-binary.ver"
-EXTRA_auth_dialog_nm_openvpn_auth_dialog_DEPENDENCIES = \
+EXTRA_auth_dialog_nm_openvpn3_auth_dialog_DEPENDENCIES = \
 	linker-script-binary.ver
 
 ###############################################################################
@@ -391,16 +391,16 @@ appdata_in_files = appdata/network-manager-openvpn3.metainfo.xml.in
 appdata/network-manager-openvpn3.metainfo.xml: appdata/network-manager-openvpn3.metainfo.xml.in
 	$(AM_V_GEN)$(MSGFMT) --xml --template $< -d $(top_srcdir)/po -o $@
 
-nm-openvpn-service.name: $(srcdir)/nm-openvpn-service.name.in
+nm-openvpn3-service.name: $(srcdir)/nm-openvpn3-service.name.in
 	$(AM_V_GEN) sed -e 's|[@]LIBEXECDIR[@]|$(libexecdir)|g' \
 	    -e 's|[@]PLUGINDIR[@]/|@NM_PLUGIN_DIR_NAME_FILE@|g' \
 	    $^ >$@
 
-nm-openvpn-sysusers.conf: $(srcdir)/nm-openvpn-sysusers.conf.in
+nm-openvpn3-sysusers.conf: $(srcdir)/nm-openvpn3-sysusers.conf.in
 	$(AM_V_GEN) sed -e 's|[@]LOCALSTATEDIR[@]|$(localstatedir)|g' \
 	    $^ >$@
 
-nm-openvpn-tmpfiles.conf: $(srcdir)/nm-openvpn-tmpfiles.conf.in
+nm-openvpn3-tmpfiles.conf: $(srcdir)/nm-openvpn3-tmpfiles.conf.in
 	$(AM_V_GEN) sed -e 's|[@]LOCALSTATEDIR[@]|$(localstatedir)|g' \
 	    $^ >$@
 
@@ -411,9 +411,9 @@ TESTS = $(check_programs)
 
 EXTRA_DIST += \
 	linker-script-binary.ver \
-	nm-openvpn-service.name.in \
-	nm-openvpn-sysusers.conf.in \
-	nm-openvpn-tmpfiles.conf.in \
+	nm-openvpn3-service.name.in \
+	nm-openvpn3-sysusers.conf.in \
+	nm-openvpn3-tmpfiles.conf.in \
 	$(dbusservice_DATA) \
 	$(appdata_in_files) \
 	$(appdata_files) \
