@@ -2493,7 +2493,7 @@ main (int argc, char *argv[])
 	gs_unref_object NMOpenvpn3Plugin *plugin = NULL;
 	gboolean persist = FALSE;
 	GOptionContext *opt_ctx = NULL;
-	gchar *bus_name = NM_DBUS_SERVICE_OPENVPN;
+	gchar *bus_name = NM_DBUS_SERVICE_OPENVPN3;
 	GError *error = NULL;
 	GMainLoop *loop;
 	guint source_id_sigterm;

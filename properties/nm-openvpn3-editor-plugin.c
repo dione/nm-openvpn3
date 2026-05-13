@@ -161,7 +161,7 @@ get_property (GObject *object, guint prop_id,
 		g_value_set_string (value, OPENVPN_PLUGIN_DESC);
 		break;
 	case PROP_SERVICE:
-		g_value_set_string (value, NM_VPN_SERVICE_TYPE_OPENVPN);
+		g_value_set_string (value, NM_VPN_SERVICE_TYPE_OPENVPN3);
 		break;
 	default:
 		G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);

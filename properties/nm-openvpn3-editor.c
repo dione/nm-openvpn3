@@ -2873,7 +2873,7 @@ update_connection (NMVpnEditor *iface,
 		return FALSE;
 
 	s_vpn = NM_SETTING_VPN (nm_setting_vpn_new ());
-	g_object_set (s_vpn, NM_SETTING_VPN_SERVICE_TYPE, NM_VPN_SERVICE_TYPE_OPENVPN, NULL);
+	g_object_set (s_vpn, NM_SETTING_VPN_SERVICE_TYPE, NM_VPN_SERVICE_TYPE_OPENVPN3, NULL);
 
 	widget = GTK_WIDGET (gtk_builder_get_object (priv->builder, "gateway_entry"));
 	str = gtk_editable_get_text (GTK_EDITABLE (widget));

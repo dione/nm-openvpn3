@@ -528,8 +528,8 @@ main (int argc, char *argv[])
 		return EXIT_FAILURE;
 	}
 
-	if (strcmp (vpn_service, NM_VPN_SERVICE_TYPE_OPENVPN) != 0) {
-		fprintf (stderr, "This dialog only works with the '%s' service\n", NM_VPN_SERVICE_TYPE_OPENVPN);
+	if (strcmp (vpn_service, NM_VPN_SERVICE_TYPE_OPENVPN3) != 0) {
+		fprintf (stderr, "This dialog only works with the '%s' service\n", NM_VPN_SERVICE_TYPE_OPENVPN3);
 		return EXIT_FAILURE;
 	}
 

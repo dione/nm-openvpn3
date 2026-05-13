@@ -452,7 +452,7 @@ main (int argc, char *argv[])
 	gboolean has_ip4_prefix = FALSE;
 	gboolean has_ip4_address = FALSE;
 	gboolean has_ip6_address = FALSE;
-	gchar *bus_name = NM_DBUS_SERVICE_OPENVPN;
+	gchar *bus_name = NM_DBUS_SERVICE_OPENVPN3;
 	gsize size;
 
 #if !GLIB_CHECK_VERSION (2, 35, 0)
