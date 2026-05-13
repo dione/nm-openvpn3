@@ -26,17 +26,17 @@
 
   <screenshots>
     <screenshot type="default">
-      <image width="800" height="658">https://github.com/dione/nm-openvpn3/raw/main/appdata/openvpn.png</image>
+      <image width="800" height="658">https://raw.githubusercontent.com/dione/nm-openvpn3/fork/openvpn3-skeleton/appdata/openvpn.png</image>
     </screenshot>
     <screenshot>
       <caption>The advanced options dialog</caption>
-      <image width="800" height="604">https://github.com/dione/nm-openvpn3/raw/main/appdata/openvpn-advanced.png</image>
+      <image width="800" height="604">https://raw.githubusercontent.com/dione/nm-openvpn3/fork/openvpn3-skeleton/appdata/openvpn-advanced.png</image>
     </screenshot>
   </screenshots>
 
   <url type="homepage">https://github.com/dione/nm-openvpn3</url>
   <url type="bugtracker">https://github.com/dione/nm-openvpn3/issues</url>
-  <update_contact>networkmanager-maint@gnome.bugs</update_contact>
+  <update_contact>nm-openvpn3-maint_AT_dione.fork</update_contact>
   <translation type="gettext">NetworkManager-openvpn3</translation>
-  <developer_name>The NetworkManager Developers</developer_name>
+  <developer_name>The nm-openvpn3 fork authors</developer_name>
 </component>
