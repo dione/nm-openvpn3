@@ -2411,6 +2411,22 @@ poll_status_cb (gpointer user_data)
 		ovpn3_trace ("STARTED branch: ext_host='%s' ext_gw=0x%08x",
 		             ext_host ? ext_host : "", ext_gw_be);
 
+		/* Pull DNS + search domains from the openvpn3 netcfg device. */
+		g_autofree gchar *dev_path = ovpn3_session_get_device_path (
+			priv->ovpn3, priv->session_path, NULL);
+		g_auto (GStrv) dns_servers = NULL;
+		g_auto (GStrv) dns_search  = NULL;
+		if (dev_path) {
+			dns_servers = ovpn3_netcfg_get_dns_servers (priv->ovpn3,
+			                                            dev_path, NULL);
+			dns_search  = ovpn3_netcfg_get_dns_search  (priv->ovpn3,
+			                                            dev_path, NULL);
+		}
+		ovpn3_trace ("STARTED branch: dev_path=%s dns_count=%u search_count=%u",
+		             dev_path ? dev_path : "(null)",
+		             dns_servers ? g_strv_length (dns_servers) : 0,
+		             dns_search  ? g_strv_length (dns_search)  : 0);
+
 		/* NM requires SetConfig BEFORE SetIp4Config, declaring HAS_IP4=TRUE
 		 * (otherwise NM does not know to expect any IPv4 config and the
 		 * subsequent SetIp4Config is silently ignored). */
@@ -2459,6 +2475,34 @@ poll_status_cb (gpointer user_data)
 		g_variant_builder_add (&b, "{sv}",
 		                       NM_VPN_PLUGIN_IP4_CONFIG_PRESERVE_ROUTES,
 		                       g_variant_new_boolean (TRUE));
+
+		/* DNS servers: array of guint32 in network byte order. */
+		if (dns_servers && dns_servers[0]) {
+			GVariantBuilder dnsb;
+			g_variant_builder_init (&dnsb, G_VARIANT_TYPE ("au"));
+			for (gchar **p = dns_servers; *p; p++) {
+				struct in_addr ia;
+				if (inet_aton (*p, &ia))
+					g_variant_builder_add (&dnsb, "u", ia.s_addr);
+				else
+					ovpn3_trace ("DNS skip non-IPv4 entry '%s'", *p);
+			}
+			g_variant_builder_add (&b, "{sv}",
+			                       NM_VPN_PLUGIN_IP4_CONFIG_DNS,
+			                       g_variant_builder_end (&dnsb));
+		}
+
+		/* DNS search domains: array of strings. */
+		if (dns_search && dns_search[0]) {
+			GVariantBuilder dsb;
+			g_variant_builder_init (&dsb, G_VARIANT_TYPE ("as"));
+			for (gchar **p = dns_search; *p; p++)
+				g_variant_builder_add (&dsb, "s", *p);
+			g_variant_builder_add (&b, "{sv}",
+			                       NM_VPN_PLUGIN_IP4_CONFIG_DOMAINS,
+			                       g_variant_builder_end (&dsb));
+		}
+
 		ovpn3_trace ("emitting set_ip4_config");
 		nm_vpn_service_plugin_set_ip4_config (plugin,
 		                                      g_variant_builder_end (&b));
