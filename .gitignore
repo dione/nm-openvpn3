@@ -80,4 +80,4 @@ properties/resources.[ch]
 
 # Fork-local directories — not part of upstream sources
 /reference/
-/docs/
+/docs/superpowers/
