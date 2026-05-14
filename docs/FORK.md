@@ -30,5 +30,7 @@ the openvpn3 prefix is applied uniformly.
 - Plan 1 (done, v0.2.0-mvp) — TLS-cert Connect/Disconnect happy path via net.openvpn.v3.*
 - Plan 1b (done, v0.3.0) — DNS + search domains via netcfg device
 - Plan 1c (done, v0.3.1) — VPN routes forwarded to NM for display
+- Plan 1d/1e (done, v0.3.2/v0.3.3) — D-Bus retry, session ACL, split-tunnel, watchdog
+- Plan 3 (done, v0.4.0) — UI plugin appears in nm-connection-editor (libdir multiarch + GObject type rename)
 - Plan 2 — auth-dialog around AttentionRequired / UserInputQueue
-- Plan 3 — UI plugin for nm-connection-editor
+- Plan 3b — UI plugin: trim openvpn2-only options, surface openvpn3 SetOverride keys
