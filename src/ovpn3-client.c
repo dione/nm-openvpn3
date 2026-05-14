@@ -1,5 +1,36 @@
 #include "ovpn3-client.h"
 
+#include <stdarg.h>
+#include <stdio.h>
+#include <time.h>
+
+/* Direct-to-file trace logger for debugging the StatusChange delivery
+ * problem.  g_message goes to stderr, which the NM-auto-spawned service
+ * does not reliably forward to journald, so we write to a known path
+ * with append+flush so the user can `tail -f` it. */
+static void
+ovpn3_trace (const char *fmt, ...)
+{
+	static FILE *f = NULL;
+	if (!f) {
+		f = fopen ("/tmp/nm-openvpn3-trace.log", "a");
+		if (!f) return;
+	}
+	struct timespec ts;
+	clock_gettime (CLOCK_REALTIME, &ts);
+	struct tm tm;
+	localtime_r (&ts.tv_sec, &tm);
+	char tbuf[32];
+	strftime (tbuf, sizeof (tbuf), "%H:%M:%S", &tm);
+	fprintf (f, "%s.%03ld [%d] ", tbuf, ts.tv_nsec / 1000000, (int) getpid ());
+	va_list ap;
+	va_start (ap, fmt);
+	vfprintf (f, fmt, ap);
+	va_end (ap);
+	fputc ('\n', f);
+	fflush (f);
+}
+
 struct _Ovpn3Client {
 	GDBusConnection *bus;
 	GDBusProxy      *config_proxy;
@@ -195,9 +226,9 @@ status_signal_cb (GDBusConnection *conn,
 	StatusSubData *d = user_data;
 	guint32 maj = 0, min = 0;
 	const gchar *msg = NULL;
-	g_message ("ovpn3 signal arrived: sender=%s path=%s iface=%s signal=%s sig=%s",
-	           sender, path, iface, signal_name,
-	           g_variant_get_type_string (parameters));
+	ovpn3_trace ("signal arrived: sender=%s path=%s iface=%s signal=%s sig=%s",
+	             sender, path, iface, signal_name,
+	             g_variant_get_type_string (parameters));
 	if (g_strcmp0 (signal_name, "StatusChange") != 0)
 		return;
 	g_variant_get (parameters, "(uu&s)", &maj, &min, &msg);
@@ -217,11 +248,8 @@ ovpn3_session_subscribe_status (Ovpn3Client         *self,
 	d->user_data = user_data;
 
 	/* sender=NULL + iface=NULL + signal=NULL: subscribe to ALL signals on
-	 * this object path so we observe whatever openvpn3 actually emits.
-	 * The callback filters to StatusChange.  This is intentionally broad
-	 * because openvpn3's bus topology has been emitting status updates from
-	 * surprising senders. */
-	return g_dbus_connection_signal_subscribe (
+	 * this object path so we observe whatever openvpn3 actually emits. */
+	guint sub = g_dbus_connection_signal_subscribe (
 		self->bus,
 		NULL,
 		NULL,
@@ -230,6 +258,8 @@ ovpn3_session_subscribe_status (Ovpn3Client         *self,
 		NULL,
 		G_DBUS_SIGNAL_FLAGS_NONE,
 		status_signal_cb, d, g_free);
+	ovpn3_trace ("subscribed sub_id=%u path=%s", sub, session_path);
+	return sub;
 }
 
 void
