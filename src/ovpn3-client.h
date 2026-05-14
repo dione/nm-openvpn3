@@ -114,4 +114,21 @@ gchar **ovpn3_netcfg_get_dns_search (Ovpn3Client *self,
                                      const gchar *device_path,
                                      GError     **error);
 
+/* Set the session's public_access boolean property.  When TRUE, any UID
+ * on the system bus can list and manage the session via the openvpn3
+ * CLI — required so the user that triggered the NM connection (typically
+ * uid 1000) sees the session created by our root-running service. */
+gboolean ovpn3_session_set_public_access (Ovpn3Client *self,
+                                          const gchar *session_path,
+                                          gboolean     value,
+                                          GError     **error);
+
+/* Add @uid to the session's ACL via session.AccessGrant(u uid).  Required
+ * for that uid to read per-property values like 'status' and 'device_name'
+ * — public_access alone only authorises management methods. */
+gboolean ovpn3_session_access_grant (Ovpn3Client *self,
+                                     const gchar *session_path,
+                                     guint32      uid,
+                                     GError     **error);
+
 #endif

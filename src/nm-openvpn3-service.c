@@ -141,6 +141,8 @@ typedef struct {
 	guint        status_sub_id;
 	guint        poll_timer_id;
 	guint        poll_ticks;
+	gboolean     ip4_emitted;     /* TRUE after first STARTED transition; gate Ip4Config re-emit
+	                                 and switches poll cadence to watchdog mode */
 	GMainLoop   *wait_loop;
 	int          wait_state;    /* most recent ovpn3_status_to_nm_state result */
 } NMOpenvpn3PluginPrivate;
@@ -2300,6 +2302,7 @@ real_disconnect (NMVpnServicePlugin *plugin, GError **error)
 		g_source_remove (priv->poll_timer_id);
 		priv->poll_timer_id = 0;
 	}
+	priv->ip4_emitted = FALSE;
 	g_clear_pointer (&priv->session_path, g_free);
 	g_clear_pointer (&priv->config_path, g_free);
 
@@ -2353,6 +2356,20 @@ poll_status_cb (gpointer user_data)
 	                               &maj, &min, &msg, &e)) {
 		_LOGW ("status poll failed: %s",
 		       e ? e->message : "unknown");
+		if (priv->ip4_emitted) {
+			/* Session vanished externally (e.g. user ran `openvpn3
+			 * session-manage --disconnect` behind NM's back).  Tell
+			 * NM the tunnel is gone so it tears the connection down
+			 * instead of showing ACTIVATED with a dead tun.  libnm's
+			 * failure enum is small (LOGIN_FAILED / CONNECT_FAILED /
+			 * BAD_IP_CONFIG) — no NETWORK_LOST option, so reuse
+			 * CONNECT_FAILED. */
+			ovpn3_trace ("session disappeared post-connect; failing to NM");
+			nm_vpn_service_plugin_failure (plugin,
+			                               NM_VPN_PLUGIN_FAILURE_CONNECT_FAILED);
+			priv->poll_timer_id = 0;
+			return G_SOURCE_REMOVE;
+		}
 		if (priv->poll_ticks >= POLL_MAX_TICKS) {
 			nm_vpn_service_plugin_failure (plugin,
 			                               NM_VPN_PLUGIN_FAILURE_CONNECT_FAILED);
@@ -2369,6 +2386,11 @@ poll_status_cb (gpointer user_data)
 	             priv->poll_ticks, maj, min, msg ?: "", state);
 
 	if (state == NM_VPN_SERVICE_STATE_STARTED) {
+		/* Already emitted Ip4Config — this is the watchdog loop, just
+		 * confirm the session is still up and keep polling slowly. */
+		if (priv->ip4_emitted)
+			return G_SOURCE_CONTINUE;
+
 		g_autoptr (GError) ge = NULL;
 		g_autofree gchar *dev = ovpn3_session_get_device_name (
 			priv->ovpn3, priv->session_path, &ge);
@@ -2517,6 +2539,27 @@ poll_status_cb (gpointer user_data)
 		             re ? " err=" : "",
 		             re ? re->message : "");
 
+		/* Detect openvpn3's split-tunnel intent: if it did NOT install
+		 * a 0.0.0.0/0 route on the tun device, the profile has no
+		 * redirect-gateway flag and the user wants split tunnel.  Tell
+		 * NM to NOT promote the VPN to system default route — without
+		 * this NM unconditionally installs 'default dev tunX' on top
+		 * of openvpn3's per-subnet routes. */
+		gboolean has_default_route = FALSE;
+		for (guint i = 0; routes && i < routes->len; i++) {
+			Ovpn3Route r = g_array_index (routes, Ovpn3Route, i);
+			if (r.prefix == 0 && r.dest_be == 0) {
+				has_default_route = TRUE;
+				break;
+			}
+		}
+		if (!has_default_route) {
+			g_variant_builder_add (&b, "{sv}",
+			                       NM_VPN_PLUGIN_IP4_CONFIG_NEVER_DEFAULT,
+			                       g_variant_new_boolean (TRUE));
+			ovpn3_trace ("split-tunnel: emit never-default=TRUE (no 0.0.0.0/0 on tun)");
+		}
+
 		if (routes && routes->len > 0) {
 			GVariantBuilder rb;
 			guint emitted = 0;
@@ -2549,7 +2592,14 @@ poll_status_cb (gpointer user_data)
 		nm_vpn_service_plugin_set_ip4_config (plugin,
 		                                      g_variant_builder_end (&b));
 
-		priv->poll_timer_id = 0;
+		/* Drop the 500 ms fast-poll, re-arm a 5 s watchdog that keeps
+		 * checking the session is alive.  When openvpn3 disconnects
+		 * (either via 'session-manage --disconnect' from outside NM,
+		 * or because of network loss), the status read fails and we
+		 * propagate failure to NM. */
+		priv->ip4_emitted = TRUE;
+		priv->poll_ticks  = 0;
+		priv->poll_timer_id = g_timeout_add_seconds (5, poll_status_cb, self);
 		return G_SOURCE_REMOVE;
 	}
 
@@ -2603,6 +2653,88 @@ real_connect (NMVpnServicePlugin *plugin,
 
 	if (!ovpn3_session_wait_ready (priv->ovpn3, priv->session_path, 5000, error))
 		return FALSE;
+
+	/* Our service runs as root; without explicit ACL entries, every other
+	 * UID (incl. the user who triggered the NM activation) gets a blank
+	 * `openvpn3 sessions-list` view.  public_access=TRUE authorises the
+	 * management methods (Connect/Disconnect/Pause/…); AccessGrant adds
+	 * a UID to the per-property ACL so `sessions-list` can read status,
+	 * device, owner, etc.  Best-effort on both calls — a failure here is
+	 * a usability regression, not a connectivity blocker. */
+	{
+		g_autoptr (GError) pa_err = NULL;
+		if (!ovpn3_session_set_public_access (priv->ovpn3, priv->session_path,
+		                                      TRUE, &pa_err)) {
+			ovpn3_trace ("set public_access=TRUE failed: %s",
+			             pa_err ? pa_err->message : "(unknown)");
+		}
+
+		NMSettingConnection *s_con = nm_connection_get_setting_connection (connection);
+		guint n_perms = s_con ? nm_setting_connection_get_num_permissions (s_con) : 0;
+		gboolean granted_any = FALSE;
+		for (guint i = 0; i < n_perms; i++) {
+			const char *ptype = NULL;
+			const char *pitem = NULL;
+			if (!nm_setting_connection_get_permission (s_con, i, &ptype, &pitem, NULL))
+				continue;
+			if (g_strcmp0 (ptype, "user") != 0 || !pitem)
+				continue;
+			struct passwd *pw = getpwnam (pitem);
+			if (!pw) {
+				ovpn3_trace ("AccessGrant: getpwnam(%s) failed", pitem);
+				continue;
+			}
+			g_autoptr (GError) ag_err = NULL;
+			if (!ovpn3_session_access_grant (priv->ovpn3, priv->session_path,
+			                                 (guint32) pw->pw_uid, &ag_err)) {
+				ovpn3_trace ("AccessGrant uid=%u (%s) failed: %s",
+				             (guint) pw->pw_uid, pitem,
+				             ag_err ? ag_err->message : "(unknown)");
+			} else {
+				granted_any = TRUE;
+				ovpn3_trace ("AccessGrant uid=%u (%s) ok",
+				             (guint) pw->pw_uid, pitem);
+			}
+		}
+		if (!granted_any) {
+			/* Fall back: NM connection has no user:NAME permission
+			 * (system connection).  Service runs as root so
+			 * XDG_RUNTIME_DIR points at /run/user/0 — useless.
+			 * Scan /run/user/<uid>/ for the lowest non-zero uid that
+			 * has an active systemd user session — that is the
+			 * foreground graphical user on a single-user-laptop and
+			 * matches who triggered the NM activation in practice. */
+			GDir *d = g_dir_open ("/run/user", 0, NULL);
+			if (d) {
+				const gchar *name;
+				guint32 best_uid = 0;
+				while ((name = g_dir_read_name (d)) != NULL) {
+					gchar *endptr = NULL;
+					guint64 v = g_ascii_strtoull (name, &endptr, 10);
+					if (!endptr || *endptr != '\0' || v == 0 || v > G_MAXUINT32)
+						continue;
+					if (best_uid == 0 || v < best_uid)
+						best_uid = (guint32) v;
+				}
+				g_dir_close (d);
+				if (best_uid != 0) {
+					g_autoptr (GError) ag_err = NULL;
+					if (!ovpn3_session_access_grant (priv->ovpn3,
+					                                 priv->session_path,
+					                                 best_uid, &ag_err)) {
+						ovpn3_trace ("AccessGrant fallback uid=%u failed: %s",
+						             best_uid,
+						             ag_err ? ag_err->message : "(unknown)");
+					} else {
+						ovpn3_trace ("AccessGrant fallback uid=%u (/run/user scan) ok",
+						             best_uid);
+					}
+				} else {
+					ovpn3_trace ("AccessGrant fallback: no non-root uid in /run/user");
+				}
+			}
+		}
+	}
 
 	if (!ovpn3_session_connect (priv->ovpn3, priv->session_path, error))
 		return FALSE;

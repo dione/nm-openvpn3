@@ -97,13 +97,27 @@ dbus_call_with_retry (GDBusProxy  *proxy,
 			g_variant_unref (params);
 			return r;
 		}
-		if (!g_error_matches (local, G_DBUS_ERROR, G_DBUS_ERROR_SERVICE_UNKNOWN) &&
-		    !g_error_matches (local, G_DBUS_ERROR, G_DBUS_ERROR_NO_REPLY) &&
-		    !g_error_matches (local, G_DBUS_ERROR, G_DBUS_ERROR_TIMEOUT) &&
-		    !g_error_matches (local, G_DBUS_ERROR, G_DBUS_ERROR_SPAWN_CHILD_EXITED) &&
-		    !g_error_matches (local, G_DBUS_ERROR, G_DBUS_ERROR_DISCONNECTED)) {
-			break;   /* non-transient; surface immediately */
+		gboolean transient =
+		    g_error_matches (local, G_DBUS_ERROR, G_DBUS_ERROR_SERVICE_UNKNOWN) ||
+		    g_error_matches (local, G_DBUS_ERROR, G_DBUS_ERROR_NO_REPLY) ||
+		    g_error_matches (local, G_DBUS_ERROR, G_DBUS_ERROR_TIMEOUT) ||
+		    g_error_matches (local, G_DBUS_ERROR, G_DBUS_ERROR_SPAWN_CHILD_EXITED) ||
+		    g_error_matches (local, G_DBUS_ERROR, G_DBUS_ERROR_DISCONNECTED) ||
+		    g_error_matches (local, G_DBUS_ERROR, G_DBUS_ERROR_UNKNOWN_OBJECT);
+		/* UnknownMethod is ambiguous: usually a permanent caller bug
+		 * (wrong method name), but openvpn3's auto-activated daemons
+		 * also surface "Object does not exist at path …" as
+		 * UnknownMethod during the brief window between bus name
+		 * registration and object-tree population.  Treat the path-
+		 * specific variant as transient by matching the message. */
+		if (!transient &&
+		    g_error_matches (local, G_DBUS_ERROR, G_DBUS_ERROR_UNKNOWN_METHOD) &&
+		    local->message != NULL &&
+		    strstr (local->message, "Object does not exist at path") != NULL) {
+			transient = TRUE;
 		}
+		if (!transient)
+			break;   /* non-transient; surface immediately */
 		if (i + 1 < attempts) {
 			ovpn3_trace ("dbus_call_with_retry: %s attempt %u failed (%s); retrying in %u ms",
 			             method, i + 1, local->message, backoff_ms);
@@ -326,6 +340,43 @@ ovpn3_session_get_device_name (Ovpn3Client *self,
 	const gchar *s = NULL;
 	g_variant_get (inner, "&s", &s);
 	return g_strdup (s);
+}
+
+gboolean
+ovpn3_session_set_public_access (Ovpn3Client *self,
+                                 const gchar *session_path,
+                                 gboolean     value,
+                                 GError     **error)
+{
+	g_return_val_if_fail (self != NULL, FALSE);
+	g_return_val_if_fail (session_path != NULL, FALSE);
+
+	g_autoptr (GVariant) r = g_dbus_connection_call_sync (
+		self->bus, OVPN3_BUS_SESSIONS, session_path,
+		"org.freedesktop.DBus.Properties", "Set",
+		g_variant_new ("(ssv)",
+		               OVPN3_IFACE_SESSIONS,
+		               "public_access",
+		               g_variant_new_boolean (value)),
+		NULL, G_DBUS_CALL_FLAGS_NONE, -1, NULL, error);
+	return r != NULL;
+}
+
+gboolean
+ovpn3_session_access_grant (Ovpn3Client *self,
+                            const gchar *session_path,
+                            guint32      uid,
+                            GError     **error)
+{
+	g_return_val_if_fail (self != NULL, FALSE);
+	g_return_val_if_fail (session_path != NULL, FALSE);
+
+	g_autoptr (GVariant) r = g_dbus_connection_call_sync (
+		self->bus, OVPN3_BUS_SESSIONS, session_path,
+		OVPN3_IFACE_SESSIONS, "AccessGrant",
+		g_variant_new ("(u)", uid),
+		NULL, G_DBUS_CALL_FLAGS_NONE, -1, NULL, error);
+	return r != NULL;
 }
 
 gchar *
