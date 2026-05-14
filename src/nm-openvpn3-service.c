@@ -2401,45 +2401,61 @@ real_connect (NMVpnServicePlugin *plugin,
 	g_autofree gchar *profile = NULL;
 	const gchar *id;
 
+	ovpn3_trace ("real_connect: entered");
+
 	if (!priv->ovpn3) {
 		priv->ovpn3 = ovpn3_client_new (error);
-		if (!priv->ovpn3)
+		if (!priv->ovpn3) {
+			ovpn3_trace ("real_connect: ovpn3_client_new FAILED: %s",
+			             error && *error ? (*error)->message : "unknown");
 			return FALSE;
+		}
 	}
 
 	profile = build_profile_string (connection, error);
-	if (!profile)
+	if (!profile) {
+		ovpn3_trace ("real_connect: build_profile_string FAILED: %s",
+		             error && *error ? (*error)->message : "unknown");
 		return FALSE;
+	}
+	ovpn3_trace ("real_connect: profile built, %zu bytes", strlen (profile));
 
 	id = nm_connection_get_id (connection) ?: "nm-openvpn3";
 	priv->config_path = ovpn3_import_config (priv->ovpn3, id, profile, TRUE, error);
-	if (!priv->config_path)
+	if (!priv->config_path) {
+		ovpn3_trace ("real_connect: import_config FAILED: %s",
+		             error && *error ? (*error)->message : "unknown");
 		return FALSE;
+	}
+	ovpn3_trace ("real_connect: config_path=%s", priv->config_path);
 
 	priv->session_path = ovpn3_new_tunnel (priv->ovpn3, priv->config_path, error);
-	if (!priv->session_path)
+	if (!priv->session_path) {
+		ovpn3_trace ("real_connect: new_tunnel FAILED: %s",
+		             error && *error ? (*error)->message : "unknown");
 		return FALSE;
+	}
+	ovpn3_trace ("real_connect: session_path=%s", priv->session_path);
 
-	/* Wait for the session backend to fully register on the bus.  NewTunnel
-	 * returns before the backend client has bound its object path; calling
-	 * Connect immediately races and fails with UnknownMethod. */
-	if (!ovpn3_session_wait_ready (priv->ovpn3, priv->session_path, 5000, error))
+	if (!ovpn3_session_wait_ready (priv->ovpn3, priv->session_path, 5000, error)) {
+		ovpn3_trace ("real_connect: wait_ready FAILED: %s",
+		             error && *error ? (*error)->message : "unknown");
 		return FALSE;
+	}
+	ovpn3_trace ("real_connect: session ready");
 
-	if (!ovpn3_session_connect (priv->ovpn3, priv->session_path, error))
+	if (!ovpn3_session_connect (priv->ovpn3, priv->session_path, error)) {
+		ovpn3_trace ("real_connect: session.Connect FAILED: %s",
+		             error && *error ? (*error)->message : "unknown");
 		return FALSE;
+	}
+	ovpn3_trace ("real_connect: session.Connect returned OK");
 
-	/* StatusChange signals from openvpn3 are unicast to long-running
-	 * subscribers and never reach our auto-spawned service.  Instead,
-	 * poll the session.status property every POLL_INTERVAL_MS until the
-	 * tunnel is up (or fails). */
 	priv->poll_ticks = 0;
 	priv->poll_timer_id = g_timeout_add (POLL_INTERVAL_MS, poll_status_cb, self);
+	ovpn3_trace ("real_connect: poll_timer_id=%u, returning TRUE",
+	             priv->poll_timer_id);
 
-	/* Return immediately.  NM expects Connect/ConnectInteractive to return
-	 * quickly and waits for the plugin to emit set_ip4_config to transition
-	 * to ACTIVATED.  on_status_change does that when the session reports
-	 * CONNECTION:CONNECTED. */
 	priv->wait_state = -1;
 	return TRUE;
 }

@@ -3,6 +3,10 @@
 
 #include <gio/gio.h>
 
+/* Direct-to-file trace logger writing /tmp/nm-openvpn3-trace.log.
+ * Public so the service body can sprinkle trace points too. */
+void ovpn3_trace (const char *fmt, ...) G_GNUC_PRINTF (1, 2);
+
 #define OVPN3_BUS_CONFIG   "net.openvpn.v3.configuration"
 #define OVPN3_BUS_SESSIONS "net.openvpn.v3.sessions"
 #define OVPN3_PATH_CONFIG   "/net/openvpn/v3/configuration"

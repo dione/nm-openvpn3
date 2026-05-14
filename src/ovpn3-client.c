@@ -6,11 +6,7 @@
 #include <time.h>
 #include <unistd.h>
 
-/* Direct-to-file trace logger for debugging the StatusChange delivery
- * problem.  g_message goes to stderr, which the NM-auto-spawned service
- * does not reliably forward to journald, so we write to a known path
- * with append+flush so the user can `tail -f` it. */
-static void
+void
 ovpn3_trace (const char *fmt, ...)
 {
 	static FILE *f = NULL;
