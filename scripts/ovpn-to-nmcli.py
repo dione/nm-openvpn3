@@ -33,7 +33,18 @@ import sys
 from pathlib import Path
 
 # Block tags that may contain inline PEM/key data.
-INLINE_TAGS = ("ca", "cert", "key", "tls-auth", "tls-crypt")
+INLINE_TAGS = ("ca", "cert", "key", "tls-auth", "tls-crypt", "tls-crypt-v2")
+
+# OpenVPN options that NM does not model individually but that are harmless
+# defaults (or runtime tweaks the openvpn3 client handles itself).  Silenced
+# so the dry-run output stays signal-heavy.
+SILENT_OPTS = {
+    "nobind", "verb", "server-poll-timeout", "push-peer-info",
+    "resolv-retry", "persist-key", "persist-tun", "explicit-exit-notify",
+    "pull", "redirect-gateway", "topology", "route-method", "route-delay",
+    "nice", "syslog", "daemon", "tls-client", "key-direction",
+    "auth-user-pass",   # handled separately for connection-type heuristic
+}
 
 # Mapping from .ovpn option name to the NM vpn.data key.  Only options that
 # the upstream NM-openvpn editor recognises are emitted; everything else is
@@ -117,7 +128,9 @@ def parse_ovpn(path: Path) -> tuple[dict[str, str], dict[str, str]]:
             host = rest[0] if rest else ""
             port = rest[1] if len(rest) > 1 else None
             proto = rest[2] if len(rest) > 2 else None
-            remotes.append((host, port, proto))
+            remote_tuple = (host, port, proto)
+            if remote_tuple not in remotes:
+                remotes.append(remote_tuple)
             continue
 
         if key in DIRECT_KEYS:
@@ -130,6 +143,8 @@ def parse_ovpn(path: Path) -> tuple[dict[str, str], dict[str, str]]:
             options["proto"] = rest[0] if rest else ""
         elif key == "auth-user-pass":
             options["__needs_password__"] = "yes"
+        elif key in SILENT_OPTS:
+            pass   # handled-by-default openvpn options that NM does not model
         else:
             # not fatal — note and drop
             print(f"[warn] unmapped option: {stripped}", file=sys.stderr)
@@ -170,6 +185,7 @@ NM_KEY_FOR_TAG = {
     "key": "key",
     "tls-auth": "ta",
     "tls-crypt": "tls-crypt",
+    "tls-crypt-v2": "tls-crypt-v2",
 }
 TAG_EXTENSIONS = {
     "ca": ".crt",
@@ -177,6 +193,7 @@ TAG_EXTENSIONS = {
     "key": ".key",
     "tls-auth": ".key",
     "tls-crypt": ".key",
+    "tls-crypt-v2": ".key",
 }
 
 
