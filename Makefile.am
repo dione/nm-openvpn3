@@ -20,7 +20,7 @@ SUBDIRS = \
 	. \
 	po
 
-plugindir = $(libdir)/NetworkManager
+plugindir = $(NM_PLUGIN_DIR)
 plugin_LTLIBRARIES =
 
 dbusservicedir = $(datadir)/dbus-1/system.d

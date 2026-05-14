@@ -129,7 +129,19 @@ NM_COMPILER_WARNINGS([yes])
 NM_LTO
 NM_LD_GC
 
-NM_PLUGIN_DIR="$libdir/NetworkManager"
+AC_MSG_CHECKING([for libnm's compiled-in plugin directory])
+LIBNM_FILE=`$PKG_CONFIG --variable=libdir libnm`/libnm.so.0
+NM_PLUGIN_DIR_AUTO=
+if test -e "$LIBNM_FILE"; then
+    NM_PLUGIN_DIR_AUTO=`strings "$LIBNM_FILE" | grep -E '/(lib|lib64)(/[@<:@^/@:>@]+)?/NetworkManager$' | head -n1`
+fi
+if test -n "$NM_PLUGIN_DIR_AUTO"; then
+    NM_PLUGIN_DIR="$NM_PLUGIN_DIR_AUTO"
+    AC_MSG_RESULT([$NM_PLUGIN_DIR (extracted from libnm)])
+else
+    NM_PLUGIN_DIR="$libdir/NetworkManager"
+    AC_MSG_RESULT([$NM_PLUGIN_DIR (fallback — could not extract from libnm)])
+fi
 AC_SUBST(NM_PLUGIN_DIR)
 if test x"$enable_absolute_paths" == x"yes"; then
 	NM_PLUGIN_DIR_NAME_FILE="$NM_PLUGIN_DIR/"
