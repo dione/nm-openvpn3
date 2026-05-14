@@ -76,6 +76,8 @@ src_nm_openvpn3_service_LDFLAGS = \
 	-Wl,--version-script="$(srcdir)/linker-script-binary.ver"
 src_nm_openvpn3_service_LDADD = \
 	src/libnm-utils.la \
+	src/libovpn3-status.la \
+	src/libovpn3-client.la \
 	$(GLIB_LIBS) \
 	$(LIBNM_LIBS)
 EXTRA_src_nm_openvpn3_service_DEPENDENCIES = \
@@ -334,6 +336,11 @@ src_libovpn3_status_la_SOURCES = src/ovpn3-status.c src/ovpn3-status.h
 src_libovpn3_status_la_CPPFLAGS = $(src_cppflags)
 src_libovpn3_status_la_LIBADD = $(GLIB_LIBS) $(LIBNM_LIBS)
 noinst_LTLIBRARIES += src/libovpn3-status.la
+
+src_libovpn3_client_la_SOURCES = src/ovpn3-client.c src/ovpn3-client.h
+src_libovpn3_client_la_CPPFLAGS = $(src_cppflags) $(LIBNM_CFLAGS)
+src_libovpn3_client_la_LIBADD = $(GLIB_LIBS) $(LIBNM_LIBS)
+noinst_LTLIBRARIES += src/libovpn3-client.la
 
 check_programs += src/tests/test-ovpn3-status
 src_tests_test_ovpn3_status_SOURCES = src/tests/test-ovpn3-status.c
