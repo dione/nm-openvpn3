@@ -87,4 +87,13 @@ gboolean ovpn3_session_get_status (Ovpn3Client *self,
                                    gchar      **out_message,
                                    GError     **error);
 
+/* Read the connected_to property — a (ssu) tuple of (protocol, host, port).
+ * Out params may be NULL. */
+gboolean ovpn3_session_get_connected_to (Ovpn3Client *self,
+                                         const gchar *session_path,
+                                         gchar      **out_proto,
+                                         gchar      **out_host,
+                                         guint32     *out_port,
+                                         GError     **error);
+
 #endif

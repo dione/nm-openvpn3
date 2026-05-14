@@ -298,6 +298,35 @@ ovpn3_session_get_device_name (Ovpn3Client *self,
 }
 
 gboolean
+ovpn3_session_get_connected_to (Ovpn3Client *self,
+                                const gchar *session_path,
+                                gchar      **out_proto,
+                                gchar      **out_host,
+                                guint32     *out_port,
+                                GError     **error)
+{
+	g_return_val_if_fail (self != NULL, FALSE);
+	g_return_val_if_fail (session_path != NULL, FALSE);
+
+	g_autoptr (GVariant) v = g_dbus_connection_call_sync (
+		self->bus, OVPN3_BUS_SESSIONS, session_path,
+		"org.freedesktop.DBus.Properties", "Get",
+		g_variant_new ("(ss)", OVPN3_IFACE_SESSIONS, "connected_to"),
+		G_VARIANT_TYPE ("(v)"), G_DBUS_CALL_FLAGS_NONE, -1, NULL, error);
+	if (!v)
+		return FALSE;
+	g_autoptr (GVariant) inner = NULL;
+	g_variant_get (v, "(v)", &inner);
+	const gchar *proto = NULL, *host = NULL;
+	guint32 port = 0;
+	g_variant_get (inner, "(&s&su)", &proto, &host, &port);
+	if (out_proto) *out_proto = g_strdup (proto);
+	if (out_host) *out_host = g_strdup (host);
+	if (out_port) *out_port = port;
+	return TRUE;
+}
+
+gboolean
 ovpn3_session_get_status (Ovpn3Client *self,
                           const gchar *session_path,
                           guint32     *out_major,

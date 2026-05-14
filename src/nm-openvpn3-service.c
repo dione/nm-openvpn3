@@ -2417,6 +2417,20 @@ poll_status_cb (gpointer user_data)
 		ovpn3_trace ("STARTED branch: have_ip=%d addr=0x%08x peer=0x%08x prefix=%u",
 		             have_ip, addr_be, peer_be, prefix);
 
+		/* Read remote VPN endpoint (ext-gateway) so NM keeps a host route
+		 * to it OUTSIDE the tunnel. */
+		g_autofree gchar *ext_host = NULL;
+		guint32 ext_gw_be = 0;
+		if (ovpn3_session_get_connected_to (priv->ovpn3, priv->session_path,
+		                                    NULL, &ext_host, NULL, NULL)
+		    && ext_host && *ext_host) {
+			struct in_addr ia;
+			if (inet_aton (ext_host, &ia))
+				ext_gw_be = ia.s_addr;
+		}
+		ovpn3_trace ("STARTED branch: ext_host='%s' ext_gw=0x%08x",
+		             ext_host ? ext_host : "", ext_gw_be);
+
 		/* NM requires SetConfig BEFORE SetIp4Config, declaring HAS_IP4=TRUE
 		 * (otherwise NM does not know to expect any IPv4 config and the
 		 * subsequent SetIp4Config is silently ignored). */
@@ -2425,6 +2439,10 @@ poll_status_cb (gpointer user_data)
 		g_variant_builder_add (&cfgb, "{sv}",
 		                       NM_VPN_PLUGIN_CONFIG_TUNDEV,
 		                       g_variant_new_string (tundev));
+		if (ext_gw_be != 0)
+			g_variant_builder_add (&cfgb, "{sv}",
+			                       NM_VPN_PLUGIN_CONFIG_EXT_GATEWAY,
+			                       g_variant_new_uint32 (ext_gw_be));
 		g_variant_builder_add (&cfgb, "{sv}",
 		                       NM_VPN_PLUGIN_CONFIG_HAS_IP4,
 		                       g_variant_new_boolean (have_ip));
@@ -2449,9 +2467,13 @@ poll_status_cb (gpointer user_data)
 		g_variant_builder_add (&b, "{sv}",
 		                       NM_VPN_PLUGIN_IP4_CONFIG_PREFIX,
 		                       g_variant_new_uint32 (prefix));
+		/* openvpn3's tun device shows the broadcast address as PtP peer
+		 * (e.g. .255 of a /20).  Pass 0 to let NM skip installing a
+		 * gateway route — kernel already has the on-link route from
+		 * openvpn3's netcfg setup. */
 		g_variant_builder_add (&b, "{sv}",
 		                       NM_VPN_PLUGIN_IP4_CONFIG_INT_GATEWAY,
-		                       g_variant_new_uint32 (peer_be));
+		                       g_variant_new_uint32 (0));
 		/* openvpn3 already installed routes via netcfg; tell NM not to
 		 * recompute them. */
 		g_variant_builder_add (&b, "{sv}",
