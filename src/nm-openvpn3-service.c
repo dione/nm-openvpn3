@@ -2377,9 +2377,8 @@ poll_status_cb (gpointer user_data)
 	NMVpnConnectionStateReason reason = NM_VPN_CONNECTION_STATE_REASON_NONE;
 	int state = ovpn3_status_to_nm_state (maj, min, &reason);
 
-	if (priv->poll_ticks == 1 || state >= 0)
-		_LOGI ("status poll: major=%u minor=%u msg=%s -> nm_state=%d",
-		       maj, min, msg ?: "", state);
+	ovpn3_trace ("poll #%u: status (maj=%u, min=%u, msg=%s) -> nm_state=%d",
+	             priv->poll_ticks, maj, min, msg ?: "", state);
 
 	if (state == NM_VPN_SERVICE_STATE_STARTED) {
 		g_autofree gchar *dev = ovpn3_session_get_device_name (
