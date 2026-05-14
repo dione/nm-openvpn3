@@ -28,6 +28,7 @@ the openvpn3 prefix is applied uniformly.
 
 - Plan 0 (done, v0.1.0-skeleton) — fork skeleton, Connect stubbed
 - Plan 1 (done, v0.2.0-mvp) — TLS-cert Connect/Disconnect happy path via net.openvpn.v3.*
-- Plan 1b — DNS/routes/searchdomains from netcfg
+- Plan 1b (done, v0.3.0) — DNS + search domains via netcfg device
+- Plan 1c — VPN-managed routes via NM (replace PRESERVE_ROUTES=TRUE)
 - Plan 2 — auth-dialog around AttentionRequired / UserInputQueue
 - Plan 3 — UI plugin for nm-connection-editor
