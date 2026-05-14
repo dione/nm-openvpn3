@@ -113,24 +113,44 @@ ovpn3_session_wait_ready (Ovpn3Client *self,
 
 	const guint sleep_ms = 100;
 	guint waited = 0;
+	gchar *last_msg = NULL;
 	while (waited <= timeout_ms) {
-		g_autoptr (GError) local = NULL;
-		g_autoptr (GDBusProxy) p = session_proxy (self, session_path, &local);
+		GError *local = NULL;
+		GDBusProxy *p = session_proxy (self, session_path, &local);
 		if (p) {
-			g_autoptr (GVariant) r = g_dbus_proxy_call_sync (
+			GVariant *r = g_dbus_proxy_call_sync (
 				p, "Ready", NULL, G_DBUS_CALL_FLAGS_NONE, -1, NULL, &local);
-			if (r)
+			if (r) {
+				g_variant_unref (r);
+				g_object_unref (p);
+				g_free (last_msg);
 				return TRUE;
+			}
+			g_object_unref (p);
 		}
-		/* Either the proxy or the Ready call failed because the backend is
-		 * not yet registered on the bus.  Sleep and retry. */
+		/* Capture the most recent error message before retrying. */
+		if (local) {
+			g_free (last_msg);
+			last_msg = g_strdup (local->message);
+			/* If Ready raises a non-transient error (object actually does
+			 * not exist any more, access denied, etc.), give up early. */
+			if (g_error_matches (local, G_DBUS_ERROR, G_DBUS_ERROR_ACCESS_DENIED) ||
+			    g_error_matches (local, G_DBUS_ERROR, G_DBUS_ERROR_NO_REPLY)) {
+				g_propagate_error (error, local);
+				g_free (last_msg);
+				return FALSE;
+			}
+			g_error_free (local);
+		}
 		g_usleep (sleep_ms * 1000);
 		waited += sleep_ms;
 	}
 	g_set_error (error,
 	             G_IO_ERROR, G_IO_ERROR_TIMED_OUT,
-	             "openvpn3 session backend did not become Ready within %u ms",
-	             timeout_ms);
+	             "openvpn3 session.Ready timed out after %u ms; last error: %s",
+	             timeout_ms,
+	             last_msg ? last_msg : "(none)");
+	g_free (last_msg);
 	return FALSE;
 }
 
@@ -191,9 +211,12 @@ ovpn3_session_subscribe_status (Ovpn3Client         *self,
 	d->cb        = cb;
 	d->user_data = user_data;
 
+	/* sender=NULL: openvpn3 emits StatusChange from the backend client's bus
+	 * name (uid 983 in practice), not from the well-known sessions service
+	 * name.  Filter only on the session object path. */
 	return g_dbus_connection_signal_subscribe (
 		self->bus,
-		OVPN3_BUS_SESSIONS,
+		NULL,
 		OVPN3_IFACE_SESSIONS,
 		"StatusChange",
 		session_path,
