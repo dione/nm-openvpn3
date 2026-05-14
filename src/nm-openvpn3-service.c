@@ -2327,6 +2327,18 @@ idle_diag_cb (gpointer user_data)
 	return G_SOURCE_REMOVE;
 }
 
+static guint debug_tick_count = 0;
+static gboolean
+debug_tick_cb (gpointer user_data)
+{
+	(void) user_data;
+	debug_tick_count++;
+	ovpn3_trace ("debug_tick #%u (1 Hz)", debug_tick_count);
+	if (debug_tick_count >= 30)
+		return G_SOURCE_REMOVE;
+	return G_SOURCE_CONTINUE;
+}
+
 static gboolean
 poll_status_cb (gpointer user_data)
 {
@@ -2472,6 +2484,7 @@ real_connect (NMVpnServicePlugin *plugin,
 	/* Diagnostic: fire-and-forget idle source to confirm the default
 	 * main context is being iterated. */
 	g_idle_add (idle_diag_cb, NULL);
+	g_timeout_add (1000, debug_tick_cb, NULL);
 
 	priv->wait_state = -1;
 	return TRUE;
