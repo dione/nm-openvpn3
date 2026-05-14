@@ -52,7 +52,7 @@ m4/lt*.m4
 m4/nls.m4
 m4/po.m4
 m4/progtest.m4
-appdata/network-manager-openvpn.metainfo.xml
+appdata/network-manager-openvpn3.metainfo.xml
 gtk4/*
 
 /cscope.files
@@ -65,18 +65,18 @@ gtk4/*
 */tests/*.trs
 test-*.log
 
-auth-dialog/nm-openvpn-auth-dialog
-nm-openvpn-service.name
-nm-openvpn.desktop
-nm-openvpn-sysusers.conf
-nm-openvpn-tmpfiles.conf
-src/nm-openvpn-service
-src/nm-openvpn-service-openvpn-helper
+auth-dialog/nm-openvpn3-auth-dialog
+nm-openvpn3-service.name
+nm-openvpn3.desktop
+nm-openvpn3-sysusers.conf
+nm-openvpn3-tmpfiles.conf
+src/nm-openvpn3-service
+src/nm-openvpn3-service-helper
 properties/tests/test-import-export
 properties/tests/test-import-export-glib
 properties/resources.[ch]
-/NetworkManager-openvpn*.tar*
-/po/NetworkManager-openvpn.pot
+/NetworkManager-openvpn3*.tar*
+/po/NetworkManager-openvpn3.pot
 
 # Fork-local directories — not part of upstream sources
 /reference/
