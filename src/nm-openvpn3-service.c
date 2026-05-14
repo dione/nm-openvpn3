@@ -2322,26 +2322,6 @@ _connect_common (NMVpnServicePlugin *plugin,
 #define POLL_MAX_TICKS   120  /* 120 * 500 ms = 60 s */
 
 static gboolean
-idle_diag_cb (gpointer user_data)
-{
-	(void) user_data;
-	ovpn3_trace ("idle callback fired (default ctx is pumping)");
-	return G_SOURCE_REMOVE;
-}
-
-static guint debug_tick_count = 0;
-static gboolean
-debug_tick_cb (gpointer user_data)
-{
-	(void) user_data;
-	debug_tick_count++;
-	ovpn3_trace ("debug_tick #%u (1 Hz)", debug_tick_count);
-	if (debug_tick_count >= 30)
-		return G_SOURCE_REMOVE;
-	return G_SOURCE_CONTINUE;
-}
-
-static gboolean
 poll_status_cb (gpointer user_data)
 {
 	ovpn3_trace ("poll_status_cb: ENTRY user_data=%p", user_data);
@@ -2569,18 +2549,8 @@ real_connect (NMVpnServicePlugin *plugin,
 
 	priv->poll_ticks = 0;
 	priv->poll_timer_id = g_timeout_add (POLL_INTERVAL_MS, poll_status_cb, self);
-
-	GMainContext *ctx_default = g_main_context_default ();
-	GMainContext *ctx_thread  = g_main_context_get_thread_default ();
-	ovpn3_trace ("real_connect: poll_timer_id=%u default_ctx=%p thread_default=%p iter_called=%d",
-	             priv->poll_timer_id,
-	             (void *) ctx_default, (void *) ctx_thread,
-	             g_main_context_is_owner (ctx_default));
-
-	/* Diagnostic: fire-and-forget idle source to confirm the default
-	 * main context is being iterated. */
-	g_idle_add (idle_diag_cb, NULL);
-	g_timeout_add (1000, debug_tick_cb, NULL);
+	ovpn3_trace ("real_connect: poll_timer_id=%u, returning TRUE",
+	             priv->poll_timer_id);
 
 	priv->wait_state = -1;
 	return TRUE;
