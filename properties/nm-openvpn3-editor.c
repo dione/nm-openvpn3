@@ -2023,6 +2023,36 @@ advanced_dialog_new (GHashTable *hash, const char *contype)
 	                  "clicked", G_CALLBACK (gtk_widget_show),
 	                  gtk_builder_get_object (builder, "sk_key_chooser"));
 
+	/* Hide widgets for openvpn2-only options the v3 client either dropped
+	 * (LZO compression, legacy keysize, cipher-fallback / no-cipher-nego,
+	 * ns-cert-type, TLS cipher string) or always handles itself
+	 * (push-peer-info).  The backing vpn.data keys still round-trip via
+	 * raw profile import; the UX hides the noise. */
+	{
+		static const char * const openvpn2_only_widget_ids[] = {
+			"compress_checkbutton",
+			"compression-direction-combo",
+			"compress_combo",
+			"keysize_checkbutton",
+			"keysize_spinbutton",
+			"data_ciphers_fallback_combo",
+			"label_data_ciphers_fallback",
+			"ncp_disable_checkbutton",
+			"ns_cert_type_checkbutton",
+			"ns_cert_type_label",
+			"ns_cert_type_combo",
+			"tls_cipher_lbl",
+			"tls_cipher",
+			"push_peer_info_checkbutton",
+			NULL,
+		};
+		for (const char * const *id = openvpn2_only_widget_ids; *id; id++) {
+			GtkWidget *w = GTK_WIDGET (gtk_builder_get_object (builder, *id));
+			if (w)
+				gtk_widget_set_visible (w, FALSE);
+		}
+	}
+
 	return dialog;
 }
 
