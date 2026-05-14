@@ -96,4 +96,22 @@ gboolean ovpn3_session_get_connected_to (Ovpn3Client *self,
                                          guint32     *out_port,
                                          GError     **error);
 
+/* Read the device_path property of @session_path (e.g.
+ * "/net/openvpn/v3/netcfg/<pid>_<hex>"). */
+gchar *ovpn3_session_get_device_path (Ovpn3Client *self,
+                                      const gchar *session_path,
+                                      GError     **error);
+
+/* Read the dns_name_servers property of an openvpn3 netcfg device.
+ * Returns a heap-allocated, NULL-terminated array of strings; caller
+ * frees with g_strfreev.  Empty array (just a sentinel NULL) is valid. */
+gchar **ovpn3_netcfg_get_dns_servers (Ovpn3Client *self,
+                                      const gchar *device_path,
+                                      GError     **error);
+
+/* Read the dns_search_domains property.  Same ownership contract. */
+gchar **ovpn3_netcfg_get_dns_search (Ovpn3Client *self,
+                                     const gchar *device_path,
+                                     GError     **error);
+
 #endif

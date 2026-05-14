@@ -297,6 +297,76 @@ ovpn3_session_get_device_name (Ovpn3Client *self,
 	return g_strdup (s);
 }
 
+gchar *
+ovpn3_session_get_device_path (Ovpn3Client *self,
+                               const gchar *session_path,
+                               GError     **error)
+{
+	g_return_val_if_fail (self != NULL, NULL);
+	g_return_val_if_fail (session_path != NULL, NULL);
+
+	g_autoptr (GVariant) v = g_dbus_connection_call_sync (
+		self->bus, OVPN3_BUS_SESSIONS, session_path,
+		"org.freedesktop.DBus.Properties", "Get",
+		g_variant_new ("(ss)", OVPN3_IFACE_SESSIONS, "device_path"),
+		G_VARIANT_TYPE ("(v)"), G_DBUS_CALL_FLAGS_NONE, -1, NULL, error);
+	if (!v)
+		return NULL;
+	g_autoptr (GVariant) inner = NULL;
+	g_variant_get (v, "(v)", &inner);
+	const gchar *s = NULL;
+	g_variant_get (inner, "&o", &s);
+	return g_strdup (s);
+}
+
+#define OVPN3_BUS_NETCFG   "net.openvpn.v3.netcfg"
+#define OVPN3_IFACE_NETCFG "net.openvpn.v3.netcfg"
+
+static gchar **
+netcfg_read_as_property (Ovpn3Client *self,
+                         const gchar *device_path,
+                         const gchar *prop_name,
+                         GError     **error)
+{
+	g_return_val_if_fail (self != NULL, NULL);
+	g_return_val_if_fail (device_path != NULL, NULL);
+	g_return_val_if_fail (prop_name != NULL, NULL);
+
+	g_autoptr (GVariant) v = g_dbus_connection_call_sync (
+		self->bus, OVPN3_BUS_NETCFG, device_path,
+		"org.freedesktop.DBus.Properties", "Get",
+		g_variant_new ("(ss)", OVPN3_IFACE_NETCFG, prop_name),
+		G_VARIANT_TYPE ("(v)"), G_DBUS_CALL_FLAGS_NONE, -1, NULL, error);
+	if (!v)
+		return NULL;
+	g_autoptr (GVariant) inner = NULL;
+	g_variant_get (v, "(v)", &inner);
+	GVariantIter it;
+	g_variant_iter_init (&it, inner);
+	const gchar *unowned = NULL;
+	GPtrArray *arr = g_ptr_array_new ();
+	while (g_variant_iter_next (&it, "&s", &unowned))
+		g_ptr_array_add (arr, g_strdup (unowned));
+	g_ptr_array_add (arr, NULL);
+	return (gchar **) g_ptr_array_free (arr, FALSE);
+}
+
+gchar **
+ovpn3_netcfg_get_dns_servers (Ovpn3Client *self,
+                              const gchar *device_path,
+                              GError     **error)
+{
+	return netcfg_read_as_property (self, device_path, "dns_name_servers", error);
+}
+
+gchar **
+ovpn3_netcfg_get_dns_search (Ovpn3Client *self,
+                             const gchar *device_path,
+                             GError     **error)
+{
+	return netcfg_read_as_property (self, device_path, "dns_search_domains", error);
+}
+
 gboolean
 ovpn3_session_get_connected_to (Ovpn3Client *self,
                                 const gchar *session_path,
