@@ -26,24 +26,46 @@
 
 #include "../properties/import-export.h"
 
+/* vpn.data key carrying the path to a verbatim .ovpn file.  When present,
+ * build_profile_string reads it directly instead of round-tripping the
+ * NMConnection through do_export().  This is the workaround used by the
+ * ovpn-to-nmcli helper to preserve options that the upstream NM-openvpn
+ * 1.12.5 exporter does not understand (notably tls-crypt-v2, peer-fingerprint,
+ * recent cipher/data-cipher syntax, etc.). */
+#define NM_OPENVPN3_PROFILE_PATH_KEY "nm-openvpn3-profile"
+
 /**
  * build_profile_string:
  * @connection: an NMConnection describing the VPN
  * @error: (out) (nullable): location for a GError
  *
- * Serialises @connection to an .ovpn profile string by delegating to
- * do_export() (which writes a file) and then reading the result back.
- * The temp file is unlinked whether or not the read succeeds.
+ * Serialises @connection to an .ovpn profile string.  If the connection's
+ * vpn.data contains an `nm-openvpn3-profile` key pointing at a readable
+ * file, the file's contents are returned verbatim.  Otherwise the function
+ * falls back to do_export() (write tempfile + read back).
  *
  * Returns: (transfer full): newly-allocated profile string, or %NULL on error.
  */
 gchar *
 build_profile_string (NMConnection *connection, GError **error)
 {
-	g_autofree gchar *tmp_path = g_strdup ("/tmp/nm-openvpn3-profile-XXXXXX");
+	NMSettingVpn *s_vpn = nm_connection_get_setting_vpn (connection);
+	const char *raw_path = NULL;
+	g_autofree gchar *tmp_path = NULL;
 	int fd;
 	gchar *buf = NULL;
 	gsize  len = 0;
+
+	if (s_vpn)
+		raw_path = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_PROFILE_PATH_KEY);
+
+	if (raw_path && *raw_path) {
+		if (!g_file_get_contents (raw_path, &buf, &len, error))
+			return NULL;
+		return buf;
+	}
+
+	tmp_path = g_strdup ("/tmp/nm-openvpn3-profile-XXXXXX");
 
 	fd = g_mkstemp_full (tmp_path, O_WRONLY | O_CLOEXEC, 0600);
 	if (fd < 0) {

@@ -279,6 +279,17 @@ def main() -> int:
     options, inline = parse_ovpn(args.ovpn)
     out_dir, plan = plan_inline_paths(inline, con_name, options)
 
+    # The upstream NM-openvpn 1.12.5 exporter cannot round-trip every option
+    # the openvpn3 client supports (notably tls-crypt-v2).  Side-step that by
+    # also stashing the verbatim .ovpn under ~/.config/nm-openvpn3/<con>/profile.ovpn
+    # and pointing the plugin at it via the nm-openvpn3-profile vpn.data key.
+    if out_dir is None:
+        out_dir = Path.home() / ".config" / "nm-openvpn3" / con_name
+    profile_path = out_dir / "profile.ovpn"
+    profile_bytes = args.ovpn.read_bytes()
+    plan.append((profile_path, len(profile_bytes)))
+    options["nm-openvpn3-profile"] = str(profile_path)
+
     if "remote" not in options:
         print("error: .ovpn file has no 'remote' line", file=sys.stderr)
         return 3
@@ -290,18 +301,22 @@ def main() -> int:
         # Dry-run preview.
         print(f"# dry-run mode (use --apply to actually run)")
         print(f"# connection name: {con_name}")
-        if out_dir:
-            print(f"# would create directory: {out_dir} (mode 0700)")
-            for fpath, nbytes in plan:
-                print(f"#   would write: {fpath} ({nbytes} bytes, mode 0600)")
+        print(f"# would create directory: {out_dir} (mode 0700)")
+        for fpath, nbytes in plan:
+            print(f"#   would write: {fpath} ({nbytes} bytes, mode 0600)")
         print(f"# would run:")
         print(" \\\n  ".join(shlex.quote(part) for part in cmd))
         return 0
 
     # Apply mode.
-    if out_dir:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    os.chmod(out_dir, 0o700)
+    if inline:
         write_inline_blocks(inline, out_dir)
         print(f"[info] wrote inline cert/key material to {out_dir}", file=sys.stderr)
+    profile_path.write_bytes(profile_bytes)
+    os.chmod(profile_path, 0o600)
+    print(f"[info] wrote verbatim .ovpn to {profile_path}", file=sys.stderr)
     print(" \\\n  ".join(shlex.quote(part) for part in cmd))
     print(f"\n[info] running: nmcli connection add ...", file=sys.stderr)
     return subprocess.call(cmd)
