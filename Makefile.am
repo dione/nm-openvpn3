@@ -433,6 +433,8 @@ EXTRA_DIST += \
 
 CLEANFILES += \
 	$(nmvpnservice_DATA) \
+	$(nmvpnsysusers_DATA) \
+	$(nmvpntmpfiles_DATA) \
 	$(appdata_files)
 
 ACLOCAL_AMFLAGS = -I m4

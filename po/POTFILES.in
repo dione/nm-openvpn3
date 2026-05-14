@@ -1,6 +1,6 @@
 # List of source files containing translatable strings.
 # Please keep this file sorted alphabetically.
-appdata/network-manager-openvpn.metainfo.xml.in
+appdata/network-manager-openvpn3.metainfo.xml.in
 auth-dialog/main.c
 properties/import-export.c
 properties/nm-openvpn3-dialog.ui
