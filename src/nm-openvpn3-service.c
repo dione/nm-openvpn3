@@ -2381,17 +2381,26 @@ poll_status_cb (gpointer user_data)
 	             priv->poll_ticks, maj, min, msg ?: "", state);
 
 	if (state == NM_VPN_SERVICE_STATE_STARTED) {
-		g_autofree gchar *dev = ovpn3_session_get_device_name (
-			priv->ovpn3, priv->session_path, NULL);
-		if (dev && *dev) {
-			GVariantBuilder b;
-			g_variant_builder_init (&b, G_VARIANT_TYPE_VARDICT);
-			g_variant_builder_add (&b, "{sv}",
-			                       NM_VPN_PLUGIN_IP4_CONFIG_TUNDEV,
-			                       g_variant_new_string (dev));
-			nm_vpn_service_plugin_set_ip4_config (plugin,
-			                                      g_variant_builder_end (&b));
-		}
+		g_autoptr (GError) ge = NULL;
+		gchar *dev = ovpn3_session_get_device_name (
+			priv->ovpn3, priv->session_path, &ge);
+		ovpn3_trace ("STARTED branch: device_name='%s' err=%s",
+		             dev ? dev : "(null)",
+		             ge ? ge->message : "(none)");
+
+		const gchar *tundev = (dev && *dev) ? dev : "tun0";
+		GVariantBuilder b;
+		g_variant_builder_init (&b, G_VARIANT_TYPE_VARDICT);
+		g_variant_builder_add (&b, "{sv}",
+		                       NM_VPN_PLUGIN_IP4_CONFIG_TUNDEV,
+		                       g_variant_new_string (tundev));
+		/* Minimal Ip4Config dict — just the tun device. */
+		ovpn3_trace ("emitting set_ip4_config tundev='%s'", tundev);
+		nm_vpn_service_plugin_set_ip4_config (plugin,
+		                                      g_variant_builder_end (&b));
+		ovpn3_trace ("set_ip4_config call returned");
+
+		g_free (dev);
 		priv->poll_timer_id = 0;
 		return G_SOURCE_REMOVE;
 	}
