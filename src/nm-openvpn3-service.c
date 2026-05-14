@@ -50,10 +50,21 @@
 #include "build-profile.h"
 #include "ovpn3-client.h"
 #include "ovpn3-status.h"
+#include "ovpn3-routes.h"
 
 #if !defined(DIST_VERSION)
 # define DIST_VERSION VERSION
 #endif
+
+static guint32
+mask_for_prefix (guint32 prefix)
+{
+	if (prefix == 0)
+		return 0;
+	if (prefix >= 32)
+		return 0xFFFFFFFFu;
+	return g_htonl (0xFFFFFFFFu << (32 - prefix));
+}
 
 #define RUNDIR  LOCALSTATEDIR"/run/NetworkManager"
 
@@ -2501,6 +2512,44 @@ poll_status_cb (gpointer user_data)
 			g_variant_builder_add (&b, "{sv}",
 			                       NM_VPN_PLUGIN_IP4_CONFIG_DOMAINS,
 			                       g_variant_builder_end (&dsb));
+		}
+
+		/* Pull installed routes from kernel for our tun device. */
+		g_autoptr (GError) re = NULL;
+		g_autoptr (GArray) routes = ovpn3_read_proc_routes (tundev, &re);
+		guint n_routes = routes ? routes->len : 0;
+		ovpn3_trace ("STARTED branch: route_count=%u%s%s",
+		             n_routes,
+		             re ? " err=" : "",
+		             re ? re->message : "");
+
+		if (routes && routes->len > 0) {
+			GVariantBuilder rb;
+			guint emitted = 0;
+			g_variant_builder_init (&rb, G_VARIANT_TYPE ("aau"));
+			for (guint i = 0; i < routes->len; i++) {
+				Ovpn3Route r = g_array_index (routes, Ovpn3Route, i);
+				/* Skip the auto on-link route for the tun's own
+				 * subnet — NM derives it from ADDRESS/PREFIX. */
+				if (r.prefix == prefix
+				    && (r.dest_be & mask_for_prefix (prefix))
+				       == (addr_be & mask_for_prefix (prefix))
+				    && r.next_hop_be == 0)
+					continue;
+				GVariantBuilder one;
+				g_variant_builder_init (&one, G_VARIANT_TYPE ("au"));
+				g_variant_builder_add (&one, "u", r.dest_be);
+				g_variant_builder_add (&one, "u", r.prefix);
+				g_variant_builder_add (&one, "u", r.next_hop_be);
+				g_variant_builder_add (&one, "u", r.metric);
+				g_variant_builder_add_value (&rb, g_variant_builder_end (&one));
+				emitted++;
+			}
+			ovpn3_trace ("routes emitted to NM: %u (of %u parsed)",
+			             emitted, routes->len);
+			g_variant_builder_add (&b, "{sv}",
+			                       NM_VPN_PLUGIN_IP4_CONFIG_ROUTES,
+			                       g_variant_builder_end (&rb));
 		}
 
 		ovpn3_trace ("emitting set_ip4_config");
