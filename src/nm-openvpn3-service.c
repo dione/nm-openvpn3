@@ -2388,6 +2388,12 @@ real_connect (NMVpnServicePlugin *plugin,
 	priv->wait_state = -1;
 	priv->wait_loop  = g_main_loop_new (NULL, FALSE);
 
+	/* Wait for the session backend to fully register on the bus.  NewTunnel
+	 * returns before the backend client has bound its object path; calling
+	 * Connect immediately races and fails with UnknownMethod. */
+	if (!ovpn3_session_wait_ready (priv->ovpn3, priv->session_path, 5000, error))
+		return FALSE;
+
 	priv->status_sub_id = ovpn3_session_subscribe_status (
 		priv->ovpn3, priv->session_path,
 		on_status_change, self, error);

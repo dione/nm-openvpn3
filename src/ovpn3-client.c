@@ -103,6 +103,38 @@ session_proxy (Ovpn3Client *self, const gchar *session_path, GError **error)
 }
 
 gboolean
+ovpn3_session_wait_ready (Ovpn3Client *self,
+                          const gchar *session_path,
+                          guint        timeout_ms,
+                          GError     **error)
+{
+	g_return_val_if_fail (self != NULL, FALSE);
+	g_return_val_if_fail (session_path != NULL, FALSE);
+
+	const guint sleep_ms = 100;
+	guint waited = 0;
+	while (waited <= timeout_ms) {
+		g_autoptr (GError) local = NULL;
+		g_autoptr (GDBusProxy) p = session_proxy (self, session_path, &local);
+		if (p) {
+			g_autoptr (GVariant) r = g_dbus_proxy_call_sync (
+				p, "Ready", NULL, G_DBUS_CALL_FLAGS_NONE, -1, NULL, &local);
+			if (r)
+				return TRUE;
+		}
+		/* Either the proxy or the Ready call failed because the backend is
+		 * not yet registered on the bus.  Sleep and retry. */
+		g_usleep (sleep_ms * 1000);
+		waited += sleep_ms;
+	}
+	g_set_error (error,
+	             G_IO_ERROR, G_IO_ERROR_TIMED_OUT,
+	             "openvpn3 session backend did not become Ready within %u ms",
+	             timeout_ms);
+	return FALSE;
+}
+
+gboolean
 ovpn3_session_connect (Ovpn3Client *self,
                        const gchar *session_path,
                        GError     **error)

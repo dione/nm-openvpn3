@@ -37,6 +37,15 @@ typedef void (*Ovpn3StatusChangeCb) (guint32      code_major,
                                      const gchar *message,
                                      gpointer     user_data);
 
+/* Poll session.Ready until the backend is registered or @timeout_ms elapses.
+ * NewTunnel returns a session path before the backend client is fully
+ * registered on the bus; calling Connect immediately races against that
+ * registration and yields UnknownMethod. */
+gboolean ovpn3_session_wait_ready (Ovpn3Client *self,
+                                   const gchar *session_path,
+                                   guint        timeout_ms,
+                                   GError     **error);
+
 /* Synchronously call session.Connect on @session_path. */
 gboolean ovpn3_session_connect (Ovpn3Client *self,
                                 const gchar *session_path,
