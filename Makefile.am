@@ -78,6 +78,7 @@ src_nm_openvpn3_service_LDADD = \
 	src/libnm-utils.la \
 	src/libovpn3-status.la \
 	src/libovpn3-client.la \
+	src/libbuild-profile.la \
 	$(GLIB_LIBS) \
 	$(LIBNM_LIBS)
 EXTRA_src_nm_openvpn3_service_DEPENDENCIES = \
@@ -342,10 +343,26 @@ src_libovpn3_client_la_CPPFLAGS = $(src_cppflags) $(LIBNM_CFLAGS)
 src_libovpn3_client_la_LIBADD = $(GLIB_LIBS) $(LIBNM_LIBS)
 noinst_LTLIBRARIES += src/libovpn3-client.la
 
+src_libbuild_profile_la_SOURCES = src/build-profile.c src/build-profile.h
+src_libbuild_profile_la_CPPFLAGS = $(src_cppflags) $(LIBNM_CFLAGS) -I$(srcdir)/properties
+src_libbuild_profile_la_LIBADD = \
+	properties/libnm-vpn-plugin-openvpn3-core.la \
+	$(GLIB_LIBS) \
+	$(LIBNM_LIBS)
+noinst_LTLIBRARIES += src/libbuild-profile.la
+
 check_programs += src/tests/test-ovpn3-status
 src_tests_test_ovpn3_status_SOURCES = src/tests/test-ovpn3-status.c
 src_tests_test_ovpn3_status_CPPFLAGS = $(src_cppflags) -I$(srcdir)/src
 src_tests_test_ovpn3_status_LDADD = src/libovpn3-status.la $(GLIB_LIBS) $(LIBNM_LIBS)
+
+check_programs += src/tests/test-build-profile
+src_tests_test_build_profile_SOURCES = src/tests/test-build-profile.c
+src_tests_test_build_profile_CPPFLAGS = $(src_cppflags) -I$(srcdir)/src -I$(srcdir)/properties
+src_tests_test_build_profile_LDADD = \
+	src/libbuild-profile.la \
+	$(GLIB_LIBS) \
+	$(LIBNM_LIBS)
 
 ###############################################################################
 

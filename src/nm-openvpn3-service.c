@@ -45,6 +45,7 @@
 #include "utils.h"
 #include "nm-utils/nm-shared-utils.h"
 #include "nm-utils/nm-vpn-plugin-macros.h"
+#include "build-profile.h"
 
 #if !defined(DIST_VERSION)
 # define DIST_VERSION VERSION
