@@ -32,4 +32,36 @@ gchar *ovpn3_new_tunnel (Ovpn3Client *self,
                          const gchar *config_path,
                          GError     **error);
 
+typedef void (*Ovpn3StatusChangeCb) (guint32      code_major,
+                                     guint32      code_minor,
+                                     const gchar *message,
+                                     gpointer     user_data);
+
+/* Synchronously call session.Connect on @session_path. */
+gboolean ovpn3_session_connect (Ovpn3Client *self,
+                                const gchar *session_path,
+                                GError     **error);
+
+/* Synchronously call session.Disconnect. */
+gboolean ovpn3_session_disconnect (Ovpn3Client *self,
+                                   const gchar *session_path,
+                                   GError     **error);
+
+/* Subscribe to the StatusChange signal on @session_path.  Returns a subscription
+ * id; pass to ovpn3_session_unsubscribe.  @cb runs on the same main context
+ * that was current when this function was called. */
+guint ovpn3_session_subscribe_status (Ovpn3Client         *self,
+                                      const gchar         *session_path,
+                                      Ovpn3StatusChangeCb  cb,
+                                      gpointer             user_data,
+                                      GError             **error);
+
+void ovpn3_session_unsubscribe (Ovpn3Client *self,
+                                guint        subscription_id);
+
+/* Read the device_name property of @session_path (e.g. "tun0"). */
+gchar *ovpn3_session_get_device_name (Ovpn3Client *self,
+                                      const gchar *session_path,
+                                      GError     **error);
+
 #endif

@@ -91,3 +91,105 @@ ovpn3_new_tunnel (Ovpn3Client *self,
 	g_variant_get (result, "(&o)", &path);
 	return g_strdup (path);
 }
+
+static GDBusProxy *
+session_proxy (Ovpn3Client *self, const gchar *session_path, GError **error)
+{
+	return g_dbus_proxy_new_sync (
+		self->bus,
+		G_DBUS_PROXY_FLAGS_DO_NOT_LOAD_PROPERTIES,
+		NULL, OVPN3_BUS_SESSIONS, session_path,
+		OVPN3_IFACE_SESSIONS, NULL, error);
+}
+
+gboolean
+ovpn3_session_connect (Ovpn3Client *self,
+                       const gchar *session_path,
+                       GError     **error)
+{
+	g_autoptr (GDBusProxy) p = session_proxy (self, session_path, error);
+	if (!p) return FALSE;
+	g_autoptr (GVariant) r = g_dbus_proxy_call_sync (
+		p, "Connect", NULL, G_DBUS_CALL_FLAGS_NONE, -1, NULL, error);
+	return r != NULL;
+}
+
+gboolean
+ovpn3_session_disconnect (Ovpn3Client *self,
+                          const gchar *session_path,
+                          GError     **error)
+{
+	g_autoptr (GDBusProxy) p = session_proxy (self, session_path, error);
+	if (!p) return FALSE;
+	g_autoptr (GVariant) r = g_dbus_proxy_call_sync (
+		p, "Disconnect", NULL, G_DBUS_CALL_FLAGS_NONE, -1, NULL, error);
+	return r != NULL;
+}
+
+typedef struct {
+	Ovpn3StatusChangeCb cb;
+	gpointer            user_data;
+} StatusSubData;
+
+static void
+status_signal_cb (GDBusConnection *conn,
+                  const gchar     *sender,
+                  const gchar     *path,
+                  const gchar     *iface,
+                  const gchar     *signal_name,
+                  GVariant        *parameters,
+                  gpointer         user_data)
+{
+	StatusSubData *d = user_data;
+	guint32 maj = 0, min = 0;
+	const gchar *msg = NULL;
+	g_variant_get (parameters, "(uu&s)", &maj, &min, &msg);
+	d->cb (maj, min, msg, d->user_data);
+}
+
+guint
+ovpn3_session_subscribe_status (Ovpn3Client         *self,
+                                const gchar         *session_path,
+                                Ovpn3StatusChangeCb  cb,
+                                gpointer             user_data,
+                                GError             **error)
+{
+	(void) error;
+	StatusSubData *d = g_new0 (StatusSubData, 1);
+	d->cb        = cb;
+	d->user_data = user_data;
+
+	return g_dbus_connection_signal_subscribe (
+		self->bus,
+		OVPN3_BUS_SESSIONS,
+		OVPN3_IFACE_SESSIONS,
+		"StatusChange",
+		session_path,
+		NULL,
+		G_DBUS_SIGNAL_FLAGS_NONE,
+		status_signal_cb, d, g_free);
+}
+
+void
+ovpn3_session_unsubscribe (Ovpn3Client *self, guint subscription_id)
+{
+	g_dbus_connection_signal_unsubscribe (self->bus, subscription_id);
+}
+
+gchar *
+ovpn3_session_get_device_name (Ovpn3Client *self,
+                               const gchar *session_path,
+                               GError     **error)
+{
+	g_autoptr (GVariant) v = g_dbus_connection_call_sync (
+		self->bus, OVPN3_BUS_SESSIONS, session_path,
+		"org.freedesktop.DBus.Properties", "Get",
+		g_variant_new ("(ss)", OVPN3_IFACE_SESSIONS, "device_name"),
+		G_VARIANT_TYPE ("(v)"), G_DBUS_CALL_FLAGS_NONE, -1, NULL, error);
+	if (!v) return NULL;
+	g_autoptr (GVariant) inner = NULL;
+	g_variant_get (v, "(v)", &inner);
+	const gchar *s = NULL;
+	g_variant_get (inner, "&s", &s);
+	return g_strdup (s);
+}
