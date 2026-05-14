@@ -2342,8 +2342,13 @@ debug_tick_cb (gpointer user_data)
 static gboolean
 poll_status_cb (gpointer user_data)
 {
+	ovpn3_trace ("poll_status_cb: ENTRY user_data=%p", user_data);
 	NMOpenvpn3Plugin *self = NM_OPENVPN3_PLUGIN (user_data);
+	ovpn3_trace ("poll_status_cb: cast self=%p", (void *) self);
 	NMOpenvpn3PluginPrivate *priv = NM_OPENVPN3_PLUGIN_GET_PRIVATE (self);
+	ovpn3_trace ("poll_status_cb: priv=%p session_path=%s",
+	             (void *) priv,
+	             priv && priv->session_path ? priv->session_path : "(null)");
 	NMVpnServicePlugin *plugin = (NMVpnServicePlugin *) self;
 
 	priv->poll_ticks++;
