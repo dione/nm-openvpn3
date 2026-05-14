@@ -149,17 +149,24 @@ def parse_ovpn(path: Path) -> tuple[dict[str, str], dict[str, str]]:
             # not fatal — note and drop
             print(f"[warn] unmapped option: {stripped}", file=sys.stderr)
 
-    # Compose remote.  NM vpn.data uses comma-separated entries for multi-remote.
+    # Compose remote.  nmcli's vpn.data parser splits on ',' so multi-remote
+    # cannot be encoded that way without escaping (and the NM key for the
+    # plugin only accepts a single primary endpoint anyway).  Take the first
+    # and warn if more were present so the user can add them via openvpn3
+    # session-config-edit or by extending vpn.data after the fact.
     if remotes:
-        parts = []
-        for host, port, proto in remotes:
-            piece = host
-            if port:
-                piece += f":{port}"
-            if proto:
-                piece += f":{proto}"
-            parts.append(piece)
-        options["remote"] = ", ".join(parts)
+        host, port, proto = remotes[0]
+        piece = host
+        if port:
+            piece += f":{port}"
+        if proto:
+            piece += f":{proto}"
+        options["remote"] = piece
+        if len(remotes) > 1:
+            extras = ", ".join(
+                ":".join(str(x) for x in r if x is not None) for r in remotes[1:]
+            )
+            print(f"[warn] using first remote only; dropped: {extras}", file=sys.stderr)
 
     # Connection-type heuristic.
     has_cert = "cert" in options or "cert" in inline_blocks
