@@ -46,6 +46,8 @@
 #include "nm-utils/nm-shared-utils.h"
 #include "nm-utils/nm-vpn-plugin-macros.h"
 #include "build-profile.h"
+#include "ovpn3-client.h"
+#include "ovpn3-status.h"
 
 #if !defined(DIST_VERSION)
 # define DIST_VERSION VERSION
@@ -118,6 +120,14 @@ typedef struct {
 	NMOpenvpn3PluginIOData *io_data;
 	gboolean interactive;
 	char *mgt_path;
+
+	/* ovpn3 session state (Plan 1) */
+	Ovpn3Client *ovpn3;
+	gchar       *session_path;
+	gchar       *config_path;
+	guint        status_sub_id;
+	GMainLoop   *wait_loop;
+	int          wait_state;    /* most recent ovpn3_status_to_nm_state result */
 } NMOpenvpn3PluginPrivate;
 
 G_DEFINE_TYPE (NMOpenvpn3Plugin, nm_openvpn3_plugin, NM_TYPE_VPN_SERVICE_PLUGIN)
@@ -2253,22 +2263,26 @@ check_need_secrets (NMSettingVpn *s_vpn, gboolean *need_secrets)
 }
 
 static gboolean
-real_disconnect (NMVpnServicePlugin *plugin,
-                 GError **err)
+real_disconnect (NMVpnServicePlugin *plugin, GError **error)
 {
-	NMOpenvpn3PluginPrivate *priv = NM_OPENVPN3_PLUGIN_GET_PRIVATE (plugin);
+	NMOpenvpn3Plugin *self = NM_OPENVPN3_PLUGIN (plugin);
+	NMOpenvpn3PluginPrivate *priv = NM_OPENVPN3_PLUGIN_GET_PRIVATE (self);
+	GError *local = NULL;
 
-	if (priv->mgt_path) {
-		/* openvpn does not cleanup the management socket upon exit,
-		 * possibly it could not even because it changed user */
-		(void) unlink (priv->mgt_path);
-		g_clear_pointer (&priv->mgt_path, g_free);
+	if (!priv->session_path)
+		return TRUE;   /* already disconnected */
+
+	if (!ovpn3_session_disconnect (priv->ovpn3, priv->session_path, &local)) {
+		_LOGW ("ovpn3 disconnect: %s", local->message);
+		g_clear_error (&local);
 	}
 
-	if (priv->pid) {
-		pids_pending_send_sigterm (pids_pending_get (priv->pid));
-		priv->pid = 0;
+	if (priv->status_sub_id) {
+		ovpn3_session_unsubscribe (priv->ovpn3, priv->status_sub_id);
+		priv->status_sub_id = 0;
 	}
+	g_clear_pointer (&priv->session_path, g_free);
+	g_clear_pointer (&priv->config_path, g_free);
 
 	return TRUE;
 }
@@ -2296,29 +2310,125 @@ _connect_common (NMVpnServicePlugin *plugin,
 	                                        error);
 }
 
-static gboolean
-real_connect (NMVpnServicePlugin   *plugin,
-              NMConnection  *connection,
-              GError       **error)
+static void
+on_status_change (guint32      maj,
+                  guint32      min,
+                  const gchar *message,
+                  gpointer     user_data)
 {
-	g_set_error_literal (error,
-	                     NM_VPN_PLUGIN_ERROR,
-	                     NM_VPN_PLUGIN_ERROR_FAILED,
-	                     "NetworkManager-openvpn3: Connect handler not implemented yet (Plan 0 skeleton)");
-	return FALSE;
+	NMOpenvpn3Plugin *self = NM_OPENVPN3_PLUGIN (user_data);
+	NMOpenvpn3PluginPrivate *priv = NM_OPENVPN3_PLUGIN_GET_PRIVATE (self);
+
+	NMActiveConnectionStateReason reason = NM_ACTIVE_CONNECTION_STATE_REASON_UNKNOWN;
+	int state = ovpn3_status_to_nm_state (maj, min,
+	                                      (NMVpnConnectionStateReason *) &reason);
+
+	_LOGI ("openvpn3 StatusChange major=%u minor=%u msg=%s -> nm_state=%d",
+	       maj, min, message ?: "", state);
+
+	if (state < 0)
+		return;
+
+	priv->wait_state = state;
+
+	if (state == NM_VPN_SERVICE_STATE_STARTED || state == NM_VPN_SERVICE_STATE_STOPPED) {
+		if (priv->wait_loop && g_main_loop_is_running (priv->wait_loop))
+			g_main_loop_quit (priv->wait_loop);
+	}
+
+	/* If we are no longer in the connect wait loop and the session stops,
+	 * signal a failure to NM so the connection is torn down. */
+	if (state == NM_VPN_SERVICE_STATE_STOPPED && !priv->wait_loop) {
+		nm_vpn_service_plugin_failure ((NMVpnServicePlugin *) self,
+		                               NM_VPN_PLUGIN_FAILURE_CONNECT_FAILED);
+	}
 }
 
 static gboolean
-real_connect_interactive (NMVpnServicePlugin   *plugin,
-                          NMConnection  *connection,
-                          GVariant      *details,
-                          GError       **error)
+timeout_quit_loop (gpointer user_data)
 {
-	g_set_error_literal (error,
-	                     NM_VPN_PLUGIN_ERROR,
-	                     NM_VPN_PLUGIN_ERROR_FAILED,
-	                     "NetworkManager-openvpn3: ConnectInteractive handler not implemented yet (Plan 0 skeleton)");
-	return FALSE;
+	g_main_loop_quit ((GMainLoop *) user_data);
+	return G_SOURCE_REMOVE;
+}
+
+static gboolean
+real_connect (NMVpnServicePlugin *plugin,
+              NMConnection       *connection,
+              GError            **error)
+{
+	NMOpenvpn3Plugin *self = NM_OPENVPN3_PLUGIN (plugin);
+	NMOpenvpn3PluginPrivate *priv = NM_OPENVPN3_PLUGIN_GET_PRIVATE (self);
+	g_autofree gchar *profile = NULL;
+	g_autofree gchar *dev = NULL;
+	const gchar *id;
+	guint timeout_id;
+	GVariantBuilder b;
+
+	if (!priv->ovpn3) {
+		priv->ovpn3 = ovpn3_client_new (error);
+		if (!priv->ovpn3)
+			return FALSE;
+	}
+
+	profile = build_profile_string (connection, error);
+	if (!profile)
+		return FALSE;
+
+	id = nm_connection_get_id (connection) ?: "nm-openvpn3";
+	priv->config_path = ovpn3_import_config (priv->ovpn3, id, profile, TRUE, error);
+	if (!priv->config_path)
+		return FALSE;
+
+	priv->session_path = ovpn3_new_tunnel (priv->ovpn3, priv->config_path, error);
+	if (!priv->session_path)
+		return FALSE;
+
+	priv->status_sub_id = ovpn3_session_subscribe_status (
+		priv->ovpn3, priv->session_path,
+		on_status_change, self, error);
+	if (!priv->status_sub_id)
+		return FALSE;
+
+	if (!ovpn3_session_connect (priv->ovpn3, priv->session_path, error))
+		return FALSE;
+
+	/* Block until StatusChange reports CONNECTED or a 30 s timeout fires. */
+	priv->wait_state = -1;
+	priv->wait_loop  = g_main_loop_new (NULL, FALSE);
+	timeout_id = g_timeout_add_seconds (30, timeout_quit_loop, priv->wait_loop);
+	g_main_loop_run (priv->wait_loop);
+	g_source_remove (timeout_id);
+	g_clear_pointer (&priv->wait_loop, g_main_loop_unref);
+
+	if (priv->wait_state != NM_VPN_SERVICE_STATE_STARTED) {
+		g_set_error_literal (error, NM_VPN_PLUGIN_ERROR,
+		                     NM_VPN_PLUGIN_ERROR_FAILED,
+		                     "openvpn3 session did not reach CONNECTED state within 30 s");
+		return FALSE;
+	}
+
+	/* Pull the tun device name and emit a minimal Ip4Config so NM marks the
+	 * tunnel as ready.  Full DNS/routes are Plan 1c. */
+	dev = ovpn3_session_get_device_name (priv->ovpn3, priv->session_path, NULL);
+	if (dev) {
+		g_variant_builder_init (&b, G_VARIANT_TYPE_VARDICT);
+		g_variant_builder_add (&b, "{sv}",
+		                       NM_VPN_PLUGIN_IP4_CONFIG_TUNDEV,
+		                       g_variant_new_string (dev));
+		nm_vpn_service_plugin_set_ip4_config (plugin, g_variant_builder_end (&b));
+	}
+
+	return TRUE;
+}
+
+static gboolean
+real_connect_interactive (NMVpnServicePlugin *plugin,
+                          NMConnection       *connection,
+                          GVariant           *details,
+                          GError            **error)
+{
+	(void) details;
+	return real_connect (plugin, connection, error);
 }
 
 static gboolean
@@ -2405,6 +2515,14 @@ real_new_secrets (NMVpnServicePlugin *base_plugin,
 static void
 nm_openvpn3_plugin_init (NMOpenvpn3Plugin *plugin)
 {
+	NMOpenvpn3PluginPrivate *priv = NM_OPENVPN3_PLUGIN_GET_PRIVATE (plugin);
+
+	priv->ovpn3         = NULL;
+	priv->session_path  = NULL;
+	priv->config_path   = NULL;
+	priv->status_sub_id = 0;
+	priv->wait_loop     = NULL;
+	priv->wait_state    = -1;
 }
 
 static void
@@ -2417,6 +2535,23 @@ dispose (GObject *object)
 	if (priv->pid) {
 		pids_pending_send_sigterm (pids_pending_get (priv->pid));
 		priv->pid = 0;
+	}
+
+	/* Clean up ovpn3 session state */
+	if (priv->status_sub_id && priv->ovpn3) {
+		ovpn3_session_unsubscribe (priv->ovpn3, priv->status_sub_id);
+		priv->status_sub_id = 0;
+	}
+	g_clear_pointer (&priv->session_path, g_free);
+	g_clear_pointer (&priv->config_path, g_free);
+	if (priv->ovpn3) {
+		ovpn3_client_free (priv->ovpn3);
+		priv->ovpn3 = NULL;
+	}
+	if (priv->wait_loop) {
+		if (g_main_loop_is_running (priv->wait_loop))
+			g_main_loop_quit (priv->wait_loop);
+		g_clear_pointer (&priv->wait_loop, g_main_loop_unref);
 	}
 
 	G_OBJECT_CLASS (nm_openvpn3_plugin_parent_class)->dispose (object);
