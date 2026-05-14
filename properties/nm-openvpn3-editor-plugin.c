@@ -35,8 +35,8 @@
 
 #include "import-export.h"
 
-#define OPENVPN_PLUGIN_NAME    _("OpenVPN")
-#define OPENVPN_PLUGIN_DESC    _("Compatible with the OpenVPN server.")
+#define OPENVPN_PLUGIN_NAME    _("OpenVPN 3")
+#define OPENVPN_PLUGIN_DESC    _("Compatible with the OpenVPN 3 Linux client (net.openvpn.v3.*).")
 
 /*****************************************************************************/
 
@@ -135,7 +135,7 @@ get_editor (NMVpnEditorPlugin *iface, NMConnection *connection, GError **error)
 	if (gtk3_only_symbol) {
 		editor = "libnm-vpn-plugin-openvpn3-editor.so";
 	} else {
-		editor = "libnm-gtk4-vpn-plugin-openvpn-editor.so";
+		editor = "libnm-gtk4-vpn-plugin-openvpn3-editor.so";
 	}
 
 	return nm_vpn_plugin_utils_load_editor (editor,
