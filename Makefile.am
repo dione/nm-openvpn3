@@ -330,6 +330,18 @@ EXTRA_DIST += \
 
 ###############################################################################
 
+src_libovpn3_status_la_SOURCES = src/ovpn3-status.c src/ovpn3-status.h
+src_libovpn3_status_la_CPPFLAGS = $(src_cppflags)
+src_libovpn3_status_la_LIBADD = $(GLIB_LIBS) $(LIBNM_LIBS)
+noinst_LTLIBRARIES += src/libovpn3-status.la
+
+check_programs += src/tests/test-ovpn3-status
+src_tests_test_ovpn3_status_SOURCES = src/tests/test-ovpn3-status.c
+src_tests_test_ovpn3_status_CPPFLAGS = $(src_cppflags) -I$(srcdir)/src
+src_tests_test_ovpn3_status_LDADD = src/libovpn3-status.la $(GLIB_LIBS) $(LIBNM_LIBS)
+
+###############################################################################
+
 if WITH_GNOME
 libexec_PROGRAMS += auth-dialog/nm-openvpn3-auth-dialog
 endif
