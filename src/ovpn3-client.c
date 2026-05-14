@@ -195,6 +195,11 @@ status_signal_cb (GDBusConnection *conn,
 	StatusSubData *d = user_data;
 	guint32 maj = 0, min = 0;
 	const gchar *msg = NULL;
+	g_debug ("ovpn3 signal arrived: sender=%s path=%s iface=%s signal=%s sig=%s",
+	         sender, path, iface, signal_name,
+	         g_variant_get_type_string (parameters));
+	if (g_strcmp0 (signal_name, "StatusChange") != 0)
+		return;
 	g_variant_get (parameters, "(uu&s)", &maj, &min, &msg);
 	d->cb (maj, min, msg, d->user_data);
 }
@@ -211,14 +216,16 @@ ovpn3_session_subscribe_status (Ovpn3Client         *self,
 	d->cb        = cb;
 	d->user_data = user_data;
 
-	/* sender=NULL: openvpn3 emits StatusChange from the backend client's bus
-	 * name (uid 983 in practice), not from the well-known sessions service
-	 * name.  Filter only on the session object path. */
+	/* sender=NULL + iface=NULL + signal=NULL: subscribe to ALL signals on
+	 * this object path so we observe whatever openvpn3 actually emits.
+	 * The callback filters to StatusChange.  This is intentionally broad
+	 * because openvpn3's bus topology has been emitting status updates from
+	 * surprising senders. */
 	return g_dbus_connection_signal_subscribe (
 		self->bus,
 		NULL,
-		OVPN3_IFACE_SESSIONS,
-		"StatusChange",
+		NULL,
+		NULL,
 		session_path,
 		NULL,
 		G_DBUS_SIGNAL_FLAGS_NONE,
