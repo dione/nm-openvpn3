@@ -2318,6 +2318,7 @@ on_status_change (guint32      maj,
 {
 	NMOpenvpn3Plugin *self = NM_OPENVPN3_PLUGIN (user_data);
 	NMOpenvpn3PluginPrivate *priv = NM_OPENVPN3_PLUGIN_GET_PRIVATE (self);
+	NMVpnServicePlugin *plugin = (NMVpnServicePlugin *) self;
 
 	NMActiveConnectionStateReason reason = NM_ACTIVE_CONNECTION_STATE_REASON_UNKNOWN;
 	int state = ovpn3_status_to_nm_state (maj, min,
@@ -2331,24 +2332,30 @@ on_status_change (guint32      maj,
 
 	priv->wait_state = state;
 
-	if (state == NM_VPN_SERVICE_STATE_STARTED || state == NM_VPN_SERVICE_STATE_STOPPED) {
-		if (priv->wait_loop && g_main_loop_is_running (priv->wait_loop))
-			g_main_loop_quit (priv->wait_loop);
+	if (state == NM_VPN_SERVICE_STATE_STARTED) {
+		/* Tunnel is up.  Emit the minimal Ip4Config (tundev only) so NM
+		 * transitions the connection to ACTIVATED.  Full DNS/routes are
+		 * Plan 1c. */
+		g_autofree gchar *dev = ovpn3_session_get_device_name (priv->ovpn3,
+		                                                       priv->session_path,
+		                                                       NULL);
+		if (dev && *dev) {
+			GVariantBuilder b;
+			g_variant_builder_init (&b, G_VARIANT_TYPE_VARDICT);
+			g_variant_builder_add (&b, "{sv}",
+			                       NM_VPN_PLUGIN_IP4_CONFIG_TUNDEV,
+			                       g_variant_new_string (dev));
+			nm_vpn_service_plugin_set_ip4_config (plugin, g_variant_builder_end (&b));
+		}
+		return;
 	}
 
-	/* If we are no longer in the connect wait loop and the session stops,
-	 * signal a failure to NM so the connection is torn down. */
-	if (state == NM_VPN_SERVICE_STATE_STOPPED && !priv->wait_loop) {
-		nm_vpn_service_plugin_failure ((NMVpnServicePlugin *) self,
+	if (state == NM_VPN_SERVICE_STATE_STOPPED) {
+		/* Session went away unexpectedly (auth failure, network loss, etc.).
+		 * Tell NM the VPN failed. */
+		nm_vpn_service_plugin_failure (plugin,
 		                               NM_VPN_PLUGIN_FAILURE_CONNECT_FAILED);
 	}
-}
-
-static gboolean
-timeout_quit_loop (gpointer user_data)
-{
-	g_main_loop_quit ((GMainLoop *) user_data);
-	return G_SOURCE_REMOVE;
 }
 
 static gboolean
@@ -2359,10 +2366,7 @@ real_connect (NMVpnServicePlugin *plugin,
 	NMOpenvpn3Plugin *self = NM_OPENVPN3_PLUGIN (plugin);
 	NMOpenvpn3PluginPrivate *priv = NM_OPENVPN3_PLUGIN_GET_PRIVATE (self);
 	g_autofree gchar *profile = NULL;
-	g_autofree gchar *dev = NULL;
 	const gchar *id;
-	guint timeout_id;
-	GVariantBuilder b;
 
 	if (!priv->ovpn3) {
 		priv->ovpn3 = ovpn3_client_new (error);
@@ -2383,11 +2387,6 @@ real_connect (NMVpnServicePlugin *plugin,
 	if (!priv->session_path)
 		return FALSE;
 
-	/* Allocate wait_loop BEFORE subscribing so an early StatusChange does not
-	 * find wait_loop NULL and incorrectly emit failure. */
-	priv->wait_state = -1;
-	priv->wait_loop  = g_main_loop_new (NULL, FALSE);
-
 	/* Wait for the session backend to fully register on the bus.  NewTunnel
 	 * returns before the backend client has bound its object path; calling
 	 * Connect immediately races and fails with UnknownMethod. */
@@ -2403,30 +2402,11 @@ real_connect (NMVpnServicePlugin *plugin,
 	if (!ovpn3_session_connect (priv->ovpn3, priv->session_path, error))
 		return FALSE;
 
-	/* Block until StatusChange reports CONNECTED or a 30 s timeout fires. */
-	timeout_id = g_timeout_add_seconds (30, timeout_quit_loop, priv->wait_loop);
-	g_main_loop_run (priv->wait_loop);
-	g_source_remove (timeout_id);
-	g_clear_pointer (&priv->wait_loop, g_main_loop_unref);
-
-	if (priv->wait_state != NM_VPN_SERVICE_STATE_STARTED) {
-		g_set_error_literal (error, NM_VPN_PLUGIN_ERROR,
-		                     NM_VPN_PLUGIN_ERROR_FAILED,
-		                     "openvpn3 session did not reach CONNECTED state within 30 s");
-		return FALSE;
-	}
-
-	/* Pull the tun device name and emit a minimal Ip4Config so NM marks the
-	 * tunnel as ready.  Full DNS/routes are Plan 1c. */
-	dev = ovpn3_session_get_device_name (priv->ovpn3, priv->session_path, NULL);
-	if (dev) {
-		g_variant_builder_init (&b, G_VARIANT_TYPE_VARDICT);
-		g_variant_builder_add (&b, "{sv}",
-		                       NM_VPN_PLUGIN_IP4_CONFIG_TUNDEV,
-		                       g_variant_new_string (dev));
-		nm_vpn_service_plugin_set_ip4_config (plugin, g_variant_builder_end (&b));
-	}
-
+	/* Return immediately.  NM expects Connect/ConnectInteractive to return
+	 * quickly and waits for the plugin to emit set_ip4_config to transition
+	 * to ACTIVATED.  on_status_change does that when the session reports
+	 * CONNECTION:CONNECTED. */
+	priv->wait_state = -1;
 	return TRUE;
 }
 
