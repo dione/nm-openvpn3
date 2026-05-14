@@ -244,7 +244,7 @@ validate_connection_type (const char *ctype)
 	                            NM_OPENVPN3_CONTYPE_PASSWORD_TLS);
 }
 
-G_GNUC_UNUSED static gboolean
+static gboolean
 connection_type_is_tls_mode (const char *connection_type)
 {
 	return NM_IN_STRSET (connection_type, NM_OPENVPN3_CONTYPE_TLS,
@@ -254,7 +254,7 @@ connection_type_is_tls_mode (const char *connection_type)
 
 /*****************************************************************************/
 
-G_GNUC_UNUSED static void
+static void
 args_add_str_take (GPtrArray *args, char *arg)
 {
 	nm_assert (args);
@@ -263,7 +263,7 @@ args_add_str_take (GPtrArray *args, char *arg)
 	g_ptr_array_add (args, arg);
 }
 
-G_GNUC_UNUSED static void
+static void
 _args_add_strv (GPtrArray *args, gboolean accept_optional, guint argn, ...)
 {
 	va_list ap;
@@ -289,7 +289,7 @@ _args_add_strv (GPtrArray *args, gboolean accept_optional, guint argn, ...)
 #define args_add_strv(args, ...)  _args_add_strv (args, FALSE, NM_NARG (__VA_ARGS__), __VA_ARGS__)
 #define args_add_strv0(args, ...) _args_add_strv (args, TRUE,  NM_NARG (__VA_ARGS__), __VA_ARGS__)
 
-G_GNUC_UNUSED static const char *
+static const char *
 args_add_utf8safe_str (GPtrArray *args, const char *arg)
 {
 	char *arg_unescaped;
@@ -302,7 +302,7 @@ args_add_utf8safe_str (GPtrArray *args, const char *arg)
 	return arg_unescaped;
 }
 
-G_GNUC_UNUSED static void
+static void
 args_add_int64 (GPtrArray *args, gint64 v)
 {
 	nm_assert (args);
@@ -310,7 +310,7 @@ args_add_int64 (GPtrArray *args, gint64 v)
 	args_add_str_take (args, g_strdup_printf ("%"G_GINT64_FORMAT, v));
 }
 
-G_GNUC_UNUSED static gboolean
+static gboolean
 args_add_numstr (GPtrArray *args, const char *arg)
 {
 	gint64 v;
@@ -327,7 +327,7 @@ args_add_numstr (GPtrArray *args, const char *arg)
 	return TRUE;
 }
 
-G_GNUC_UNUSED static void
+static void
 args_add_vpn_data (GPtrArray *args, NMSettingVpn *s_vpn, const char *s_key, const char *a_key)
 {
 	const char *arg;
@@ -352,7 +352,7 @@ args_add_vpn_data (GPtrArray *args, NMSettingVpn *s_vpn, const char *s_key, cons
  *
  * The returned file name must be freed by the caller.
  */
-G_GNUC_UNUSED static char *
+static char *
 access_file (const char *filename,
              const char *user,
              gboolean do_unescape,
@@ -386,7 +386,7 @@ access_file (const char *filename,
 	return tmp;
 }
 
-G_GNUC_UNUSED static gboolean
+static gboolean
 args_add_file (GPtrArray *args,
                const char *key,
                const char *value,
@@ -405,7 +405,7 @@ args_add_file (GPtrArray *args,
 	return TRUE;
 }
 
-G_GNUC_UNUSED static gboolean
+static gboolean
 args_add_vpn_certs (GPtrArray *args,
                     NMSettingVpn *s_vpn,
                     const char *private_user,
@@ -466,7 +466,7 @@ args_add_vpn_certs (GPtrArray *args,
 
 /*****************************************************************************/
 
-G_GNUC_UNUSED static gboolean
+static gboolean
 validate_address (const char *address)
 {
 	const char *p = address;
@@ -489,7 +489,7 @@ typedef struct ValidateInfo {
 	gboolean have_items;
 } ValidateInfo;
 
-G_GNUC_UNUSED static void
+static void
 validate_one_property (const char *key, const char *value, gpointer user_data)
 {
 	ValidateInfo *info = (ValidateInfo *) user_data;
@@ -565,7 +565,7 @@ validate_one_property (const char *key, const char *value, gpointer user_data)
 	}
 }
 
-G_GNUC_UNUSED static gboolean
+static gboolean
 nm_openvpn3_properties_validate (NMSettingVpn *s_vpn, GError **error)
 {
 	GError *validate_error = NULL;
@@ -587,7 +587,7 @@ nm_openvpn3_properties_validate (NMSettingVpn *s_vpn, GError **error)
 	return TRUE;
 }
 
-G_GNUC_UNUSED static gboolean
+static gboolean
 nm_openvpn3_secrets_validate (NMSettingVpn *s_vpn, GError **error)
 {
 	GError *validate_error = NULL;
@@ -603,7 +603,7 @@ nm_openvpn3_secrets_validate (NMSettingVpn *s_vpn, GError **error)
 
 /*****************************************************************************/
 
-G_GNUC_UNUSED static const char *
+static const char *
 openvpn_binary_find_exepath (void)
 {
 	static const char *paths[] = {
@@ -620,7 +620,7 @@ openvpn_binary_find_exepath (void)
 	return NULL;
 }
 
-G_GNUC_UNUSED static guint
+static guint
 openvpn_binary_detect_version (const char *exepath)
 {
 	gs_free char *s_stdout = NULL;
@@ -650,7 +650,7 @@ openvpn_binary_detect_version (const char *exepath)
 	return nmovpn_version_parse (s_stdout);
 }
 
-G_GNUC_UNUSED static guint
+static guint
 openvpn_binary_detect_version_cached (const char *exepath, guint *cached)
 {
 	guint v;
@@ -1254,7 +1254,7 @@ out:
 	return G_SOURCE_REMOVE;
 }
 
-G_GNUC_UNUSED static void
+static void
 nm_openvpn3_schedule_connect_timer (NMOpenvpn3Plugin *plugin)
 {
 	NMOpenvpn3PluginPrivate *priv = NM_OPENVPN3_PLUGIN_GET_PRIVATE (plugin);
@@ -1346,7 +1346,7 @@ update_io_data_from_vpn_setting (NMOpenvpn3PluginIOData *io_data,
 	io_data->proxy_password = g_strdup (nm_setting_vpn_get_secret (s_vpn, NM_OPENVPN3_KEY_HTTP_PROXY_PASSWORD));
 }
 
-G_GNUC_UNUSED static char *
+static char *
 mgt_path_create (NMConnection *connection, GError **error)
 {
 	int errsv;
@@ -1367,7 +1367,7 @@ mgt_path_create (NMConnection *connection, GError **error)
 }
 
 #define MAX_GROUPS 128
-G_GNUC_UNUSED static gboolean
+static gboolean
 is_dir_writable (const char *dir, const char *user)
 {
 	struct stat sb;
@@ -1405,7 +1405,7 @@ is_dir_writable (const char *dir, const char *user)
 /* Check existence of 'tmp' directory inside @chdir
  * and write access in @chdir and @chdir/tmp for @user.
  */
-G_GNUC_UNUSED static gboolean
+static gboolean
 check_chroot_dir_usability (const char *chdir, const char *user)
 {
 	char *tmp_dir;
@@ -1423,7 +1423,7 @@ check_chroot_dir_usability (const char *chdir, const char *user)
 	return b1 && b2;
 }
 
-G_GNUC_UNUSED static const char *
+static const char *
 get_connection_permission_user (NMConnection *connection)
 {
     NMSettingConnection *s_con;
