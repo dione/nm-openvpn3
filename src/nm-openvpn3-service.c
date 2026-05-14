@@ -2417,6 +2417,27 @@ poll_status_cb (gpointer user_data)
 		ovpn3_trace ("STARTED branch: have_ip=%d addr=0x%08x peer=0x%08x prefix=%u",
 		             have_ip, addr_be, peer_be, prefix);
 
+		/* NM requires SetConfig BEFORE SetIp4Config, declaring HAS_IP4=TRUE
+		 * (otherwise NM does not know to expect any IPv4 config and the
+		 * subsequent SetIp4Config is silently ignored). */
+		GVariantBuilder cfgb;
+		g_variant_builder_init (&cfgb, G_VARIANT_TYPE_VARDICT);
+		g_variant_builder_add (&cfgb, "{sv}",
+		                       NM_VPN_PLUGIN_CONFIG_TUNDEV,
+		                       g_variant_new_string (tundev));
+		g_variant_builder_add (&cfgb, "{sv}",
+		                       NM_VPN_PLUGIN_CONFIG_HAS_IP4,
+		                       g_variant_new_boolean (have_ip));
+		g_variant_builder_add (&cfgb, "{sv}",
+		                       NM_VPN_PLUGIN_CONFIG_HAS_IP6,
+		                       g_variant_new_boolean (FALSE));
+		g_variant_builder_add (&cfgb, "{sv}",
+		                       NM_VPN_PLUGIN_CAN_PERSIST,
+		                       g_variant_new_boolean (FALSE));
+		ovpn3_trace ("emitting set_config");
+		nm_vpn_service_plugin_set_config (plugin,
+		                                  g_variant_builder_end (&cfgb));
+
 		GVariantBuilder b;
 		g_variant_builder_init (&b, G_VARIANT_TYPE_VARDICT);
 		g_variant_builder_add (&b, "{sv}",
