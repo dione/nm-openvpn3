@@ -2383,6 +2383,11 @@ real_connect (NMVpnServicePlugin *plugin,
 	if (!priv->session_path)
 		return FALSE;
 
+	/* Allocate wait_loop BEFORE subscribing so an early StatusChange does not
+	 * find wait_loop NULL and incorrectly emit failure. */
+	priv->wait_state = -1;
+	priv->wait_loop  = g_main_loop_new (NULL, FALSE);
+
 	priv->status_sub_id = ovpn3_session_subscribe_status (
 		priv->ovpn3, priv->session_path,
 		on_status_change, self, error);
@@ -2393,8 +2398,6 @@ real_connect (NMVpnServicePlugin *plugin,
 		return FALSE;
 
 	/* Block until StatusChange reports CONNECTED or a 30 s timeout fires. */
-	priv->wait_state = -1;
-	priv->wait_loop  = g_main_loop_new (NULL, FALSE);
 	timeout_id = g_timeout_add_seconds (30, timeout_quit_loop, priv->wait_loop);
 	g_main_loop_run (priv->wait_loop);
 	g_source_remove (timeout_id);
