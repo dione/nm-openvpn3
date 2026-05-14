@@ -26,7 +26,8 @@ the openvpn3 prefix is applied uniformly.
 
 ## Roadmap
 
-- Plan 0 (this) — fork skeleton, no functional Connect
-- Plan 1 — service translator to net.openvpn.v3.sessions
-- Plan 2 — auth-dialog rewrite for OpenVPN 3 challenge-response
-- Plan 3 — UI plugin (.so) for nm-connection-editor + GNOME Settings
+- Plan 0 (done, v0.1.0-skeleton) — fork skeleton, Connect stubbed
+- Plan 1 (done, v0.2.0-mvp) — TLS-cert Connect/Disconnect happy path via net.openvpn.v3.*
+- Plan 1b — DNS/routes/searchdomains from netcfg
+- Plan 2 — auth-dialog around AttentionRequired / UserInputQueue
+- Plan 3 — UI plugin for nm-connection-editor
