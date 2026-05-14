@@ -36,6 +36,8 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <ctype.h>
+#include <ifaddrs.h>
+#include <net/if.h>
 #include <errno.h>
 #include <locale.h>
 #include <pwd.h>
@@ -2382,25 +2384,63 @@ poll_status_cb (gpointer user_data)
 
 	if (state == NM_VPN_SERVICE_STATE_STARTED) {
 		g_autoptr (GError) ge = NULL;
-		gchar *dev = ovpn3_session_get_device_name (
+		g_autofree gchar *dev = ovpn3_session_get_device_name (
 			priv->ovpn3, priv->session_path, &ge);
-		ovpn3_trace ("STARTED branch: device_name='%s' err=%s",
-		             dev ? dev : "(null)",
-		             ge ? ge->message : "(none)");
-
 		const gchar *tundev = (dev && *dev) ? dev : "tun0";
+		ovpn3_trace ("STARTED branch: device_name='%s'", tundev);
+
+		/* Pull the IPv4 address openvpn3 already programmed on the tun
+		 * device.  NM requires ADDRESS + PREFIX + INT_GATEWAY to mark
+		 * the VPN as activated; emitting TUNDEV alone is not enough. */
+		guint32 addr_be = 0, peer_be = 0;
+		guint32 prefix = 32;
+		gboolean have_ip = FALSE;
+		struct ifaddrs *ifap = NULL;
+		if (getifaddrs (&ifap) == 0) {
+			for (struct ifaddrs *p = ifap; p; p = p->ifa_next) {
+				if (!p->ifa_addr || p->ifa_addr->sa_family != AF_INET)
+					continue;
+				if (g_strcmp0 (p->ifa_name, tundev) != 0)
+					continue;
+				addr_be = ((struct sockaddr_in *) p->ifa_addr)->sin_addr.s_addr;
+				if (p->ifa_dstaddr && p->ifa_dstaddr->sa_family == AF_INET)
+					peer_be = ((struct sockaddr_in *) p->ifa_dstaddr)->sin_addr.s_addr;
+				if (p->ifa_netmask && p->ifa_netmask->sa_family == AF_INET) {
+					guint32 mask_be = ((struct sockaddr_in *) p->ifa_netmask)->sin_addr.s_addr;
+					prefix = __builtin_popcount (mask_be);
+				}
+				have_ip = TRUE;
+				break;
+			}
+			freeifaddrs (ifap);
+		}
+		ovpn3_trace ("STARTED branch: have_ip=%d addr=0x%08x peer=0x%08x prefix=%u",
+		             have_ip, addr_be, peer_be, prefix);
+
 		GVariantBuilder b;
 		g_variant_builder_init (&b, G_VARIANT_TYPE_VARDICT);
 		g_variant_builder_add (&b, "{sv}",
 		                       NM_VPN_PLUGIN_IP4_CONFIG_TUNDEV,
 		                       g_variant_new_string (tundev));
-		/* Minimal Ip4Config dict — just the tun device. */
-		ovpn3_trace ("emitting set_ip4_config tundev='%s'", tundev);
+		g_variant_builder_add (&b, "{sv}",
+		                       NM_VPN_PLUGIN_IP4_CONFIG_ADDRESS,
+		                       g_variant_new_uint32 (addr_be));
+		g_variant_builder_add (&b, "{sv}",
+		                       NM_VPN_PLUGIN_IP4_CONFIG_PREFIX,
+		                       g_variant_new_uint32 (prefix));
+		g_variant_builder_add (&b, "{sv}",
+		                       NM_VPN_PLUGIN_IP4_CONFIG_INT_GATEWAY,
+		                       g_variant_new_uint32 (peer_be));
+		/* openvpn3 already installed routes via netcfg; tell NM not to
+		 * recompute them. */
+		g_variant_builder_add (&b, "{sv}",
+		                       NM_VPN_PLUGIN_IP4_CONFIG_PRESERVE_ROUTES,
+		                       g_variant_new_boolean (TRUE));
+		ovpn3_trace ("emitting set_ip4_config");
 		nm_vpn_service_plugin_set_ip4_config (plugin,
 		                                      g_variant_builder_end (&b));
-		ovpn3_trace ("set_ip4_config call returned");
+		ovpn3_trace ("set_ip4_config returned");
 
-		g_free (dev);
 		priv->poll_timer_id = 0;
 		return G_SOURCE_REMOVE;
 	}
