@@ -64,6 +64,9 @@ ovpn3_client_new (GError **error)
 	self->bus            = g_steal_pointer (&bus);
 	self->config_proxy   = g_steal_pointer (&cfg);
 	self->sessions_proxy = g_steal_pointer (&ses);
+
+	ovpn3_trace ("client_new: ovpn3 client bus unique name = %s",
+	             g_dbus_connection_get_unique_name (self->bus));
 	return self;
 }
 
