@@ -22,15 +22,15 @@
 #ifndef __NM_OPENVPN3_EDITOR_PLUGIN_H__
 #define __NM_OPENVPN3_EDITOR_PLUGIN_H__
 
-#define OPENVPN_TYPE_EDITOR_PLUGIN                (openvpn_editor_plugin_get_type ())
-#define OPENVPN_EDITOR_PLUGIN(obj)            (G_TYPE_CHECK_INSTANCE_CAST ((obj), OPENVPN_TYPE_EDITOR_PLUGIN, OpenvpnEditorPlugin))
-#define OPENVPN_EDITOR_PLUGIN_CLASS(klass)    (G_TYPE_CHECK_CLASS_CAST ((klass), OPENVPN_TYPE_EDITOR_PLUGIN, OpenvpnEditorPluginClass))
-#define OPENVPN_IS_EDITOR_PLUGIN(obj)             (G_TYPE_CHECK_INSTANCE_TYPE ((obj), OPENVPN_TYPE_EDITOR_PLUGIN))
-#define OPENVPN_IS_EDITOR_PLUGIN_CLASS(klass)     (G_TYPE_CHECK_CLASS_TYPE ((klass), OPENVPN_TYPE_EDITOR_PLUGIN))
-#define OPENVPN_EDITOR_PLUGIN_GET_CLASS(obj)  (G_TYPE_INSTANCE_GET_CLASS ((obj), OPENVPN_TYPE_EDITOR_PLUGIN, OpenvpnEditorPluginClass))
+#define OPENVPN3_TYPE_EDITOR_PLUGIN                (openvpn3_editor_plugin_get_type ())
+#define OPENVPN3_EDITOR_PLUGIN(obj)            (G_TYPE_CHECK_INSTANCE_CAST ((obj), OPENVPN3_TYPE_EDITOR_PLUGIN, Openvpn3EditorPlugin))
+#define OPENVPN3_EDITOR_PLUGIN_CLASS(klass)    (G_TYPE_CHECK_CLASS_CAST ((klass), OPENVPN3_TYPE_EDITOR_PLUGIN, Openvpn3EditorPluginClass))
+#define OPENVPN3_IS_EDITOR_PLUGIN(obj)             (G_TYPE_CHECK_INSTANCE_TYPE ((obj), OPENVPN3_TYPE_EDITOR_PLUGIN))
+#define OPENVPN3_IS_EDITOR_PLUGIN_CLASS(klass)     (G_TYPE_CHECK_CLASS_TYPE ((klass), OPENVPN3_TYPE_EDITOR_PLUGIN))
+#define OPENVPN3_EDITOR_PLUGIN_GET_CLASS(obj)  (G_TYPE_INSTANCE_GET_CLASS ((obj), OPENVPN3_TYPE_EDITOR_PLUGIN, Openvpn3EditorPluginClass))
 
-typedef struct _OpenvpnEditorPlugin OpenvpnEditorPlugin;
-typedef struct _OpenvpnEditorPluginClass OpenvpnEditorPluginClass;
+typedef struct _OpenvpnEditorPlugin Openvpn3EditorPlugin;
+typedef struct _OpenvpnEditorPluginClass Openvpn3EditorPluginClass;
 
 struct _OpenvpnEditorPlugin {
 	GObject parent;
@@ -40,7 +40,7 @@ struct _OpenvpnEditorPluginClass {
 	GObjectClass parent;
 };
 
-GType openvpn_editor_plugin_get_type (void);
+GType openvpn3_editor_plugin_get_type (void);
 
 typedef NMVpnEditor *(*NMVpnEditorFactory) (NMVpnEditorPlugin *editor_plugin,
                                             NMConnection *connection,

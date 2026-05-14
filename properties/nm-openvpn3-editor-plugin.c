@@ -35,8 +35,8 @@
 
 #include "import-export.h"
 
-#define OPENVPN_PLUGIN_NAME    _("OpenVPN 3")
-#define OPENVPN_PLUGIN_DESC    _("Compatible with the OpenVPN 3 Linux client (net.openvpn.v3.*).")
+#define OPENVPN3_PLUGIN_NAME    _("OpenVPN 3")
+#define OPENVPN3_PLUGIN_DESC    _("Compatible with the OpenVPN 3 Linux client (net.openvpn.v3.*).")
 
 /*****************************************************************************/
 
@@ -47,11 +47,11 @@ enum {
 	PROP_SERVICE
 };
 
-static void openvpn_editor_plugin_interface_init (NMVpnEditorPluginInterface *iface_class);
+static void openvpn3_editor_plugin_interface_init (NMVpnEditorPluginInterface *iface_class);
 
-G_DEFINE_TYPE_EXTENDED (OpenvpnEditorPlugin, openvpn_editor_plugin, G_TYPE_OBJECT, 0,
+G_DEFINE_TYPE_EXTENDED (Openvpn3EditorPlugin, openvpn3_editor_plugin, G_TYPE_OBJECT, 0,
                         G_IMPLEMENT_INTERFACE (NM_TYPE_VPN_EDITOR_PLUGIN,
-                                               openvpn_editor_plugin_interface_init))
+                                               openvpn3_editor_plugin_interface_init))
 
 /*****************************************************************************/
 
@@ -124,7 +124,7 @@ get_editor (NMVpnEditorPlugin *iface, NMConnection *connection, GError **error)
 	GModule *self_module;
 	const char *editor;
 
-	g_return_val_if_fail (OPENVPN_IS_EDITOR_PLUGIN (iface), NULL);
+	g_return_val_if_fail (OPENVPN3_IS_EDITOR_PLUGIN (iface), NULL);
 	g_return_val_if_fail (NM_IS_CONNECTION (connection), NULL);
 	g_return_val_if_fail (!error || !*error, NULL);
 
@@ -155,10 +155,10 @@ get_property (GObject *object, guint prop_id,
 {
 	switch (prop_id) {
 	case PROP_NAME:
-		g_value_set_string (value, OPENVPN_PLUGIN_NAME);
+		g_value_set_string (value, OPENVPN3_PLUGIN_NAME);
 		break;
 	case PROP_DESC:
-		g_value_set_string (value, OPENVPN_PLUGIN_DESC);
+		g_value_set_string (value, OPENVPN3_PLUGIN_DESC);
 		break;
 	case PROP_SERVICE:
 		g_value_set_string (value, NM_VPN_SERVICE_TYPE_OPENVPN3);
@@ -170,12 +170,12 @@ get_property (GObject *object, guint prop_id,
 }
 
 static void
-openvpn_editor_plugin_init (OpenvpnEditorPlugin *plugin)
+openvpn3_editor_plugin_init (Openvpn3EditorPlugin *plugin)
 {
 }
 
 static void
-openvpn_editor_plugin_interface_init (NMVpnEditorPluginInterface *iface_class)
+openvpn3_editor_plugin_interface_init (NMVpnEditorPluginInterface *iface_class)
 {
 	iface_class->get_editor = get_editor;
 	iface_class->get_capabilities = get_capabilities;
@@ -185,7 +185,7 @@ openvpn_editor_plugin_interface_init (NMVpnEditorPluginInterface *iface_class)
 }
 
 static void
-openvpn_editor_plugin_class_init (OpenvpnEditorPluginClass *req_class)
+openvpn3_editor_plugin_class_init (Openvpn3EditorPluginClass *req_class)
 {
 	GObjectClass *object_class = G_OBJECT_CLASS (req_class);
 
@@ -214,6 +214,6 @@ nm_vpn_editor_plugin_factory (GError **error)
 	bindtextdomain (GETTEXT_PACKAGE, LOCALEDIR);
 	bind_textdomain_codeset (GETTEXT_PACKAGE, "UTF-8");
 
-	return g_object_new (OPENVPN_TYPE_EDITOR_PLUGIN, NULL);
+	return g_object_new (OPENVPN3_TYPE_EDITOR_PLUGIN, NULL);
 }
 

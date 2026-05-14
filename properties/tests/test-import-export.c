@@ -112,7 +112,7 @@ _create_plugin (void)
 
 	plugin = nm_vpn_editor_plugin_factory (&error);
 	nmtst_assert_success (plugin, error);
-	g_assert (OPENVPN_IS_EDITOR_PLUGIN (plugin));
+	g_assert (OPENVPN3_IS_EDITOR_PLUGIN (plugin));
 	return plugin;
 }
 #define _CREATE_PLUGIN(plugin) \

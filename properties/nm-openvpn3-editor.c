@@ -2517,13 +2517,13 @@ advanced_dialog_new_hash_from_dialog (GtkWidget *dialog)
 
 /*****************************************************************************/
 
-static void openvpn_editor_plugin_widget_interface_init (NMVpnEditorInterface *iface_class);
+static void openvpn3_editor_plugin_widget_interface_init (NMVpnEditorInterface *iface_class);
 
-G_DEFINE_TYPE_EXTENDED (OpenvpnEditor, openvpn_editor_plugin_widget, G_TYPE_OBJECT, 0,
+G_DEFINE_TYPE_EXTENDED (Openvpn3Editor, openvpn3_editor_plugin_widget, G_TYPE_OBJECT, 0,
                         G_IMPLEMENT_INTERFACE (NM_TYPE_VPN_EDITOR,
-                                               openvpn_editor_plugin_widget_interface_init))
+                                               openvpn3_editor_plugin_widget_interface_init))
 
-#define OPENVPN_EDITOR_GET_PRIVATE(o) (G_TYPE_INSTANCE_GET_PRIVATE ((o), OPENVPN_TYPE_EDITOR, OpenvpnEditorPrivate))
+#define OPENVPN3_EDITOR_GET_PRIVATE(o) (G_TYPE_INSTANCE_GET_PRIVATE ((o), OPENVPN3_TYPE_EDITOR, Openvpn3EditorPrivate))
 
 typedef struct {
 	GtkBuilder *builder;
@@ -2533,7 +2533,7 @@ typedef struct {
 	GHashTable *advanced;
 	GtkWidget *tls_user_cert_chooser;
 	GFile *sk_key_file;
-} OpenvpnEditorPrivate;
+} Openvpn3EditorPrivate;
 
 /*****************************************************************************/
 
@@ -2570,9 +2570,9 @@ check_gateway_entry (const char *str)
 }
 
 static gboolean
-check_validity (OpenvpnEditor *self, GError **error)
+check_validity (Openvpn3Editor *self, GError **error)
 {
-	OpenvpnEditorPrivate *priv = OPENVPN_EDITOR_GET_PRIVATE (self);
+	Openvpn3EditorPrivate *priv = OPENVPN3_EDITOR_GET_PRIVATE (self);
 	GtkWidget *widget;
 	const char *str;
 	GtkTreeModel *model;
@@ -2608,14 +2608,14 @@ check_validity (OpenvpnEditor *self, GError **error)
 static void
 stuff_changed_cb (GtkWidget *widget, gpointer user_data)
 {
-	g_signal_emit_by_name (OPENVPN_EDITOR (user_data), "changed");
+	g_signal_emit_by_name (OPENVPN3_EDITOR (user_data), "changed");
 }
 
 static void
 auth_combo_changed_cb (GtkWidget *combo, gpointer user_data)
 {
-	OpenvpnEditor *self = OPENVPN_EDITOR (user_data);
-	OpenvpnEditorPrivate *priv = OPENVPN_EDITOR_GET_PRIVATE (self);
+	Openvpn3Editor *self = OPENVPN3_EDITOR (user_data);
+	Openvpn3EditorPrivate *priv = OPENVPN3_EDITOR_GET_PRIVATE (self);
 	GtkWidget *auth_notebook;
 	GtkTreeModel *model;
 	GtkTreeIter iter;
@@ -2642,8 +2642,8 @@ advanced_dialog_close_cb (GtkWidget *dialog, gpointer user_data)
 static void
 advanced_dialog_response_cb (GtkWidget *dialog, gint response, gpointer user_data)
 {
-	OpenvpnEditor *self = OPENVPN_EDITOR (user_data);
-	OpenvpnEditorPrivate *priv = OPENVPN_EDITOR_GET_PRIVATE (self);
+	Openvpn3Editor *self = OPENVPN3_EDITOR (user_data);
+	Openvpn3EditorPrivate *priv = OPENVPN3_EDITOR_GET_PRIVATE (self);
 
 	if (response != GTK_RESPONSE_OK) {
 		advanced_dialog_close_cb (dialog, self);
@@ -2660,8 +2660,8 @@ advanced_dialog_response_cb (GtkWidget *dialog, gint response, gpointer user_dat
 static void
 advanced_button_clicked_cb (GtkWidget *button, gpointer user_data)
 {
-	OpenvpnEditor *self = OPENVPN_EDITOR (user_data);
-	OpenvpnEditorPrivate *priv = OPENVPN_EDITOR_GET_PRIVATE (self);
+	Openvpn3Editor *self = OPENVPN3_EDITOR (user_data);
+	Openvpn3EditorPrivate *priv = OPENVPN3_EDITOR_GET_PRIVATE (self);
 	GtkWidget *dialog, *widget;
 	GtkTreeModel *model;
 	GtkTreeIter iter;
@@ -2700,7 +2700,7 @@ advanced_button_clicked_cb (GtkWidget *button, gpointer user_data)
 static void
 sk_key_chooser_response (GtkDialog *chooser, gint response_id, gpointer user_data)
 {
-	OpenvpnEditorPrivate *priv = OPENVPN_EDITOR_GET_PRIVATE (user_data);
+	Openvpn3EditorPrivate *priv = OPENVPN3_EDITOR_GET_PRIVATE (user_data);
 
 	if (response_id == GTK_RESPONSE_ACCEPT) {
 		g_clear_object (&priv->sk_key_file);
@@ -2712,9 +2712,9 @@ sk_key_chooser_response (GtkDialog *chooser, gint response_id, gpointer user_dat
 }
 
 static gboolean
-init_editor_plugin (OpenvpnEditor *self, NMConnection *connection)
+init_editor_plugin (Openvpn3Editor *self, NMConnection *connection)
 {
-	OpenvpnEditorPrivate *priv = OPENVPN_EDITOR_GET_PRIVATE (self);
+	Openvpn3EditorPrivate *priv = OPENVPN3_EDITOR_GET_PRIVATE (self);
 	NMSettingVpn *s_vpn;
 	GtkWidget *widget;
 	GtkListStore *store;
@@ -2817,8 +2817,8 @@ init_editor_plugin (OpenvpnEditor *self, NMConnection *connection)
 static GObject *
 get_widget (NMVpnEditor *iface)
 {
-	OpenvpnEditor *self = OPENVPN_EDITOR (iface);
-	OpenvpnEditorPrivate *priv = OPENVPN_EDITOR_GET_PRIVATE (self);
+	Openvpn3Editor *self = OPENVPN3_EDITOR (iface);
+	Openvpn3EditorPrivate *priv = OPENVPN3_EDITOR_GET_PRIVATE (self);
 
 	return G_OBJECT (priv->widget);
 }
@@ -2861,8 +2861,8 @@ update_connection (NMVpnEditor *iface,
                    NMConnection *connection,
                    GError **error)
 {
-	OpenvpnEditor *self = OPENVPN_EDITOR (iface);
-	OpenvpnEditorPrivate *priv = OPENVPN_EDITOR_GET_PRIVATE (self);
+	Openvpn3Editor *self = OPENVPN3_EDITOR (iface);
+	Openvpn3EditorPrivate *priv = OPENVPN3_EDITOR_GET_PRIVATE (self);
 	NMSettingVpn *s_vpn;
 	GtkWidget *widget;
 	gs_free char *auth_type = NULL;
@@ -2907,24 +2907,24 @@ is_new_func (const char *key, const char *value, gpointer user_data)
 /*****************************************************************************/
 
 static void
-openvpn_editor_plugin_widget_init (OpenvpnEditor *plugin)
+openvpn3_editor_plugin_widget_init (Openvpn3Editor *plugin)
 {
 }
 
 NMVpnEditor *
-openvpn_editor_new (NMConnection *connection, GError **error)
+openvpn3_editor_new (NMConnection *connection, GError **error)
 {
 	gs_unref_object NMVpnEditor *object = NULL;
-	OpenvpnEditorPrivate *priv;
+	Openvpn3EditorPrivate *priv;
 	gboolean new = TRUE;
 	NMSettingVpn *s_vpn;
 
 	g_return_val_if_fail (NM_IS_CONNECTION (connection), NULL);
 	g_return_val_if_fail (!error || !*error, NULL);
 
-	object = g_object_new (OPENVPN_TYPE_EDITOR, NULL);
+	object = g_object_new (OPENVPN3_TYPE_EDITOR, NULL);
 
-	priv = OPENVPN_EDITOR_GET_PRIVATE (object);
+	priv = OPENVPN3_EDITOR_GET_PRIVATE (object);
 
 	priv->builder = gtk_builder_new ();
 
@@ -2957,7 +2957,7 @@ openvpn_editor_new (NMConnection *connection, GError **error)
 		                             NULL);
 	}
 
-	if (!init_editor_plugin (OPENVPN_EDITOR (object), connection))
+	if (!init_editor_plugin (OPENVPN3_EDITOR (object), connection))
 		g_return_val_if_reached (NULL);
 
 	priv->advanced = advanced_dialog_new_hash_from_connection (connection);
@@ -2974,8 +2974,8 @@ openvpn_editor_new (NMConnection *connection, GError **error)
 static void
 dispose (GObject *object)
 {
-	OpenvpnEditor *plugin = OPENVPN_EDITOR (object);
-	OpenvpnEditorPrivate *priv = OPENVPN_EDITOR_GET_PRIVATE (plugin);
+	Openvpn3Editor *plugin = OPENVPN3_EDITOR (object);
+	Openvpn3EditorPrivate *priv = OPENVPN3_EDITOR_GET_PRIVATE (plugin);
 
 	g_clear_object (&priv->window_group);
 
@@ -2987,11 +2987,11 @@ dispose (GObject *object)
 
 	g_clear_object (&priv->sk_key_file);
 
-	G_OBJECT_CLASS (openvpn_editor_plugin_widget_parent_class)->dispose (object);
+	G_OBJECT_CLASS (openvpn3_editor_plugin_widget_parent_class)->dispose (object);
 }
 
 static void
-openvpn_editor_plugin_widget_interface_init (NMVpnEditorInterface *iface_class)
+openvpn3_editor_plugin_widget_interface_init (NMVpnEditorInterface *iface_class)
 {
 	/* interface implementation */
 	iface_class->get_widget = get_widget;
@@ -2999,11 +2999,11 @@ openvpn_editor_plugin_widget_interface_init (NMVpnEditorInterface *iface_class)
 }
 
 static void
-openvpn_editor_plugin_widget_class_init (OpenvpnEditorClass *req_class)
+openvpn3_editor_plugin_widget_class_init (Openvpn3EditorClass *req_class)
 {
 	GObjectClass *object_class = G_OBJECT_CLASS (req_class);
 
-	g_type_class_add_private (req_class, sizeof (OpenvpnEditorPrivate));
+	g_type_class_add_private (req_class, sizeof (Openvpn3EditorPrivate));
 
 	object_class->dispose = dispose;
 }
@@ -3018,5 +3018,5 @@ nm_vpn_editor_factory_openvpn3 (NMVpnEditorPlugin *editor_plugin,
                                GError **error)
 {
 	g_type_ensure (NMA_TYPE_CERT_CHOOSER);
-	return openvpn_editor_new (connection, error);
+	return openvpn3_editor_new (connection, error);
 }
