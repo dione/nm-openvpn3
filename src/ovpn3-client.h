@@ -73,4 +73,14 @@ gchar *ovpn3_session_get_device_name (Ovpn3Client *self,
                                       const gchar *session_path,
                                       GError     **error);
 
+/* Read the status property of @session_path.  The property is a (uus)
+ * tuple of (major, minor, message).  Both out-params may be NULL.
+ * Returns FALSE on error. */
+gboolean ovpn3_session_get_status (Ovpn3Client *self,
+                                   const gchar *session_path,
+                                   guint32     *out_major,
+                                   guint32     *out_minor,
+                                   gchar      **out_message,
+                                   GError     **error);
+
 #endif

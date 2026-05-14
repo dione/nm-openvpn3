@@ -126,6 +126,8 @@ typedef struct {
 	gchar       *session_path;
 	gchar       *config_path;
 	guint        status_sub_id;
+	guint        poll_timer_id;
+	guint        poll_ticks;
 	GMainLoop   *wait_loop;
 	int          wait_state;    /* most recent ovpn3_status_to_nm_state result */
 } NMOpenvpn3PluginPrivate;
@@ -2281,6 +2283,10 @@ real_disconnect (NMVpnServicePlugin *plugin, GError **error)
 		ovpn3_session_unsubscribe (priv->ovpn3, priv->status_sub_id);
 		priv->status_sub_id = 0;
 	}
+	if (priv->poll_timer_id) {
+		g_source_remove (priv->poll_timer_id);
+		priv->poll_timer_id = 0;
+	}
 	g_clear_pointer (&priv->session_path, g_free);
 	g_clear_pointer (&priv->config_path, g_free);
 
@@ -2310,52 +2316,79 @@ _connect_common (NMVpnServicePlugin *plugin,
 	                                        error);
 }
 
-static void
-on_status_change (guint32      maj,
-                  guint32      min,
-                  const gchar *message,
-                  gpointer     user_data)
+#define POLL_INTERVAL_MS 500
+#define POLL_MAX_TICKS   120  /* 120 * 500 ms = 60 s */
+
+static gboolean
+poll_status_cb (gpointer user_data)
 {
 	NMOpenvpn3Plugin *self = NM_OPENVPN3_PLUGIN (user_data);
 	NMOpenvpn3PluginPrivate *priv = NM_OPENVPN3_PLUGIN_GET_PRIVATE (self);
 	NMVpnServicePlugin *plugin = (NMVpnServicePlugin *) self;
 
-	NMActiveConnectionStateReason reason = NM_ACTIVE_CONNECTION_STATE_REASON_UNKNOWN;
-	int state = ovpn3_status_to_nm_state (maj, min,
-	                                      (NMVpnConnectionStateReason *) &reason);
+	priv->poll_ticks++;
 
-	_LOGI ("openvpn3 StatusChange major=%u minor=%u msg=%s -> nm_state=%d",
-	       maj, min, message ?: "", state);
+	if (!priv->session_path) {
+		priv->poll_timer_id = 0;
+		return G_SOURCE_REMOVE;
+	}
 
-	if (state < 0)
-		return;
+	guint32 maj = 0, min = 0;
+	g_autofree gchar *msg = NULL;
+	g_autoptr (GError) e = NULL;
+	if (!ovpn3_session_get_status (priv->ovpn3, priv->session_path,
+	                               &maj, &min, &msg, &e)) {
+		_LOGW ("status poll failed: %s",
+		       e ? e->message : "unknown");
+		if (priv->poll_ticks >= POLL_MAX_TICKS) {
+			nm_vpn_service_plugin_failure (plugin,
+			                               NM_VPN_PLUGIN_FAILURE_CONNECT_FAILED);
+			priv->poll_timer_id = 0;
+			return G_SOURCE_REMOVE;
+		}
+		return G_SOURCE_CONTINUE;
+	}
 
-	priv->wait_state = state;
+	NMVpnConnectionStateReason reason = NM_VPN_CONNECTION_STATE_REASON_NONE;
+	int state = ovpn3_status_to_nm_state (maj, min, &reason);
+
+	if (priv->poll_ticks == 1 || state >= 0)
+		_LOGI ("status poll: major=%u minor=%u msg=%s -> nm_state=%d",
+		       maj, min, msg ?: "", state);
 
 	if (state == NM_VPN_SERVICE_STATE_STARTED) {
-		/* Tunnel is up.  Emit the minimal Ip4Config (tundev only) so NM
-		 * transitions the connection to ACTIVATED.  Full DNS/routes are
-		 * Plan 1c. */
-		g_autofree gchar *dev = ovpn3_session_get_device_name (priv->ovpn3,
-		                                                       priv->session_path,
-		                                                       NULL);
+		g_autofree gchar *dev = ovpn3_session_get_device_name (
+			priv->ovpn3, priv->session_path, NULL);
 		if (dev && *dev) {
 			GVariantBuilder b;
 			g_variant_builder_init (&b, G_VARIANT_TYPE_VARDICT);
 			g_variant_builder_add (&b, "{sv}",
 			                       NM_VPN_PLUGIN_IP4_CONFIG_TUNDEV,
 			                       g_variant_new_string (dev));
-			nm_vpn_service_plugin_set_ip4_config (plugin, g_variant_builder_end (&b));
+			nm_vpn_service_plugin_set_ip4_config (plugin,
+			                                      g_variant_builder_end (&b));
 		}
-		return;
+		priv->poll_timer_id = 0;
+		return G_SOURCE_REMOVE;
 	}
 
 	if (state == NM_VPN_SERVICE_STATE_STOPPED) {
-		/* Session went away unexpectedly (auth failure, network loss, etc.).
-		 * Tell NM the VPN failed. */
 		nm_vpn_service_plugin_failure (plugin,
 		                               NM_VPN_PLUGIN_FAILURE_CONNECT_FAILED);
+		priv->poll_timer_id = 0;
+		return G_SOURCE_REMOVE;
 	}
+
+	if (priv->poll_ticks >= POLL_MAX_TICKS) {
+		_LOGW ("status poll timed out after %u ticks (last status %u/%u)",
+		       priv->poll_ticks, maj, min);
+		nm_vpn_service_plugin_failure (plugin,
+		                               NM_VPN_PLUGIN_FAILURE_CONNECT_FAILED);
+		priv->poll_timer_id = 0;
+		return G_SOURCE_REMOVE;
+	}
+
+	return G_SOURCE_CONTINUE;
 }
 
 static gboolean
@@ -2393,14 +2426,15 @@ real_connect (NMVpnServicePlugin *plugin,
 	if (!ovpn3_session_wait_ready (priv->ovpn3, priv->session_path, 5000, error))
 		return FALSE;
 
-	priv->status_sub_id = ovpn3_session_subscribe_status (
-		priv->ovpn3, priv->session_path,
-		on_status_change, self, error);
-	if (!priv->status_sub_id)
-		return FALSE;
-
 	if (!ovpn3_session_connect (priv->ovpn3, priv->session_path, error))
 		return FALSE;
+
+	/* StatusChange signals from openvpn3 are unicast to long-running
+	 * subscribers and never reach our auto-spawned service.  Instead,
+	 * poll the session.status property every POLL_INTERVAL_MS until the
+	 * tunnel is up (or fails). */
+	priv->poll_ticks = 0;
+	priv->poll_timer_id = g_timeout_add (POLL_INTERVAL_MS, poll_status_cb, self);
 
 	/* Return immediately.  NM expects Connect/ConnectInteractive to return
 	 * quickly and waits for the plugin to emit set_ip4_config to transition
