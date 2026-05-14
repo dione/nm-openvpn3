@@ -36,7 +36,9 @@
 
   <url type="homepage">https://github.com/dione/nm-openvpn3</url>
   <url type="bugtracker">https://github.com/dione/nm-openvpn3/issues</url>
-  <update_contact>nm-openvpn3-maint_AT_dione.fork</update_contact>
+  <!-- TODO: replace with a real maintainer address before any AppStream
+       submission.  AppStream uses _AT_ in lieu of @ to deter scrapers. -->
+  <update_contact>nm-openvpn3-maint_AT_users.noreply.github.com</update_contact>
   <translation type="gettext">NetworkManager-openvpn3</translation>
   <developer_name>The nm-openvpn3 fork authors</developer_name>
 </component>

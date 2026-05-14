@@ -203,6 +203,20 @@ TAG_EXTENSIONS = {
     "tls-crypt-v2": ".key",
 }
 
+# NM connection names are user-supplied; refuse path-traversal characters
+# so plan_inline_paths cannot write outside ~/.config/nm-openvpn3/.
+_SAFE_CON_NAME = re.compile(r"^[A-Za-z0-9._-][A-Za-z0-9 ._-]{0,63}$")
+
+
+def _validate_con_name(name: str) -> str:
+    """Reject path separators / traversal sequences in NM connection names."""
+    if not _SAFE_CON_NAME.match(name) or name in {".", ".."}:
+        raise SystemExit(
+            f"error: refusing unsafe con-name {name!r}; allowed chars are "
+            f"[A-Za-z0-9 ._-], 1..64 chars, no '/'"
+        )
+    return name
+
 
 def plan_inline_paths(
     inline: dict[str, str],
@@ -215,6 +229,7 @@ def plan_inline_paths(
     """
     if not inline:
         return None, []
+    _validate_con_name(con_name)
     out_dir = Path.home() / ".config" / "nm-openvpn3" / con_name
     plan: list[tuple[Path, int]] = []
     for tag, content in inline.items():
@@ -274,7 +289,7 @@ def main() -> int:
         print(f"error: {args.ovpn} not found or not a regular file", file=sys.stderr)
         return 2
 
-    con_name = args.con_name or f"ovpn3-{args.ovpn.stem}"
+    con_name = _validate_con_name(args.con_name or f"ovpn3-{args.ovpn.stem}")
 
     options, inline = parse_ovpn(args.ovpn)
     out_dir, plan = plan_inline_paths(inline, con_name, options)

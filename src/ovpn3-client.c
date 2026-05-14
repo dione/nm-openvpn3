@@ -1,32 +1,20 @@
 #include "ovpn3-client.h"
 
 #include <stdarg.h>
-#include <stdio.h>
 #include <string.h>
-#include <time.h>
-#include <unistd.h>
 
+/* Forward openvpn3-client diagnostics through GLib's logging into the same
+ * journal stream that NetworkManager uses for our service.  MESSAGE level
+ * is always shown by GLib's default handler (INFO/DEBUG are suppressed
+ * unless G_MESSAGES_DEBUG is set), and NM captures our stderr into
+ * journald under the nm-openvpn3-service syslog ident. */
 void
 ovpn3_trace (const char *fmt, ...)
 {
-	static FILE *f = NULL;
-	if (!f) {
-		f = fopen ("/tmp/nm-openvpn3-trace.log", "a");
-		if (!f) return;
-	}
-	struct timespec ts;
-	clock_gettime (CLOCK_REALTIME, &ts);
-	struct tm tm;
-	localtime_r (&ts.tv_sec, &tm);
-	char tbuf[32];
-	strftime (tbuf, sizeof (tbuf), "%H:%M:%S", &tm);
-	fprintf (f, "%s.%03ld [%d] ", tbuf, ts.tv_nsec / 1000000, (int) getpid ());
 	va_list ap;
 	va_start (ap, fmt);
-	vfprintf (f, fmt, ap);
+	g_logv ("nm-openvpn3", G_LOG_LEVEL_MESSAGE, fmt, ap);
 	va_end (ap);
-	fputc ('\n', f);
-	fflush (f);
 }
 
 struct _Ovpn3Client {
@@ -256,15 +244,21 @@ ovpn3_session_subscribe_status (Ovpn3Client         *self,
 	d->cb        = cb;
 	d->user_data = user_data;
 
-	/* Subscribe broad — every signal on ANY interface, any path, any sender.
-	 * We don't yet know where openvpn3 actually emits status updates;
-	 * trace logs will show that. */
+	/* Filter to net.openvpn.v3.sessions StatusChange on this session's
+	 * object path.  sender stays NULL because openvpn3 emits signals from
+	 * the backend client's unique bus name, not the well-known service
+	 * name; path + interface + member are enough to scope the match.
+	 *
+	 * NOTE: Plan 1c switched the service to polling session.status because
+	 * openvpn3 unicasts StatusChange to long-running subscribers and our
+	 * auto-spawned service never receives them.  This entry point is kept
+	 * for future use (e.g. Plan 2 AttentionRequired). */
 	guint sub = g_dbus_connection_signal_subscribe (
 		self->bus,
 		NULL,
-		NULL,
-		NULL,
-		NULL,
+		OVPN3_IFACE_SESSIONS,
+		"StatusChange",
+		session_path,
 		NULL,
 		G_DBUS_SIGNAL_FLAGS_NONE,
 		status_signal_cb, d, g_free);

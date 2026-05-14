@@ -81,3 +81,6 @@ properties/resources.[ch]
 # Fork-local directories — not part of upstream sources
 /reference/
 /docs/superpowers/
+
+# coderabbit local review file (contains workingDirectory PII)
+/coderabbit-review.jsonl
