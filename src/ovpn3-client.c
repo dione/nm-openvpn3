@@ -195,9 +195,9 @@ status_signal_cb (GDBusConnection *conn,
 	StatusSubData *d = user_data;
 	guint32 maj = 0, min = 0;
 	const gchar *msg = NULL;
-	g_debug ("ovpn3 signal arrived: sender=%s path=%s iface=%s signal=%s sig=%s",
-	         sender, path, iface, signal_name,
-	         g_variant_get_type_string (parameters));
+	g_message ("ovpn3 signal arrived: sender=%s path=%s iface=%s signal=%s sig=%s",
+	           sender, path, iface, signal_name,
+	           g_variant_get_type_string (parameters));
 	if (g_strcmp0 (signal_name, "StatusChange") != 0)
 		return;
 	g_variant_get (parameters, "(uu&s)", &maj, &min, &msg);
