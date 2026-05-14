@@ -2,7 +2,9 @@
 
 #include <stdarg.h>
 #include <stdio.h>
+#include <string.h>
 #include <time.h>
+#include <unistd.h>
 
 /* Direct-to-file trace logger for debugging the StatusChange delivery
  * problem.  g_message goes to stderr, which the NM-auto-spawned service
@@ -226,6 +228,14 @@ status_signal_cb (GDBusConnection *conn,
 	StatusSubData *d = user_data;
 	guint32 maj = 0, min = 0;
 	const gchar *msg = NULL;
+
+	/* Skip noise — only log openvpn-related signals. */
+	const gboolean is_openvpn =
+		(iface && strstr (iface, "openvpn") != NULL) ||
+		(path  && strstr (path,  "openvpn") != NULL);
+	if (!is_openvpn)
+		return;
+
 	ovpn3_trace ("signal arrived: sender=%s path=%s iface=%s signal=%s sig=%s",
 	             sender, path, iface, signal_name,
 	             g_variant_get_type_string (parameters));
@@ -247,18 +257,20 @@ ovpn3_session_subscribe_status (Ovpn3Client         *self,
 	d->cb        = cb;
 	d->user_data = user_data;
 
-	/* sender=NULL + iface=NULL + signal=NULL: subscribe to ALL signals on
-	 * this object path so we observe whatever openvpn3 actually emits. */
+	/* Subscribe broad — every signal on ANY interface, any path, any sender.
+	 * We don't yet know where openvpn3 actually emits status updates;
+	 * trace logs will show that. */
 	guint sub = g_dbus_connection_signal_subscribe (
 		self->bus,
 		NULL,
 		NULL,
 		NULL,
-		session_path,
+		NULL,
 		NULL,
 		G_DBUS_SIGNAL_FLAGS_NONE,
 		status_signal_cb, d, g_free);
-	ovpn3_trace ("subscribed sub_id=%u path=%s", sub, session_path);
+	ovpn3_trace ("subscribed broad sub_id=%u session_path=%s",
+	             sub, session_path);
 	return sub;
 }
 
