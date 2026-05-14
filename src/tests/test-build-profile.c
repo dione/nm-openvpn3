@@ -17,14 +17,54 @@
  */
 
 #include <glib.h>
+#include <glib/gstdio.h>
 #include <NetworkManager.h>
 #include <string.h>
 
 #include "build-profile.h"
 
+/* Create a uniquely-named temp file containing @content and return its
+ * absolute path; the caller must g_unlink + g_free it. */
+static gchar *
+write_temp_file (const char *content, GError **error)
+{
+	g_autofree gchar *tmpl = g_strdup ("nm-openvpn3-test-XXXXXX");
+	g_autofree gchar *path = NULL;
+	GError *local = NULL;
+	int fd = g_file_open_tmp (tmpl, &path, &local);
+	if (fd < 0) {
+		g_propagate_error (error, local);
+		return NULL;
+	}
+	if (!g_file_set_contents (path, content, -1, &local)) {
+		close (fd);
+		g_unlink (path);
+		g_propagate_error (error, local);
+		return NULL;
+	}
+	close (fd);
+	return g_steal_pointer (&path);
+}
+
 static void
 test_minimal_profile (void)
 {
+	g_autoptr (GError) ferr = NULL;
+	g_autofree gchar *ca_path   = write_temp_file ("# dummy CA\n",   &ferr);
+	g_assert_no_error (ferr);
+	g_autofree gchar *cert_path = write_temp_file ("# dummy cert\n", &ferr);
+	g_assert_no_error (ferr);
+	g_autofree gchar *key_path  = write_temp_file ("# dummy key\n",  &ferr);
+	g_assert_no_error (ferr);
+	g_assert_nonnull (ca_path);
+	g_assert_nonnull (cert_path);
+	g_assert_nonnull (key_path);
+	/* The three paths must actually differ — otherwise the build_profile
+	 * round-trip can't tell apart ca/cert/key. */
+	g_assert_cmpstr (ca_path, !=, cert_path);
+	g_assert_cmpstr (ca_path, !=, key_path);
+	g_assert_cmpstr (cert_path, !=, key_path);
+
 	g_autoptr (NMConnection) c = nm_simple_connection_new ();
 	NMSettingConnection *s_con = (NMSettingConnection *) nm_setting_connection_new ();
 	g_object_set (s_con,
@@ -40,9 +80,9 @@ test_minimal_profile (void)
 	              NULL);
 	nm_setting_vpn_add_data_item (s_vpn, "remote", "127.0.0.1:1194");
 	nm_setting_vpn_add_data_item (s_vpn, "connection-type", "tls");
-	nm_setting_vpn_add_data_item (s_vpn, "ca", "/etc/ssl/certs/ca-certificates.crt");
-	nm_setting_vpn_add_data_item (s_vpn, "cert", "/etc/ssl/certs/ca-certificates.crt");
-	nm_setting_vpn_add_data_item (s_vpn, "key", "/etc/ssl/certs/ca-certificates.crt");
+	nm_setting_vpn_add_data_item (s_vpn, "ca",   ca_path);
+	nm_setting_vpn_add_data_item (s_vpn, "cert", cert_path);
+	nm_setting_vpn_add_data_item (s_vpn, "key",  key_path);
 	nm_connection_add_setting (c, (NMSetting *) s_vpn);
 
 	g_autoptr (GError) e = NULL;
@@ -53,6 +93,14 @@ test_minimal_profile (void)
 	g_assert_true (strstr (prof, "127.0.0.1") != NULL);
 	g_assert_true (strstr (prof, "1194") != NULL);
 	g_assert_true (strstr (prof, "client") != NULL);
+	/* The three distinct paths should all appear in the exported profile. */
+	g_assert_true (strstr (prof, ca_path)   != NULL);
+	g_assert_true (strstr (prof, cert_path) != NULL);
+	g_assert_true (strstr (prof, key_path)  != NULL);
+
+	g_unlink (ca_path);
+	g_unlink (cert_path);
+	g_unlink (key_path);
 }
 
 int

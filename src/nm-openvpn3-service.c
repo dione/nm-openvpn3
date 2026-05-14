@@ -2335,13 +2335,8 @@ _connect_common (NMVpnServicePlugin *plugin,
 static gboolean
 poll_status_cb (gpointer user_data)
 {
-	ovpn3_trace ("poll_status_cb: ENTRY user_data=%p", user_data);
 	NMOpenvpn3Plugin *self = NM_OPENVPN3_PLUGIN (user_data);
-	ovpn3_trace ("poll_status_cb: cast self=%p", (void *) self);
 	NMOpenvpn3PluginPrivate *priv = NM_OPENVPN3_PLUGIN_GET_PRIVATE (self);
-	ovpn3_trace ("poll_status_cb: priv=%p session_path=%s",
-	             (void *) priv,
-	             priv && priv->session_path ? priv->session_path : "(null)");
 	NMVpnServicePlugin *plugin = (NMVpnServicePlugin *) self;
 
 	priv->poll_ticks++;
@@ -2459,7 +2454,6 @@ poll_status_cb (gpointer user_data)
 		g_variant_builder_add (&cfgb, "{sv}",
 		                       NM_VPN_PLUGIN_CAN_PERSIST,
 		                       g_variant_new_boolean (FALSE));
-		ovpn3_trace ("emitting set_config");
 		nm_vpn_service_plugin_set_config (plugin,
 		                                  g_variant_builder_end (&cfgb));
 
@@ -2552,10 +2546,8 @@ poll_status_cb (gpointer user_data)
 			                       g_variant_builder_end (&rb));
 		}
 
-		ovpn3_trace ("emitting set_ip4_config");
 		nm_vpn_service_plugin_set_ip4_config (plugin,
 		                                      g_variant_builder_end (&b));
-		ovpn3_trace ("set_ip4_config returned");
 
 		priv->poll_timer_id = 0;
 		return G_SOURCE_REMOVE;
@@ -2590,61 +2582,33 @@ real_connect (NMVpnServicePlugin *plugin,
 	g_autofree gchar *profile = NULL;
 	const gchar *id;
 
-	ovpn3_trace ("real_connect: entered");
-
 	if (!priv->ovpn3) {
 		priv->ovpn3 = ovpn3_client_new (error);
-		if (!priv->ovpn3) {
-			ovpn3_trace ("real_connect: ovpn3_client_new FAILED: %s",
-			             error && *error ? (*error)->message : "unknown");
+		if (!priv->ovpn3)
 			return FALSE;
-		}
 	}
 
 	profile = build_profile_string (connection, error);
-	if (!profile) {
-		ovpn3_trace ("real_connect: build_profile_string FAILED: %s",
-		             error && *error ? (*error)->message : "unknown");
+	if (!profile)
 		return FALSE;
-	}
-	ovpn3_trace ("real_connect: profile built, %zu bytes", strlen (profile));
 
 	id = nm_connection_get_id (connection) ?: "nm-openvpn3";
 	priv->config_path = ovpn3_import_config (priv->ovpn3, id, profile, TRUE, error);
-	if (!priv->config_path) {
-		ovpn3_trace ("real_connect: import_config FAILED: %s",
-		             error && *error ? (*error)->message : "unknown");
+	if (!priv->config_path)
 		return FALSE;
-	}
-	ovpn3_trace ("real_connect: config_path=%s", priv->config_path);
 
 	priv->session_path = ovpn3_new_tunnel (priv->ovpn3, priv->config_path, error);
-	if (!priv->session_path) {
-		ovpn3_trace ("real_connect: new_tunnel FAILED: %s",
-		             error && *error ? (*error)->message : "unknown");
+	if (!priv->session_path)
 		return FALSE;
-	}
-	ovpn3_trace ("real_connect: session_path=%s", priv->session_path);
 
-	if (!ovpn3_session_wait_ready (priv->ovpn3, priv->session_path, 5000, error)) {
-		ovpn3_trace ("real_connect: wait_ready FAILED: %s",
-		             error && *error ? (*error)->message : "unknown");
+	if (!ovpn3_session_wait_ready (priv->ovpn3, priv->session_path, 5000, error))
 		return FALSE;
-	}
-	ovpn3_trace ("real_connect: session ready");
 
-	if (!ovpn3_session_connect (priv->ovpn3, priv->session_path, error)) {
-		ovpn3_trace ("real_connect: session.Connect FAILED: %s",
-		             error && *error ? (*error)->message : "unknown");
+	if (!ovpn3_session_connect (priv->ovpn3, priv->session_path, error))
 		return FALSE;
-	}
-	ovpn3_trace ("real_connect: session.Connect returned OK");
 
 	priv->poll_ticks = 0;
 	priv->poll_timer_id = g_timeout_add (POLL_INTERVAL_MS, poll_status_cb, self);
-	ovpn3_trace ("real_connect: poll_timer_id=%u, returning TRUE",
-	             priv->poll_timer_id);
-
 	priv->wait_state = -1;
 	return TRUE;
 }

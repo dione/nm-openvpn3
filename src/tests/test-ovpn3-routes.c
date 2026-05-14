@@ -61,11 +61,28 @@ test_empty_table_returns_empty_array (void)
 	g_array_free (routes, TRUE);
 }
 
+static void
+test_skip_non_contiguous_mask (void)
+{
+	/* Mask 0x0011FFFF is non-contiguous after host-byte-order swap.
+	 * The parser must skip the route and warn (g_message) rather than
+	 * pretend popcount is a valid CIDR prefix. */
+	const gchar *table =
+		"Iface\tDestination\tGateway \tFlags\tRefCnt\tUse\tMetric\tMask\t\tMTU\tWindow\tIRTT\n"
+		"tun0\t00001234\t00000000\t0001\t0\t0\t0\t0011FFFF\t0\t0\t0\n";
+
+	GArray *routes = ovpn3_parse_proc_routes (table, "tun0");
+	g_assert_nonnull (routes);
+	g_assert_cmpuint (routes->len, ==, 0);
+	g_array_free (routes, TRUE);
+}
+
 int main (int argc, char **argv)
 {
 	g_test_init (&argc, &argv, NULL);
 	g_test_add_func ("/ovpn3/routes/parse-two", test_parse_two_routes);
 	g_test_add_func ("/ovpn3/routes/iface-filter", test_iface_filter);
 	g_test_add_func ("/ovpn3/routes/empty", test_empty_table_returns_empty_array);
+	g_test_add_func ("/ovpn3/routes/skip-non-contig-mask", test_skip_non_contiguous_mask);
 	return g_test_run ();
 }

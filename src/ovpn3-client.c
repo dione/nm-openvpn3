@@ -48,9 +48,6 @@ ovpn3_client_new (GError **error)
 	self->bus            = g_steal_pointer (&bus);
 	self->config_proxy   = g_steal_pointer (&cfg);
 	self->sessions_proxy = g_steal_pointer (&ses);
-
-	ovpn3_trace ("client_new: ovpn3 client bus unique name = %s",
-	             g_dbus_connection_get_unique_name (self->bus));
 	return self;
 }
 
@@ -65,6 +62,60 @@ ovpn3_client_free (Ovpn3Client *self)
 	g_free (self);
 }
 
+/* Wrap a GDBusProxy.<method> call with retry on transient bus errors.
+ * openvpn3's configuration / sessions managers are D-Bus auto-activated
+ * services; the first call after a `systemctl reload dbus` or after the
+ * daemons exited idle can race the bus daemon's activation step and
+ * surface as ServiceUnknown / NoReply / Timeout.  Retry up to @attempts
+ * with a small backoff and propagate the LAST error if all attempts
+ * fail.  Returns the floating GVariant result on success (or NULL). */
+static GVariant *
+dbus_call_with_retry (GDBusProxy  *proxy,
+                      const gchar *method,
+                      GVariant    *params,
+                      guint        attempts,
+                      guint        backoff_ms,
+                      GError     **error)
+{
+	g_return_val_if_fail (proxy != NULL, NULL);
+	g_return_val_if_fail (method != NULL, NULL);
+
+	/* Take ownership of the (typically floating) caller-supplied params so
+	 * we can re-pass them to each retry attempt.  g_dbus_proxy_call_sync
+	 * consumes one floating-or-full ref per call, so we hand it an extra
+	 * ref each attempt and unref our own at the end. */
+	g_variant_ref_sink (params);
+
+	GError *local = NULL;
+	for (guint i = 0; i < attempts; i++) {
+		g_clear_error (&local);
+		GVariant *r = g_dbus_proxy_call_sync (proxy, method,
+		                                       g_variant_ref (params),
+		                                       G_DBUS_CALL_FLAGS_NONE,
+		                                       -1, NULL, &local);
+		if (r) {
+			g_variant_unref (params);
+			return r;
+		}
+		if (!g_error_matches (local, G_DBUS_ERROR, G_DBUS_ERROR_SERVICE_UNKNOWN) &&
+		    !g_error_matches (local, G_DBUS_ERROR, G_DBUS_ERROR_NO_REPLY) &&
+		    !g_error_matches (local, G_DBUS_ERROR, G_DBUS_ERROR_TIMEOUT) &&
+		    !g_error_matches (local, G_DBUS_ERROR, G_DBUS_ERROR_SPAWN_CHILD_EXITED) &&
+		    !g_error_matches (local, G_DBUS_ERROR, G_DBUS_ERROR_DISCONNECTED)) {
+			break;   /* non-transient; surface immediately */
+		}
+		if (i + 1 < attempts) {
+			ovpn3_trace ("dbus_call_with_retry: %s attempt %u failed (%s); retrying in %u ms",
+			             method, i + 1, local->message, backoff_ms);
+			g_usleep (backoff_ms * 1000);
+		}
+	}
+	g_variant_unref (params);
+	if (local)
+		g_propagate_error (error, local);
+	return NULL;
+}
+
 gchar *
 ovpn3_import_config (Ovpn3Client *self,
                      const gchar *name,
@@ -76,12 +127,10 @@ ovpn3_import_config (Ovpn3Client *self,
 	g_return_val_if_fail (name != NULL, NULL);
 	g_return_val_if_fail (ovpn_profile != NULL, NULL);
 
-	g_autoptr (GVariant) result = g_dbus_proxy_call_sync (
-		self->config_proxy,
-		"Import",
-		g_variant_new ("(ssbb)", name, ovpn_profile, single_use, FALSE),
-		G_DBUS_CALL_FLAGS_NONE,
-		-1, NULL, error);
+	GVariant *params = g_variant_new ("(ssbb)", name, ovpn_profile, single_use, FALSE);
+	g_autoptr (GVariant) result = dbus_call_with_retry (self->config_proxy,
+	                                                    "Import", params,
+	                                                    3, 200, error);
 	if (!result)
 		return NULL;
 
@@ -98,12 +147,10 @@ ovpn3_new_tunnel (Ovpn3Client *self,
 	g_return_val_if_fail (self != NULL, NULL);
 	g_return_val_if_fail (config_path != NULL, NULL);
 
-	g_autoptr (GVariant) result = g_dbus_proxy_call_sync (
-		self->sessions_proxy,
-		"NewTunnel",
-		g_variant_new ("(o)", config_path),
-		G_DBUS_CALL_FLAGS_NONE,
-		-1, NULL, error);
+	GVariant *params = g_variant_new ("(o)", config_path);
+	g_autoptr (GVariant) result = dbus_call_with_retry (self->sessions_proxy,
+	                                                    "NewTunnel", params,
+	                                                    3, 200, error);
 	if (!result)
 		return NULL;
 
@@ -216,16 +263,9 @@ status_signal_cb (GDBusConnection *conn,
 	guint32 maj = 0, min = 0;
 	const gchar *msg = NULL;
 
-	/* Skip noise — only log openvpn-related signals. */
-	const gboolean is_openvpn =
-		(iface && strstr (iface, "openvpn") != NULL) ||
-		(path  && strstr (path,  "openvpn") != NULL);
-	if (!is_openvpn)
-		return;
-
-	ovpn3_trace ("signal arrived: sender=%s path=%s iface=%s signal=%s sig=%s",
-	             sender, path, iface, signal_name,
-	             g_variant_get_type_string (parameters));
+	(void) sender;
+	(void) path;
+	(void) iface;
 	if (g_strcmp0 (signal_name, "StatusChange") != 0)
 		return;
 	g_variant_get (parameters, "(uu&s)", &maj, &min, &msg);
@@ -253,7 +293,7 @@ ovpn3_session_subscribe_status (Ovpn3Client         *self,
 	 * openvpn3 unicasts StatusChange to long-running subscribers and our
 	 * auto-spawned service never receives them.  This entry point is kept
 	 * for future use (e.g. Plan 2 AttentionRequired). */
-	guint sub = g_dbus_connection_signal_subscribe (
+	return g_dbus_connection_signal_subscribe (
 		self->bus,
 		NULL,
 		OVPN3_IFACE_SESSIONS,
@@ -262,9 +302,6 @@ ovpn3_session_subscribe_status (Ovpn3Client         *self,
 		NULL,
 		G_DBUS_SIGNAL_FLAGS_NONE,
 		status_signal_cb, d, g_free);
-	ovpn3_trace ("subscribed broad sub_id=%u session_path=%s",
-	             sub, session_path);
-	return sub;
 }
 
 void
