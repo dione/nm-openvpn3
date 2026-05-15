@@ -1665,3 +1665,78 @@ msgid ""
 msgstr ""
 "nm-openvpn-service dostarcza zintegrowaną możliwość nawiązywania połączeń "
 "OpenVPN dla usługi NetworkManager."
+
+#: properties/nm-openvpn3-dialog.ui
+msgid "_OVPN profile file"
+msgstr "Plik profilu _OVPN"
+
+#: properties/nm-openvpn3-dialog.ui
+msgid ""
+"Path to a verbatim .ovpn profile. When set, the openvpn3 client interprets "
+"the file directly; other UI fields then act as overrides.\n"
+"config: nm-openvpn3-profile"
+msgstr ""
+"Ścieżka do pliku .ovpn. Gdy ustawiona, klient openvpn3 interpretuje plik "
+"bezpośrednio; pozostałe pola UI działają jako nadpisania.\n"
+"config: nm-openvpn3-profile"
+
+#: properties/nm-openvpn3-dialog.ui
+msgid "(optional — leave empty to use UI fields)"
+msgstr "(opcjonalne — pozostaw puste, aby użyć pól UI)"
+
+#: properties/nm-openvpn3-dialog.ui
+msgid "_Browse…"
+msgstr "_Przeglądaj…"
+
+#: properties/nm-openvpn3-editor.c
+msgid "Choose an OpenVPN profile (.ovpn)"
+msgstr "Wybierz plik profilu OpenVPN (.ovpn)"
+
+#: properties/nm-openvpn3-editor.c
+msgid "OpenVPN profile (*.ovpn, *.conf)"
+msgstr "Profil OpenVPN (*.ovpn, *.conf)"
+
+#: properties/nm-openvpn3-dialog.ui
+msgid "openvpn3 overrides"
+msgstr "Nadpisania openvpn3"
+
+#: properties/nm-openvpn3-dialog.ui
+msgid "Ignore server-pushed routes (split-tunnel)"
+msgstr "Ignoruj trasy wypchnięte przez serwer (tunel cząstkowy)"
+
+#: properties/nm-openvpn3-dialog.ui
+msgid "Override: route-nopull. Discard routes the server pushes; only the tunnel endpoint route stays."
+msgstr "Nadpisanie: route-nopull. Odrzuca trasy wypchnięte przez serwer; pozostaje tylko trasa do końcówki tunelu."
+
+#: properties/nm-openvpn3-dialog.ui
+msgid "Force default gateway through VPN (full-tunnel)"
+msgstr "Wymuś bramę domyślną przez VPN (pełny tunel)"
+
+#: properties/nm-openvpn3-dialog.ui
+msgid "Override: force-default-gateway. Route all traffic through the tunnel, ignoring server policy."
+msgstr "Nadpisanie: force-default-gateway. Kieruje cały ruch przez tunel ignorując politykę serwera."
+
+#: properties/nm-openvpn3-dialog.ui
+msgid "Block IPv6 traffic in tunnel"
+msgstr "Blokuj ruch IPv6 w tunelu"
+
+#: properties/nm-openvpn3-dialog.ui
+msgid "Override: block-ipv6. Drop IPv6 packets inside the tunnel; useful for IPv4-only servers leaking IPv6."
+msgstr "Nadpisanie: block-ipv6. Odrzuca pakiety IPv6 w tunelu; przydatne dla serwerów IPv4-only wyciekających IPv6."
+
+#: properties/nm-openvpn3-dialog.ui
+msgid "Do not modify system DNS"
+msgstr "Nie modyfikuj systemowego DNS"
+
+#: properties/nm-openvpn3-dialog.ui
+msgid "Override: dns-setup-disabled. Skip openvpn3 DNS configuration; let NetworkManager / systemd-resolved keep control."
+msgstr "Nadpisanie: dns-setup-disabled. Pomija konfigurację DNS przez openvpn3; pozostawia kontrolę NetworkManagerowi / systemd-resolved."
+
+#: properties/nm-openvpn3-dialog.ui
+msgid "Enable Data Channel Offload (DCO)"
+msgstr "Włącz Data Channel Offload (DCO)"
+
+#: properties/nm-openvpn3-dialog.ui
+msgid "Override: dco. Use the in-kernel Data Channel Offload module for higher throughput when the kernel and server both support it."
+msgstr "Nadpisanie: dco. Wykorzystuje modułowy Data Channel Offload w jądrze dla wyższej przepustowości, gdy jądro i serwer to wspierają."
+
