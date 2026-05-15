@@ -540,6 +540,44 @@ ovpn3_session_get_device_name (Ovpn3Client *self,
 	return g_strdup (s);
 }
 
+GHashTable *
+ovpn3_session_get_statistics (Ovpn3Client *self,
+                              const gchar *session_path,
+                              GError     **error)
+{
+	g_return_val_if_fail (self != NULL, NULL);
+	g_return_val_if_fail (session_path != NULL, NULL);
+
+	g_autoptr (GVariant) v = g_dbus_connection_call_sync (
+		self->bus, OVPN3_BUS_SESSIONS, session_path,
+		"org.freedesktop.DBus.Properties", "Get",
+		g_variant_new ("(ss)", OVPN3_IFACE_SESSIONS, "statistics"),
+		G_VARIANT_TYPE ("(v)"), G_DBUS_CALL_FLAGS_NONE, -1, NULL, error);
+	if (!v)
+		return NULL;
+
+	g_autoptr (GVariant) inner = NULL;
+	g_variant_get (v, "(v)", &inner);
+	if (!g_variant_is_of_type (inner, G_VARIANT_TYPE ("a{sx}"))) {
+		g_set_error_literal (error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
+		                     "statistics property is not a{sx}");
+		return NULL;
+	}
+
+	GHashTable *out = g_hash_table_new_full (g_str_hash, g_str_equal,
+	                                         g_free, g_free);
+	GVariantIter it;
+	g_variant_iter_init (&it, inner);
+	const gchar *key;
+	gint64 val;
+	while (g_variant_iter_loop (&it, "{&sx}", &key, &val)) {
+		gint64 *v_copy = g_new (gint64, 1);
+		*v_copy = val;
+		g_hash_table_insert (out, g_strdup (key), v_copy);
+	}
+	return out;
+}
+
 gboolean
 ovpn3_session_set_public_access (Ovpn3Client *self,
                                  const gchar *session_path,

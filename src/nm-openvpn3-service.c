@@ -117,6 +117,12 @@ typedef struct {
 	GMainLoop   *wait_loop;
 	int          wait_state;    /* most recent ovpn3_status_to_nm_state result */
 
+	/* Periodic session.statistics fetch (logged to journal at _LOGI). */
+	guint        stats_timer_id;
+	gint64       stats_last_bytes_in;
+	gint64       stats_last_bytes_out;
+	gint64       stats_last_monotonic_us;
+
 	/* Plan 2: most recent NMConnection (weak ref to its s_vpn) and the slot
 	 * list fetched in response to the last AttentionRequired signal.
 	 * real_new_secrets walks the list pushing each slot's value back to
@@ -250,6 +256,7 @@ cleanup_session_state (NMOpenvpn3PluginPrivate *priv)
 	clear_signal_sub (priv->ovpn3, &priv->status_sub_id);
 	clear_signal_sub (priv->ovpn3, &priv->attention_sub_id);
 	nm_clear_g_source (&priv->poll_timer_id);
+	nm_clear_g_source (&priv->stats_timer_id);
 	priv->ip4_emitted = FALSE;
 	clear_pending_slots (priv);
 	g_clear_object (&priv->current_connection);
@@ -457,6 +464,84 @@ add_routes (GVariantBuilder *b, GArray *routes, guint32 addr_be, guint32 prefix)
 	                       g_variant_builder_end (&rb));
 }
 
+/* Periodic openvpn3 session.statistics fetch.  Logged at _LOGI so users
+ * can `journalctl -t nm-openvpn3-service | grep stats` to see live tunnel
+ * throughput; openvpn3 counters cover the encrypted bytes-on-the-wire
+ * which kernel netdev stats do not differentiate from the in-clear payload. */
+#define STATS_INTERVAL_S 30
+
+static gchar *
+fmt_bytes (gint64 b)
+{
+	if (b < 1024)
+		return g_strdup_printf ("%" G_GINT64_FORMAT " B", b);
+	if (b < 1024 * 1024)
+		return g_strdup_printf ("%.1f KB", b / 1024.0);
+	if (b < 1024LL * 1024 * 1024)
+		return g_strdup_printf ("%.1f MB", b / (1024.0 * 1024));
+	return g_strdup_printf ("%.2f GB", b / (1024.0 * 1024 * 1024));
+}
+
+static gint64
+hash_lookup_i64 (GHashTable *h, const char *key)
+{
+	gint64 *p = g_hash_table_lookup (h, key);
+	return p ? *p : 0;
+}
+
+static gboolean
+stats_timer_cb (gpointer user_data)
+{
+	NMOpenvpn3Plugin *self = NM_OPENVPN3_PLUGIN (user_data);
+	NMOpenvpn3PluginPrivate *priv = NM_OPENVPN3_PLUGIN_GET_PRIVATE (self);
+
+	if (!priv->session_path || !priv->ovpn3) {
+		priv->stats_timer_id = 0;
+		return G_SOURCE_REMOVE;
+	}
+
+	g_autoptr (GError) e = NULL;
+	g_autoptr (GHashTable) s = ovpn3_session_get_statistics (priv->ovpn3,
+	                                                         priv->session_path,
+	                                                         &e);
+	if (!s) {
+		ovpn3_trace ("stats fetch failed: %s", e ? e->message : "(unknown)");
+		return G_SOURCE_CONTINUE;
+	}
+
+	gint64 in      = hash_lookup_i64 (s, "bytes_in");
+	gint64 out     = hash_lookup_i64 (s, "bytes_out");
+	gint64 pkt_in  = hash_lookup_i64 (s, "packets_in");
+	gint64 pkt_out = hash_lookup_i64 (s, "packets_out");
+
+	gint64 now_us  = g_get_monotonic_time ();
+	gint64 dt_us   = now_us - priv->stats_last_monotonic_us;
+	gint64 d_in    = in  - priv->stats_last_bytes_in;
+	gint64 d_out   = out - priv->stats_last_bytes_out;
+
+	g_autofree gchar *fin  = fmt_bytes (in);
+	g_autofree gchar *fout = fmt_bytes (out);
+
+	if (priv->stats_last_monotonic_us > 0 && dt_us > 0) {
+		gdouble rate_in  = (d_in  * G_GINT64_CONSTANT (1000000)) / (gdouble) dt_us;
+		gdouble rate_out = (d_out * G_GINT64_CONSTANT (1000000)) / (gdouble) dt_us;
+		g_autofree gchar *fri = fmt_bytes ((gint64) rate_in);
+		g_autofree gchar *fro = fmt_bytes ((gint64) rate_out);
+		_LOGI ("stats: rx=%s tx=%s pkt_in=%" G_GINT64_FORMAT
+		       " pkt_out=%" G_GINT64_FORMAT " rate_rx=%s/s rate_tx=%s/s",
+		       fin, fout, pkt_in, pkt_out, fri, fro);
+	} else {
+		_LOGI ("stats: rx=%s tx=%s pkt_in=%" G_GINT64_FORMAT
+		       " pkt_out=%" G_GINT64_FORMAT,
+		       fin, fout, pkt_in, pkt_out);
+	}
+
+	priv->stats_last_bytes_in     = in;
+	priv->stats_last_bytes_out    = out;
+	priv->stats_last_monotonic_us = now_us;
+	return G_SOURCE_CONTINUE;
+}
+
 /* Emit the SetConfig + SetIp4Config bundle that flips NM from "activating"
  * to "activated".  Pre: priv->session_path is live and we have seen a
  * STARTED state from openvpn3.  Idempotent via the priv->ip4_emitted gate. */
@@ -565,6 +650,15 @@ emit_started_ip4_config (NMOpenvpn3Plugin *self)
 	priv->poll_ticks  = 0;
 	nm_clear_g_source (&priv->poll_timer_id);
 	priv->poll_timer_id = g_timeout_add_seconds (5, poll_status_cb, self);
+
+	/* Arm periodic stats logger.  Reset rate-delta state so the first
+	 * tick prints an absolute reading without a bogus rate value. */
+	nm_clear_g_source (&priv->stats_timer_id);
+	priv->stats_last_bytes_in     = 0;
+	priv->stats_last_bytes_out    = 0;
+	priv->stats_last_monotonic_us = 0;
+	priv->stats_timer_id = g_timeout_add_seconds (STATS_INTERVAL_S,
+	                                              stats_timer_cb, self);
 }
 
 /* Map an openvpn3 input slot name (e.g. "password", "static_challenge") to
@@ -1171,6 +1265,7 @@ dispose (GObject *object)
 	/* Clean up ovpn3 session state */
 	clear_signal_sub (priv->ovpn3, &priv->status_sub_id);
 	clear_signal_sub (priv->ovpn3, &priv->attention_sub_id);
+	nm_clear_g_source (&priv->stats_timer_id);
 	clear_pending_slots (priv);
 	g_clear_object (&priv->current_connection);
 	g_clear_pointer (&priv->session_path, g_free);

@@ -36,6 +36,15 @@ gchar *ovpn3_new_tunnel (Ovpn3Client *self,
                          const gchar *config_path,
                          GError     **error);
 
+/* Read the session's `statistics` property (a{sx}).  Returns a GHashTable
+ * with string keys (e.g. "bytes_in", "bytes_out", "packets_in",
+ * "tun_bytes_in") mapping to gint64 counter values; caller frees with
+ * g_hash_table_unref.  The hash table uses g_str_equal/g_str_hash and
+ * frees keys + values automatically. */
+GHashTable *ovpn3_session_get_statistics (Ovpn3Client *self,
+                                          const gchar *session_path,
+                                          GError     **error);
+
 /* User-input slot fetched from the session's UserInputQueue.  openvpn3
  * identifies prompts by (type, group, id) tuples; @name and @description
  * are display strings; @hidden_input=TRUE means the value should be masked
