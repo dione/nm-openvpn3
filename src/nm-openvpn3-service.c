@@ -509,31 +509,38 @@ stats_timer_cb (gpointer user_data)
 		return G_SOURCE_CONTINUE;
 	}
 
-	gint64 in      = hash_lookup_i64 (s, "BYTES_IN");
-	gint64 out     = hash_lookup_i64 (s, "BYTES_OUT");
-	gint64 pkt_in  = hash_lookup_i64 (s, "PACKETS_IN");
-	gint64 pkt_out = hash_lookup_i64 (s, "PACKETS_OUT");
+	gint64 in       = hash_lookup_i64 (s, "BYTES_IN");
+	gint64 out      = hash_lookup_i64 (s, "BYTES_OUT");
+	gint64 pkt_in   = hash_lookup_i64 (s, "PACKETS_IN");
+	gint64 pkt_out  = hash_lookup_i64 (s, "PACKETS_OUT");
+	/* TUN_* counters are payload-side: bytes/packets that crossed the
+	 * tun device in cleartext.  Subtracting from the encrypted BYTES_*
+	 * gives the cryptographic + protocol overhead. */
+	gint64 tun_in   = hash_lookup_i64 (s, "TUN_BYTES_IN");
+	gint64 tun_out  = hash_lookup_i64 (s, "TUN_BYTES_OUT");
 
 	gint64 now_us  = g_get_monotonic_time ();
 	gint64 dt_us   = now_us - priv->stats_last_monotonic_us;
 	gint64 d_in    = in  - priv->stats_last_bytes_in;
 	gint64 d_out   = out - priv->stats_last_bytes_out;
 
-	g_autofree gchar *fin  = fmt_bytes (in);
-	g_autofree gchar *fout = fmt_bytes (out);
+	g_autofree gchar *fin   = fmt_bytes (in);
+	g_autofree gchar *fout  = fmt_bytes (out);
+	g_autofree gchar *ftin  = fmt_bytes (tun_in);
+	g_autofree gchar *ftout = fmt_bytes (tun_out);
 
 	if (priv->stats_last_monotonic_us > 0 && dt_us > 0) {
 		gdouble rate_in  = (d_in  * G_GINT64_CONSTANT (1000000)) / (gdouble) dt_us;
 		gdouble rate_out = (d_out * G_GINT64_CONSTANT (1000000)) / (gdouble) dt_us;
 		g_autofree gchar *fri = fmt_bytes ((gint64) rate_in);
 		g_autofree gchar *fro = fmt_bytes ((gint64) rate_out);
-		ovpn3_trace ("stats: rx=%s tx=%s pkt_in=%" G_GINT64_FORMAT
+		ovpn3_trace ("stats: rx=%s tx=%s tun_rx=%s tun_tx=%s pkt_in=%" G_GINT64_FORMAT
 		             " pkt_out=%" G_GINT64_FORMAT " rate_rx=%s/s rate_tx=%s/s",
-		             fin, fout, pkt_in, pkt_out, fri, fro);
+		             fin, fout, ftin, ftout, pkt_in, pkt_out, fri, fro);
 	} else {
-		ovpn3_trace ("stats: rx=%s tx=%s pkt_in=%" G_GINT64_FORMAT
+		ovpn3_trace ("stats: rx=%s tx=%s tun_rx=%s tun_tx=%s pkt_in=%" G_GINT64_FORMAT
 		             " pkt_out=%" G_GINT64_FORMAT,
-		             fin, fout, pkt_in, pkt_out);
+		             fin, fout, ftin, ftout, pkt_in, pkt_out);
 	}
 
 	priv->stats_last_bytes_in     = in;
