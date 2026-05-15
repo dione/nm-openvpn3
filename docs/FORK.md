@@ -32,5 +32,6 @@ the openvpn3 prefix is applied uniformly.
 - Plan 1c (done, v0.3.1) — VPN routes forwarded to NM for display
 - Plan 1d/1e (done, v0.3.2/v0.3.3) — D-Bus retry, session ACL, split-tunnel, watchdog
 - Plan 3 (done, v0.4.0) — UI plugin appears in nm-connection-editor (libdir multiarch + GObject type rename)
+- Plan 3b (done, v0.4.1) — UI plugin: hide openvpn2-only advanced-dialog widgets (LZO compress, legacy keysize, cipher-fallback / no-cipher-nego, ns-cert-type, TLS cipher string, push-peer-info)
 - Plan 2 — auth-dialog around AttentionRequired / UserInputQueue
-- Plan 3b — UI plugin: trim openvpn2-only options, surface openvpn3 SetOverride keys
+- Plan 3c — UI plugin: excise dead vpn.data keys + corresponding code paths; surface openvpn3 SetOverride keys
