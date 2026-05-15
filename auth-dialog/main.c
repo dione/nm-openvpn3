@@ -175,35 +175,29 @@ eui_finish (const char *vpn_name,
             gboolean need_challengeresponse,
             gboolean need_challengeresponse_echo)
 {
-	GKeyFile *keyfile;
-	char *title;
-
-	keyfile = g_key_file_new ();
+	GKeyFile *keyfile = g_key_file_new ();
 
 	g_key_file_set_integer (keyfile, UI_KEYFILE_GROUP, "Version", 2);
 	g_key_file_set_string (keyfile, UI_KEYFILE_GROUP, "Description", prompt);
-
-	title = g_strdup_printf (_("Authentication required"));
-	g_key_file_set_string (keyfile, UI_KEYFILE_GROUP, "Title", title);
-	g_free (title);
+	g_key_file_set_string (keyfile, UI_KEYFILE_GROUP, "Title", _("Authentication required"));
 
 	keyfile_add_entry_info (keyfile,
 	                        NM_OPENVPN3_KEY_PASSWORD,
-	                        existing_password ? existing_password : "",
+	                        existing_password ?: "",
 	                        _("Password"),
 	                        FALSE,
 	                        need_password && allow_interaction);
 
 	keyfile_add_entry_info (keyfile,
 	                        NM_OPENVPN3_KEY_CERTPASS,
-	                        existing_certpass ? existing_certpass : "",
+	                        existing_certpass ?: "",
 	                        _("Certificate password"),
 	                        FALSE,
 	                        need_certpass && allow_interaction);
 
 	keyfile_add_entry_info (keyfile,
 	                        NM_OPENVPN3_KEY_HTTP_PROXY_PASSWORD,
-	                        existing_proxypass ? existing_proxypass : "",
+	                        existing_proxypass ?: "",
 	                        _("HTTP proxy password"),
 	                        FALSE,
 	                        need_proxypass && allow_interaction);
@@ -343,6 +337,25 @@ std_finish (const char *vpn_name,
 
 /*****************************************************************/
 
+static char *
+lookup_existing_secret (GHashTable *vpn_data,
+                       GHashTable *existing_secrets,
+                       const char *vpn_uuid,
+                       const char *key)
+{
+	NMSettingSecretFlags flags = NM_SETTING_SECRET_FLAG_NONE;
+	char *secret;
+
+	nm_vpn_service_plugin_get_secret_flags (vpn_data, key, &flags);
+	if (flags & NM_SETTING_SECRET_FLAG_NOT_SAVED)
+		return NULL;
+
+	secret = g_strdup (g_hash_table_lookup (existing_secrets, key));
+	if (!secret)
+		secret = keyring_lookup_secret (vpn_uuid, key);
+	return secret;
+}
+
 static void
 get_existing_passwords (GHashTable *vpn_data,
                         GHashTable *existing_secrets,
@@ -354,43 +367,28 @@ get_existing_passwords (GHashTable *vpn_data,
                         char **out_certpass,
                         char **out_proxypass)
 {
-	NMSettingSecretFlags pw_flags = NM_SETTING_SECRET_FLAG_NONE;
-	NMSettingSecretFlags cp_flags = NM_SETTING_SECRET_FLAG_NONE;
-	NMSettingSecretFlags proxy_flags = NM_SETTING_SECRET_FLAG_NONE;
-
 	g_return_if_fail (out_password != NULL);
 	g_return_if_fail (out_certpass != NULL);
 	g_return_if_fail (out_proxypass != NULL);
 
-	nm_vpn_service_plugin_get_secret_flags (vpn_data, NM_OPENVPN3_KEY_PASSWORD, &pw_flags);
-	if (need_password) {
-		if (!(pw_flags & NM_SETTING_SECRET_FLAG_NOT_SAVED)) {
-			*out_password = g_strdup (g_hash_table_lookup (existing_secrets, NM_OPENVPN3_KEY_PASSWORD));
-			if (!*out_password)
-				*out_password = keyring_lookup_secret (vpn_uuid, NM_OPENVPN3_KEY_PASSWORD);
-		}
-	}
-
-	nm_vpn_service_plugin_get_secret_flags (vpn_data, NM_OPENVPN3_KEY_CERTPASS, &cp_flags);
-	if (need_certpass) {
-		if (!(cp_flags & NM_SETTING_SECRET_FLAG_NOT_SAVED)) {
-			*out_certpass = g_strdup (g_hash_table_lookup (existing_secrets, NM_OPENVPN3_KEY_CERTPASS));
-			if (!*out_certpass)
-				*out_certpass = keyring_lookup_secret (vpn_uuid, NM_OPENVPN3_KEY_CERTPASS);
-		}
-	}
-
-	nm_vpn_service_plugin_get_secret_flags (vpn_data, NM_OPENVPN3_KEY_HTTP_PROXY_PASSWORD, &proxy_flags);
-	if (need_proxypass) {
-		if (!(proxy_flags & NM_SETTING_SECRET_FLAG_NOT_SAVED)) {
-			*out_proxypass = g_strdup (g_hash_table_lookup (existing_secrets, NM_OPENVPN3_KEY_HTTP_PROXY_PASSWORD));
-			if (!*out_proxypass)
-				*out_proxypass = keyring_lookup_secret (vpn_uuid, NM_OPENVPN3_KEY_HTTP_PROXY_PASSWORD);
-		}
-	}
+	if (need_password)
+		*out_password = lookup_existing_secret (vpn_data, existing_secrets, vpn_uuid, NM_OPENVPN3_KEY_PASSWORD);
+	if (need_certpass)
+		*out_certpass = lookup_existing_secret (vpn_data, existing_secrets, vpn_uuid, NM_OPENVPN3_KEY_CERTPASS);
+	if (need_proxypass)
+		*out_proxypass = lookup_existing_secret (vpn_data, existing_secrets, vpn_uuid, NM_OPENVPN3_KEY_HTTP_PROXY_PASSWORD);
 }
 
 #define VPN_MSG_TAG "x-vpn-message:"
+
+static gboolean
+secret_required (GHashTable *data, const char *key)
+{
+	NMSettingSecretFlags flags = NM_SETTING_SECRET_FLAG_NONE;
+
+	nm_vpn_service_plugin_get_secret_flags (data, key, &flags);
+	return !(flags & NM_SETTING_SECRET_FLAG_NOT_REQUIRED);
+}
 
 static char *
 get_passwords_required (GHashTable *data,
@@ -402,7 +400,6 @@ get_passwords_required (GHashTable *data,
                         gboolean *out_need_challengeresponse_echo)
 {
 	const char *ctype, *val;
-	NMSettingSecretFlags flags;
 	char *prompt = NULL;
 	const char *const*iter;
 
@@ -412,22 +409,36 @@ get_passwords_required (GHashTable *data,
 	*out_need_challengeresponse = FALSE;
 	*out_need_challengeresponse_echo = FALSE;
 
-	/* If hints are given, then always ask for what the hints require */
+	/* If hints are given, then always ask for what the hints require.
+	 * Dispatch order (Plan-2 contract): VPN_MSG_TAG, KEY_PASSWORD, KEY_CERTPASS,
+	 * KEY_HTTP_PROXY_PASSWORD, HINT_CHALLENGE_RESPONSE_NOECHO, HINT_CHALLENGE_RESPONSE_ECHO.
+	 */
 	if (hints && hints[0]) {
+		const struct {
+			const char *name;
+			gboolean *flag;
+			gboolean *echo_flag;  /* optional, set together with flag */
+		} hint_map[] = {
+			{ NM_OPENVPN3_KEY_PASSWORD,                  out_need_password,         NULL },
+			{ NM_OPENVPN3_KEY_CERTPASS,                  out_need_certpass,         NULL },
+			{ NM_OPENVPN3_KEY_HTTP_PROXY_PASSWORD,       out_need_proxypass,        NULL },
+			{ NM_OPENVPN3_HINT_CHALLENGE_RESPONSE_NOECHO, out_need_challengeresponse, NULL },
+			{ NM_OPENVPN3_HINT_CHALLENGE_RESPONSE_ECHO,   out_need_challengeresponse, out_need_challengeresponse_echo },
+		};
+		gsize i;
+
 		for (iter = hints; iter && *iter; iter++) {
-			if (!prompt && g_str_has_prefix (*iter, VPN_MSG_TAG))
+			if (!prompt && g_str_has_prefix (*iter, VPN_MSG_TAG)) {
 				prompt = g_strdup (*iter + strlen (VPN_MSG_TAG));
-			else if (strcmp (*iter, NM_OPENVPN3_KEY_PASSWORD) == 0)
-				*out_need_password = TRUE;
-			else if (strcmp (*iter, NM_OPENVPN3_KEY_CERTPASS) == 0)
-				*out_need_certpass = TRUE;
-			else if (strcmp (*iter, NM_OPENVPN3_KEY_HTTP_PROXY_PASSWORD) == 0)
-				*out_need_proxypass = TRUE;
-			else if (strcmp (*iter, NM_OPENVPN3_HINT_CHALLENGE_RESPONSE_NOECHO) == 0)
-				*out_need_challengeresponse = TRUE;
-			else if (strcmp (*iter, NM_OPENVPN3_HINT_CHALLENGE_RESPONSE_ECHO) == 0) {
-				*out_need_challengeresponse = TRUE;
-				*out_need_challengeresponse_echo = TRUE;
+				continue;
+			}
+			for (i = 0; i < G_N_ELEMENTS (hint_map); i++) {
+				if (strcmp (*iter, hint_map[i].name) == 0) {
+					*hint_map[i].flag = TRUE;
+					if (hint_map[i].echo_flag)
+						*hint_map[i].echo_flag = TRUE;
+					break;
+				}
 			}
 		}
 		return prompt;
@@ -437,11 +448,9 @@ get_passwords_required (GHashTable *data,
 	g_return_val_if_fail (ctype != NULL, NULL);
 
 	if (!strcmp (ctype, NM_OPENVPN3_CONTYPE_TLS) || !strcmp (ctype, NM_OPENVPN3_CONTYPE_PASSWORD_TLS)) {
-		/* Normal user password */
-		flags = NM_SETTING_SECRET_FLAG_NONE;
-		nm_vpn_service_plugin_get_secret_flags (data, NM_OPENVPN3_KEY_PASSWORD, &flags);
+		/* Normal user password (only required for password-tls) */
 		if (   !strcmp (ctype, NM_OPENVPN3_CONTYPE_PASSWORD_TLS)
-		    && !(flags & NM_SETTING_SECRET_FLAG_NOT_REQUIRED))
+		    && secret_required (data, NM_OPENVPN3_KEY_PASSWORD))
 			*out_need_password = TRUE;
 
 		/* Encrypted private key password */
@@ -449,19 +458,13 @@ get_passwords_required (GHashTable *data,
 		if (val)
 			*out_need_certpass = is_encrypted (val);
 	} else if (!strcmp (ctype, NM_OPENVPN3_CONTYPE_PASSWORD)) {
-		flags = NM_SETTING_SECRET_FLAG_NONE;
-		nm_vpn_service_plugin_get_secret_flags (data, NM_OPENVPN3_KEY_PASSWORD, &flags);
-		if (!(flags & NM_SETTING_SECRET_FLAG_NOT_REQUIRED))
+		if (secret_required (data, NM_OPENVPN3_KEY_PASSWORD))
 			*out_need_password = TRUE;
 	}
 
 	val = g_hash_table_lookup (data, NM_OPENVPN3_KEY_PROXY_SERVER);
-	if (val && val[0]) {
-		flags = NM_SETTING_SECRET_FLAG_NONE;
-		nm_vpn_service_plugin_get_secret_flags (data, NM_OPENVPN3_KEY_HTTP_PROXY_PASSWORD, &flags);
-		if (!(flags & NM_SETTING_SECRET_FLAG_NOT_REQUIRED))
-			*out_need_proxypass = TRUE;
-	}
+	if (val && val[0] && secret_required (data, NM_OPENVPN3_KEY_HTTP_PROXY_PASSWORD))
+		*out_need_proxypass = TRUE;
 
 	return NULL;
 }
@@ -573,16 +576,10 @@ main (int argc, char *argv[])
 	                        &existing_password,
 	                        &existing_certpass,
 	                        &existing_proxypass);
-	if (need_password && !existing_password)
-		ask_user = TRUE;
-	else if (need_certpass && !existing_certpass)
-		ask_user = TRUE;
-	else if (need_proxypass && !existing_proxypass)
-		ask_user = TRUE;
-	else if (need_challengeresponse)
-		ask_user = TRUE;
-	else
-		ask_user = FALSE;
+	ask_user =    (need_password  && !existing_password)
+	           || (need_certpass  && !existing_certpass)
+	           || (need_proxypass && !existing_proxypass)
+	           || need_challengeresponse;
 
 	/* If interaction is allowed then ask the user, otherwise pass back
 	 * whatever existing secrets we can find.
