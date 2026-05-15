@@ -1398,34 +1398,35 @@ device_name_changed_cb (GtkEntry *entry,
 	return FALSE;
 }
 
+/* The CRL file/dir checkbuttons are mutually exclusive; both share the same
+ * "deactivate sibling, toggle button sensitivity" behavior. */
+static void
+crl_checkbox_toggle_exclusive (GtkBuilder *builder,
+                               GtkWidget *check,
+                               const char *other_check_id,
+                               const char *button_id)
+{
+	GtkWidget *other = GTK_WIDGET (gtk_builder_get_object (builder, other_check_id));
+	GtkWidget *button = GTK_WIDGET (gtk_builder_get_object (builder, button_id));
+	gboolean active = gtk_check_button_get_active (GTK_CHECK_BUTTON (check));
+
+	if (active)
+		gtk_check_button_set_active (GTK_CHECK_BUTTON (other), FALSE);
+	gtk_widget_set_sensitive (button, active);
+}
+
 static void
 crl_file_checkbox_toggled_cb (GtkWidget *check, gpointer user_data)
 {
-	GtkBuilder *builder = (GtkBuilder *) user_data;
-	GtkWidget *other, *combo;
-
-	other = GTK_WIDGET (gtk_builder_get_object (builder, "crl_dir_check"));
-	combo = GTK_WIDGET (gtk_builder_get_object (builder, "crl_file_chooser_button"));
-	if (gtk_check_button_get_active (GTK_CHECK_BUTTON (check))) {
-		gtk_check_button_set_active (GTK_CHECK_BUTTON (other), FALSE);
-		gtk_widget_set_sensitive (combo, TRUE);
-	} else
-		gtk_widget_set_sensitive (combo, FALSE);
+	crl_checkbox_toggle_exclusive ((GtkBuilder *) user_data, check,
+	                               "crl_dir_check", "crl_file_chooser_button");
 }
 
 static void
 crl_dir_checkbox_toggled_cb (GtkWidget *check, gpointer user_data)
 {
-	GtkBuilder *builder = (GtkBuilder *) user_data;
-	GtkWidget *other, *combo;
-
-	other = GTK_WIDGET (gtk_builder_get_object (builder, "crl_file_check"));
-	combo = GTK_WIDGET (gtk_builder_get_object (builder, "crl_dir_chooser_button"));
-	if (gtk_check_button_get_active (GTK_CHECK_BUTTON (check))) {
-		gtk_check_button_set_active (GTK_CHECK_BUTTON (other), FALSE);
-		gtk_widget_set_sensitive (combo, TRUE);
-	} else
-		gtk_widget_set_sensitive (combo, FALSE);
+	crl_checkbox_toggle_exclusive ((GtkBuilder *) user_data, check,
+	                               "crl_file_check", "crl_dir_chooser_button");
 }
 
 static void
@@ -1499,6 +1500,73 @@ _builder_init_optional_spinbutton (GtkBuilder *builder,
 
 	gtk_widget_set_sensitive (spin, active_state);
 	gtk_check_button_set_active (GTK_CHECK_BUTTON (widget), active_state);
+}
+
+/* Mirror of _builder_init_optional_spinbutton: when the gating checkbutton is
+ * active, read the spinbutton value and insert it into the hash as "%d". */
+static void
+_dialog_write_optional_spinbutton (GtkBuilder *builder,
+                                   const char *checkbutton_name,
+                                   const char *spinbutton_name,
+                                   GHashTable *hash,
+                                   const char *key)
+{
+	GtkWidget *check;
+	GtkWidget *spin;
+	int value;
+
+	check = GTK_WIDGET (gtk_builder_get_object (builder, checkbutton_name));
+	if (!gtk_check_button_get_active (GTK_CHECK_BUTTON (check)))
+		return;
+
+	spin = GTK_WIDGET (gtk_builder_get_object (builder, spinbutton_name));
+	value = gtk_spin_button_get_value_as_int (GTK_SPIN_BUTTON (spin));
+	g_hash_table_insert (hash, (gpointer) key, g_strdup_printf ("%d", value));
+}
+
+/* If the file chooser identified by chooser_name has a file selected, insert
+ * its path into the hash under key. */
+static void
+_dialog_write_file_chooser_path (GtkBuilder *builder,
+                                 const char *chooser_name,
+                                 GHashTable *hash,
+                                 const char *key)
+{
+	GtkWidget *chooser;
+	gs_unref_object GFile *file = NULL;
+	gs_free char *filename = NULL;
+
+	chooser = GTK_WIDGET (gtk_builder_get_object (builder, chooser_name));
+	file = gtk_file_chooser_get_file (GTK_FILE_CHOOSER (chooser));
+	if (file)
+		filename = g_file_get_path (file);
+	if (filename && filename[0])
+		g_hash_table_insert (hash, (gpointer) key, g_steal_pointer (&filename));
+}
+
+/* Set up a GtkFileChooserDialog that hides on close, populates a label on
+ * accept, and is shown when its companion button is clicked. The chooser is
+ * returned and the label is written to *label_out (used by callers for the
+ * post-init "current file" label update). */
+static GtkWidget *
+_init_hidden_file_chooser (GtkBuilder *builder,
+                           const char *chooser_id,
+                           const char *button_id,
+                           const char *label_id,
+                           GtkLabel **label_out)
+{
+	GtkWidget *chooser;
+	GtkLabel *label;
+
+	chooser = GTK_WIDGET (gtk_builder_get_object (builder, chooser_id));
+	label = GTK_LABEL (gtk_builder_get_object (builder, label_id));
+	gtk_window_set_hide_on_close (GTK_WINDOW (chooser), TRUE);
+	g_signal_connect (G_OBJECT (chooser), "response", G_CALLBACK (chooser_response), label);
+	g_signal_connect_swapped (gtk_builder_get_object (builder, button_id),
+	                          "clicked", G_CALLBACK (gtk_widget_show), chooser);
+	if (label_out)
+		*label_out = label;
+	return chooser;
 }
 
 static void
@@ -1728,13 +1796,9 @@ advanced_dialog_new (GHashTable *hash, const char *contype)
 	populate_remote_cert_tls_combo (GTK_COMBO_BOX (widget), value);
 
 	/* TLS auth chooser */
-	chooser = GTK_WIDGET(gtk_builder_get_object (builder, "tls_auth_chooser"));
-	label = GTK_LABEL (gtk_builder_get_object (builder, "tls_auth_chooser_label"));
-	gtk_window_set_hide_on_close (GTK_WINDOW(chooser), TRUE);
-	g_signal_connect (G_OBJECT (chooser), "response",
-	                  G_CALLBACK (chooser_response), label);
-	g_signal_connect_swapped (gtk_builder_get_object (builder, "tls_auth_chooser_button"),
-	                          "clicked", G_CALLBACK (gtk_widget_show), chooser);
+	chooser = _init_hidden_file_chooser (builder, "tls_auth_chooser",
+	                                     "tls_auth_chooser_button",
+	                                     "tls_auth_chooser_label", &label);
 	if (NM_IN_STRSET (contype,
 	                  NM_OPENVPN3_CONTYPE_TLS,
 	                  NM_OPENVPN3_CONTYPE_PASSWORD_TLS,
@@ -1780,13 +1844,9 @@ advanced_dialog_new (GHashTable *hash, const char *contype)
 	g_clear_object (&file);
 
 	/* Extra certs */
-	chooser = GTK_WIDGET(gtk_builder_get_object (builder, "extra_certs_chooser"));
-	label = GTK_LABEL (gtk_builder_get_object (builder, "extra_certs_chooser_label"));
-	gtk_window_set_hide_on_close (GTK_WINDOW(chooser), TRUE);
-	g_signal_connect (G_OBJECT (chooser), "response",
-	                  G_CALLBACK (chooser_response), label);
-	g_signal_connect_swapped (gtk_builder_get_object (builder, "extra_certs_chooser_button"),
-	                          "clicked", G_CALLBACK (gtk_widget_show), chooser);
+	chooser = _init_hidden_file_chooser (builder, "extra_certs_chooser",
+	                                     "extra_certs_chooser_button",
+	                                     "extra_certs_chooser_label", &label);
 	if (NM_IN_STRSET (contype,
 	                  NM_OPENVPN3_CONTYPE_TLS,
 	                  NM_OPENVPN3_CONTYPE_PASSWORD_TLS,
@@ -1857,13 +1917,9 @@ advanced_dialog_new (GHashTable *hash, const char *contype)
 	mtu_disc_toggled_cb (widget, builder);
 
 	/* CRL file */
-	widget = GTK_WIDGET(gtk_builder_get_object (builder, "crl_file_chooser"));
-	label = GTK_LABEL (gtk_builder_get_object (builder, "crl_file_chooser_label"));
-	gtk_window_set_hide_on_close (GTK_WINDOW(widget), TRUE);
-	g_signal_connect (G_OBJECT (widget), "response",
-	                  G_CALLBACK (chooser_response), label);
-	g_signal_connect_swapped (gtk_builder_get_object (builder, "crl_file_chooser_button"),
-	                          "clicked", G_CALLBACK (gtk_widget_show), widget);
+	widget = _init_hidden_file_chooser (builder, "crl_file_chooser",
+	                                    "crl_file_chooser_button",
+	                                    "crl_file_chooser_label", &label);
 	value = g_hash_table_lookup (hash, NM_OPENVPN3_KEY_CRL_VERIFY_FILE);
 	if (value)
 		file = g_file_new_for_path (value);
@@ -1875,13 +1931,9 @@ advanced_dialog_new (GHashTable *hash, const char *contype)
 	crl_file_checkbox_toggled_cb (widget, builder);
 
 	/* CRL directory */
-	widget = GTK_WIDGET(gtk_builder_get_object (builder, "crl_dir_chooser"));
-	label = GTK_LABEL (gtk_builder_get_object (builder, "crl_dir_chooser_label"));
-	gtk_window_set_hide_on_close (GTK_WINDOW(widget), TRUE);
-	g_signal_connect (G_OBJECT (widget), "response",
-	                  G_CALLBACK (chooser_response), label);
-	g_signal_connect_swapped (gtk_builder_get_object (builder, "crl_dir_chooser_button"),
-	                          "clicked", G_CALLBACK (gtk_widget_show), widget);
+	widget = _init_hidden_file_chooser (builder, "crl_dir_chooser",
+	                                    "crl_dir_chooser_button",
+	                                    "crl_dir_chooser_label", &label);
 	if (value) {
 		/* If CRL file (see above) has been set,
 		 * then we ignore the CRL directory */
@@ -1957,50 +2009,16 @@ advanced_dialog_new_hash_from_dialog (GtkWidget *dialog)
 
 	hash = g_hash_table_new_full (g_str_hash, g_str_equal, NULL, g_free);
 
-	widget = GTK_WIDGET (gtk_builder_get_object (builder, "reneg_checkbutton"));
-	if (gtk_check_button_get_active (GTK_CHECK_BUTTON (widget))) {
-		int reneg_seconds;
-
-		widget = GTK_WIDGET (gtk_builder_get_object (builder, "reneg_spinbutton"));
-		reneg_seconds = gtk_spin_button_get_value_as_int (GTK_SPIN_BUTTON (widget));
-		g_hash_table_insert (hash, NM_OPENVPN3_KEY_RENEG_SECONDS, g_strdup_printf ("%d", reneg_seconds));
-	}
-
-	widget = GTK_WIDGET (gtk_builder_get_object (builder, "tunmtu_checkbutton"));
-	if (gtk_check_button_get_active (GTK_CHECK_BUTTON (widget))) {
-		int tunmtu_size;
-
-		widget = GTK_WIDGET (gtk_builder_get_object (builder, "tunmtu_spinbutton"));
-		tunmtu_size = gtk_spin_button_get_value_as_int (GTK_SPIN_BUTTON (widget));
-		g_hash_table_insert (hash, NM_OPENVPN3_KEY_TUNNEL_MTU, g_strdup_printf ("%d", tunmtu_size));
-	}
-
-	widget = GTK_WIDGET (gtk_builder_get_object (builder, "connect_timeout_checkbutton"));
-	if (gtk_check_button_get_active (GTK_CHECK_BUTTON (widget))) {
-		int timeout;
-
-		widget = GTK_WIDGET (gtk_builder_get_object (builder, "connect_timeout_spinbutton"));
-		timeout = gtk_spin_button_get_value_as_int (GTK_SPIN_BUTTON (widget));
-		g_hash_table_insert (hash, NM_OPENVPN3_KEY_CONNECT_TIMEOUT, g_strdup_printf ("%d", timeout));
-	}
-
-	widget = GTK_WIDGET (gtk_builder_get_object (builder, "fragment_checkbutton"));
-	if (gtk_check_button_get_active (GTK_CHECK_BUTTON (widget))) {
-		int fragment_size;
-
-		widget = GTK_WIDGET (gtk_builder_get_object (builder, "fragment_spinbutton"));
-		fragment_size = gtk_spin_button_get_value_as_int (GTK_SPIN_BUTTON (widget));
-		g_hash_table_insert (hash, NM_OPENVPN3_KEY_FRAGMENT_SIZE, g_strdup_printf ("%d", fragment_size));
-	}
-
-	widget = GTK_WIDGET (gtk_builder_get_object (builder, "port_checkbutton"));
-	if (gtk_check_button_get_active (GTK_CHECK_BUTTON (widget))) {
-		int port;
-
-		widget = GTK_WIDGET (gtk_builder_get_object (builder, "port_spinbutton"));
-		port = gtk_spin_button_get_value_as_int (GTK_SPIN_BUTTON (widget));
-		g_hash_table_insert (hash, NM_OPENVPN3_KEY_PORT, g_strdup_printf ("%d", port));
-	}
+	_dialog_write_optional_spinbutton (builder, "reneg_checkbutton", "reneg_spinbutton",
+	                                   hash, NM_OPENVPN3_KEY_RENEG_SECONDS);
+	_dialog_write_optional_spinbutton (builder, "tunmtu_checkbutton", "tunmtu_spinbutton",
+	                                   hash, NM_OPENVPN3_KEY_TUNNEL_MTU);
+	_dialog_write_optional_spinbutton (builder, "connect_timeout_checkbutton", "connect_timeout_spinbutton",
+	                                   hash, NM_OPENVPN3_KEY_CONNECT_TIMEOUT);
+	_dialog_write_optional_spinbutton (builder, "fragment_checkbutton", "fragment_spinbutton",
+	                                   hash, NM_OPENVPN3_KEY_FRAGMENT_SIZE);
+	_dialog_write_optional_spinbutton (builder, "port_checkbutton", "port_spinbutton",
+	                                   hash, NM_OPENVPN3_KEY_PORT);
 
 	/* Proxy support */
 	widget = GTK_WIDGET (gtk_builder_get_object (builder, "proxy_type_combo"));
@@ -2052,17 +2070,21 @@ advanced_dialog_new_hash_from_dialog (GtkWidget *dialog)
 		}
 	}
 
-	widget = GTK_WIDGET (gtk_builder_get_object (builder, "mssfix_checkbutton"));
-	if (gtk_check_button_get_active (GTK_CHECK_BUTTON (widget)))
-		g_hash_table_insert (hash, NM_OPENVPN3_KEY_MSSFIX, g_strdup ("yes"));
-
-	widget = GTK_WIDGET (gtk_builder_get_object (builder, "float_checkbutton"));
-	if (gtk_check_button_get_active (GTK_CHECK_BUTTON (widget)))
-		g_hash_table_insert (hash, NM_OPENVPN3_KEY_FLOAT, g_strdup ("yes"));
-
-	widget = GTK_WIDGET (gtk_builder_get_object (builder, "tcp_checkbutton"));
-	if (gtk_check_button_get_active (GTK_CHECK_BUTTON (widget)))
-		g_hash_table_insert (hash, NM_OPENVPN3_KEY_PROTO_TCP, g_strdup ("yes"));
+	{
+		static const struct {
+			const char *widget_id;
+			const char *key;
+		} bool_widgets[] = {
+			{ "mssfix_checkbutton",                 NM_OPENVPN3_KEY_MSSFIX },
+			{ "float_checkbutton",                  NM_OPENVPN3_KEY_FLOAT },
+			{ "tcp_checkbutton",                    NM_OPENVPN3_KEY_PROTO_TCP },
+		};
+		for (gsize i = 0; i < G_N_ELEMENTS (bool_widgets); i++) {
+			widget = GTK_WIDGET (gtk_builder_get_object (builder, bool_widgets[i].widget_id));
+			if (gtk_check_button_get_active (GTK_CHECK_BUTTON (widget)))
+				g_hash_table_insert (hash, (gpointer) bool_widgets[i].key, g_strdup ("yes"));
+		}
+	}
 
 	widget = GTK_WIDGET (gtk_builder_get_object (builder, "dev_checkbutton"));
 	if (gtk_check_button_get_active (GTK_CHECK_BUTTON (widget))) {
@@ -2080,21 +2102,22 @@ advanced_dialog_new_hash_from_dialog (GtkWidget *dialog)
 			g_hash_table_insert (hash, NM_OPENVPN3_KEY_DEV, g_strdup (value));
 	}
 
-	widget = GTK_WIDGET (gtk_builder_get_object (builder, "remote_random_checkbutton"));
-	if (gtk_check_button_get_active (GTK_CHECK_BUTTON (widget)))
-		g_hash_table_insert (hash, NM_OPENVPN3_KEY_REMOTE_RANDOM, g_strdup ("yes"));
-
-	widget = GTK_WIDGET (gtk_builder_get_object (builder, "remote_random_hostname_checkbutton"));
-	if (gtk_check_button_get_active (GTK_CHECK_BUTTON (widget)))
-		g_hash_table_insert (hash, NM_OPENVPN3_KEY_REMOTE_RANDOM_HOSTNAME, g_strdup ("yes"));
-
-	widget = GTK_WIDGET (gtk_builder_get_object (builder, "allow_pull_fqdn_checkbutton"));
-	if (gtk_check_button_get_active (GTK_CHECK_BUTTON (widget)))
-		g_hash_table_insert (hash, NM_OPENVPN3_KEY_ALLOW_PULL_FQDN, g_strdup ("yes"));
-
-	widget = GTK_WIDGET (gtk_builder_get_object (builder, "tun_ipv6_checkbutton"));
-	if (gtk_check_button_get_active (GTK_CHECK_BUTTON (widget)))
-		g_hash_table_insert (hash, NM_OPENVPN3_KEY_TUN_IPV6, g_strdup ("yes"));
+	{
+		static const struct {
+			const char *widget_id;
+			const char *key;
+		} bool_widgets[] = {
+			{ "remote_random_checkbutton",          NM_OPENVPN3_KEY_REMOTE_RANDOM },
+			{ "remote_random_hostname_checkbutton", NM_OPENVPN3_KEY_REMOTE_RANDOM_HOSTNAME },
+			{ "allow_pull_fqdn_checkbutton",        NM_OPENVPN3_KEY_ALLOW_PULL_FQDN },
+			{ "tun_ipv6_checkbutton",               NM_OPENVPN3_KEY_TUN_IPV6 },
+		};
+		for (gsize i = 0; i < G_N_ELEMENTS (bool_widgets); i++) {
+			widget = GTK_WIDGET (gtk_builder_get_object (builder, bool_widgets[i].widget_id));
+			if (gtk_check_button_get_active (GTK_CHECK_BUTTON (widget)))
+				g_hash_table_insert (hash, (gpointer) bool_widgets[i].key, g_strdup ("yes"));
+		}
+	}
 
 	widget = GTK_WIDGET (gtk_builder_get_object (builder, "cipher_combo"));
 	model = gtk_combo_box_get_model (GTK_COMBO_BOX (widget));
@@ -2148,9 +2171,6 @@ advanced_dialog_new_hash_from_dialog (GtkWidget *dialog)
 	if (   !strcmp (contype, NM_OPENVPN3_CONTYPE_TLS)
 	    || !strcmp (contype, NM_OPENVPN3_CONTYPE_PASSWORD_TLS)
 	    || !strcmp (contype, NM_OPENVPN3_CONTYPE_PASSWORD)) {
-		char *filename;
-		GFile *file;
-
 		entry = GTK_WIDGET (gtk_builder_get_object (builder, "tls_remote_entry"));
 		value = gtk_editable_get_text (GTK_EDITABLE (entry));
 
@@ -2192,17 +2212,8 @@ advanced_dialog_new_hash_from_dialog (GtkWidget *dialog)
 		combo = GTK_WIDGET (gtk_builder_get_object (builder, "tls_auth_mode"));
 		switch (gtk_combo_box_get_active (GTK_COMBO_BOX (combo))) {
 		case TLS_AUTH_MODE_AUTH:
-			widget = GTK_WIDGET (gtk_builder_get_object (builder, "tls_auth_chooser"));
-
-			file = gtk_file_chooser_get_file (GTK_FILE_CHOOSER (widget));
-			if (file)
-				filename = g_file_get_path (file);
-			else
-				filename = NULL;
-			if (filename && filename[0])
-				g_hash_table_insert (hash, NM_OPENVPN3_KEY_TA, g_strdup (filename));
-			g_free (filename);
-			g_clear_object (&file);
+			_dialog_write_file_chooser_path (builder, "tls_auth_chooser",
+			                                 hash, NM_OPENVPN3_KEY_TA);
 
 			widget = GTK_WIDGET (gtk_builder_get_object (builder, "direction_combo"));
 			model = gtk_combo_box_get_model (GTK_COMBO_BOX (widget));
@@ -2217,56 +2228,23 @@ advanced_dialog_new_hash_from_dialog (GtkWidget *dialog)
 			}
 			break;
 		case TLS_AUTH_MODE_CRYPT:
-			widget = GTK_WIDGET (gtk_builder_get_object (builder, "tls_auth_chooser"));
-			file = gtk_file_chooser_get_file (GTK_FILE_CHOOSER (widget));
-			if (file)
-				filename = g_file_get_path (file);
-			else
-				filename = NULL;
-			if (filename && filename[0])
-				g_hash_table_insert (hash, NM_OPENVPN3_KEY_TLS_CRYPT, g_strdup (filename));
-			g_free (filename);
-			g_clear_object (&file);
+			_dialog_write_file_chooser_path (builder, "tls_auth_chooser",
+			                                 hash, NM_OPENVPN3_KEY_TLS_CRYPT);
 			break;
 		case TLS_AUTH_MODE_CRYPT_V2:
-			widget = GTK_WIDGET (gtk_builder_get_object (builder, "tls_auth_chooser"));
-			file = gtk_file_chooser_get_file (GTK_FILE_CHOOSER (widget));
-			if (file)
-				filename = g_file_get_path (file);
-			else
-				filename = NULL;
-			if (filename && filename[0])
-				g_hash_table_insert (hash, NM_OPENVPN3_KEY_TLS_CRYPT_V2, g_strdup (filename));
-			g_free (filename);
-			g_clear_object (&file);
+			_dialog_write_file_chooser_path (builder, "tls_auth_chooser",
+			                                 hash, NM_OPENVPN3_KEY_TLS_CRYPT_V2);
 			break;
 		case TLS_AUTH_MODE_NONE:
 			break;
 		}
 
-		widget = GTK_WIDGET (gtk_builder_get_object (builder, "extra_certs_chooser"));
-		file = gtk_file_chooser_get_file (GTK_FILE_CHOOSER (widget));
-		if (file)
-			filename = g_file_get_path (file);
-		else
-			filename = NULL;
-		if (filename && filename[0])
-			g_hash_table_insert (hash, NM_OPENVPN3_KEY_EXTRA_CERTS, g_strdup (filename));
-		g_free (filename);
-		g_clear_object (&file);
+		_dialog_write_file_chooser_path (builder, "extra_certs_chooser",
+		                                 hash, NM_OPENVPN3_KEY_EXTRA_CERTS);
 	}
 
-	widget = GTK_WIDGET (gtk_builder_get_object (builder, "ping_checkbutton"));
-	if (gtk_check_button_get_active (GTK_CHECK_BUTTON (widget))) {
-		int ping_val;
-
-		widget = GTK_WIDGET (gtk_builder_get_object (builder, "ping_spinbutton"));
-		ping_val = gtk_spin_button_get_value_as_int (GTK_SPIN_BUTTON (widget));
-
-		g_hash_table_insert (hash,
-		                     NM_OPENVPN3_KEY_PING,
-		                     g_strdup_printf ("%d", ping_val));
-	}
+	_dialog_write_optional_spinbutton (builder, "ping_checkbutton", "ping_spinbutton",
+	                                   hash, NM_OPENVPN3_KEY_PING);
 
 	widget = GTK_WIDGET (gtk_builder_get_object (builder, "ping_exit_restart_checkbutton"));
 	if (gtk_check_button_get_active (GTK_CHECK_BUTTON (widget))) {
@@ -2286,36 +2264,20 @@ advanced_dialog_new_hash_from_dialog (GtkWidget *dialog)
 	}
 
 	/* max routes */
-	widget = GTK_WIDGET (gtk_builder_get_object (builder, "max_routes_checkbutton"));
-	if (gtk_check_button_get_active (GTK_CHECK_BUTTON (widget))) {
-		int max_routes;
-
-		widget = GTK_WIDGET (gtk_builder_get_object (builder, "max_routes_spinbutton"));
-		max_routes = gtk_spin_button_get_value_as_int (GTK_SPIN_BUTTON (widget));
-		g_hash_table_insert (hash, NM_OPENVPN3_KEY_MAX_ROUTES, g_strdup_printf ("%d", max_routes));
-	}
+	_dialog_write_optional_spinbutton (builder, "max_routes_checkbutton", "max_routes_spinbutton",
+	                                   hash, NM_OPENVPN3_KEY_MAX_ROUTES);
 
 	/* MTU discovery */
 	widget = GTK_WIDGET (gtk_builder_get_object (builder, "mtu_disc_checkbutton"));
 	if (gtk_check_button_get_active (GTK_CHECK_BUTTON (widget))) {
-		char *val = NULL;
+		static const char *const mtu_disc_values[] = { "no", "maybe", "yes" };
+		int idx;
 
 		combo = GTK_WIDGET (gtk_builder_get_object (builder, "mtu_disc_combo"));
-		switch (gtk_combo_box_get_active (GTK_COMBO_BOX (combo))) {
-		case 0:
-			val = "no";
-			break;
-		case 1:
-			val = "maybe";
-			break;
-		case 2:
-			val = "yes";
-			break;
-		}
-		if (val) {
-			g_hash_table_insert (hash,
-			                     NM_OPENVPN3_KEY_MTU_DISC,
-			                     g_strdup (val));
+		idx = gtk_combo_box_get_active (GTK_COMBO_BOX (combo));
+		if (idx >= 0 && (gsize) idx < G_N_ELEMENTS (mtu_disc_values)) {
+			g_hash_table_insert (hash, NM_OPENVPN3_KEY_MTU_DISC,
+			                     g_strdup (mtu_disc_values[idx]));
 		}
 	}
 
