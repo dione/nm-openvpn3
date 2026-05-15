@@ -349,6 +349,170 @@ ovpn3_session_unsubscribe (Ovpn3Client *self, guint subscription_id)
 	g_dbus_connection_signal_unsubscribe (self->bus, subscription_id);
 }
 
+void
+ovpn3_input_slot_free (Ovpn3InputSlot *slot)
+{
+	if (!slot)
+		return;
+	g_free (slot->name);
+	g_free (slot->description);
+	g_free (slot);
+}
+
+typedef struct {
+	Ovpn3AttentionRequiredCb cb;
+	gpointer                 user_data;
+} AttentionSubData;
+
+static void
+attention_signal_cb (GDBusConnection *conn,
+                     const gchar     *sender,
+                     const gchar     *path,
+                     const gchar     *iface,
+                     const gchar     *signal_name,
+                     GVariant        *parameters,
+                     gpointer         user_data)
+{
+	AttentionSubData *d = user_data;
+	guint32 type = 0, group = 0;
+	const gchar *msg = NULL;
+
+	(void) conn;
+	(void) sender;
+	(void) path;
+	(void) iface;
+	if (g_strcmp0 (signal_name, "AttentionRequired") != 0)
+		return;
+	g_variant_get (parameters, "(uu&s)", &type, &group, &msg);
+	d->cb (type, group, msg, d->user_data);
+}
+
+guint
+ovpn3_session_subscribe_attention (Ovpn3Client              *self,
+                                   const gchar              *session_path,
+                                   Ovpn3AttentionRequiredCb  cb,
+                                   gpointer                  user_data,
+                                   GError                  **error)
+{
+	(void) error;
+	AttentionSubData *d = g_new0 (AttentionSubData, 1);
+	d->cb        = cb;
+	d->user_data = user_data;
+
+	return g_dbus_connection_signal_subscribe (
+		self->bus,
+		NULL,
+		OVPN3_IFACE_SESSIONS,
+		"AttentionRequired",
+		session_path,
+		NULL,
+		G_DBUS_SIGNAL_FLAGS_NONE,
+		attention_signal_cb, d, g_free);
+}
+
+GSList *
+ovpn3_session_fetch_input_slots (Ovpn3Client *self,
+                                 const gchar *session_path,
+                                 GError     **error)
+{
+	g_return_val_if_fail (self != NULL, NULL);
+	g_return_val_if_fail (session_path != NULL, NULL);
+
+	/* 1) UserInputQueueGetTypeGroup → list of (type, group) pairs. */
+	g_autoptr (GVariant) tg = g_dbus_connection_call_sync (
+		self->bus, OVPN3_BUS_SESSIONS, session_path,
+		OVPN3_IFACE_SESSIONS, "UserInputQueueGetTypeGroup",
+		NULL,
+		G_VARIANT_TYPE ("(a(uu))"),
+		G_DBUS_CALL_FLAGS_NONE, -1, NULL, error);
+	if (!tg)
+		return NULL;
+
+	GSList *out = NULL;
+
+	g_autoptr (GVariant) pairs = g_variant_get_child_value (tg, 0);
+	GVariantIter pair_iter;
+	g_variant_iter_init (&pair_iter, pairs);
+	guint32 type, group;
+	while (g_variant_iter_loop (&pair_iter, "(uu)", &type, &group)) {
+		/* 2) UserInputQueueCheck(type, group) → list of slot indexes. */
+		g_autoptr (GError) ce = NULL;
+		g_autoptr (GVariant) chk = g_dbus_connection_call_sync (
+			self->bus, OVPN3_BUS_SESSIONS, session_path,
+			OVPN3_IFACE_SESSIONS, "UserInputQueueCheck",
+			g_variant_new ("(uu)", type, group),
+			G_VARIANT_TYPE ("(au)"),
+			G_DBUS_CALL_FLAGS_NONE, -1, NULL, &ce);
+		if (!chk) {
+			ovpn3_trace ("UserInputQueueCheck(%u,%u) failed: %s",
+			             type, group,
+			             ce ? ce->message : "(unknown)");
+			continue;
+		}
+
+		g_autoptr (GVariant) ids = g_variant_get_child_value (chk, 0);
+		GVariantIter id_iter;
+		g_variant_iter_init (&id_iter, ids);
+		guint32 id;
+		while (g_variant_iter_loop (&id_iter, "u", &id)) {
+			/* 3) UserInputQueueFetch(type, group, id) → slot details. */
+			g_autoptr (GError) fe = NULL;
+			g_autoptr (GVariant) f = g_dbus_connection_call_sync (
+				self->bus, OVPN3_BUS_SESSIONS, session_path,
+				OVPN3_IFACE_SESSIONS, "UserInputQueueFetch",
+				g_variant_new ("(uuu)", type, group, id),
+				G_VARIANT_TYPE ("(uuussb)"),
+				G_DBUS_CALL_FLAGS_NONE, -1, NULL, &fe);
+			if (!f) {
+				ovpn3_trace ("UserInputQueueFetch(%u,%u,%u) failed: %s",
+				             type, group, id,
+				             fe ? fe->message : "(unknown)");
+				continue;
+			}
+
+			guint32 r_type, r_group, r_id;
+			const gchar *r_name = NULL, *r_desc = NULL;
+			gboolean r_hidden = FALSE;
+			g_variant_get (f, "(uuu&s&sb)",
+			               &r_type, &r_group, &r_id,
+			               &r_name, &r_desc, &r_hidden);
+
+			Ovpn3InputSlot *slot = g_new0 (Ovpn3InputSlot, 1);
+			slot->type         = r_type;
+			slot->group        = r_group;
+			slot->id           = r_id;
+			slot->name         = g_strdup (r_name);
+			slot->description  = g_strdup (r_desc);
+			slot->hidden_input = r_hidden;
+			out = g_slist_append (out, slot);
+		}
+	}
+
+	return out;
+}
+
+gboolean
+ovpn3_session_provide_input (Ovpn3Client *self,
+                             const gchar *session_path,
+                             guint32      type,
+                             guint32      group,
+                             guint32      id,
+                             const gchar *value,
+                             GError     **error)
+{
+	g_return_val_if_fail (self != NULL, FALSE);
+	g_return_val_if_fail (session_path != NULL, FALSE);
+	g_return_val_if_fail (value != NULL, FALSE);
+
+	g_autoptr (GVariant) r = g_dbus_connection_call_sync (
+		self->bus, OVPN3_BUS_SESSIONS, session_path,
+		OVPN3_IFACE_SESSIONS, "UserInputProvide",
+		g_variant_new ("(uuus)", type, group, id, value),
+		NULL,
+		G_DBUS_CALL_FLAGS_NONE, -1, NULL, error);
+	return r != NULL;
+}
+
 gchar *
 ovpn3_session_get_device_name (Ovpn3Client *self,
                                const gchar *session_path,

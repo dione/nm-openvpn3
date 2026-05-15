@@ -36,6 +36,52 @@ gchar *ovpn3_new_tunnel (Ovpn3Client *self,
                          const gchar *config_path,
                          GError     **error);
 
+/* User-input slot fetched from the session's UserInputQueue.  openvpn3
+ * identifies prompts by (type, group, id) tuples; @name and @description
+ * are display strings; @hidden_input=TRUE means the value should be masked
+ * (passwords).  Caller frees with ovpn3_input_slot_free(). */
+typedef struct {
+	guint32   type;
+	guint32   group;
+	guint32   id;
+	gchar    *name;
+	gchar    *description;
+	gboolean  hidden_input;
+} Ovpn3InputSlot;
+
+void ovpn3_input_slot_free (Ovpn3InputSlot *slot);
+
+typedef void (*Ovpn3AttentionRequiredCb) (guint32      type,
+                                          guint32      group,
+                                          const gchar *message,
+                                          gpointer     user_data);
+
+/* Subscribe to AttentionRequired signal on @session_path.  Returns
+ * subscription id (pass to ovpn3_session_unsubscribe). */
+guint ovpn3_session_subscribe_attention (Ovpn3Client              *self,
+                                         const gchar              *session_path,
+                                         Ovpn3AttentionRequiredCb  cb,
+                                         gpointer                  user_data,
+                                         GError                  **error);
+
+/* Enumerate all pending input slots on @session_path.  Walks
+ * UserInputQueueGetTypeGroup → UserInputQueueCheck → UserInputQueueFetch.
+ * Returns a GSList of Ovpn3InputSlot* (free with
+ * g_slist_free_full(slist, (GDestroyNotify) ovpn3_input_slot_free)) or
+ * NULL if the queue is empty (which is a valid state, not an error). */
+GSList *ovpn3_session_fetch_input_slots (Ovpn3Client *self,
+                                         const gchar *session_path,
+                                         GError     **error);
+
+/* Push a value into a specific (type, group, id) slot via UserInputProvide. */
+gboolean ovpn3_session_provide_input (Ovpn3Client *self,
+                                      const gchar *session_path,
+                                      guint32      type,
+                                      guint32      group,
+                                      guint32      id,
+                                      const gchar *value,
+                                      GError     **error);
+
 /* Set a boolean override on @config_path via
  * net.openvpn.v3.configuration.SetOverride(s name, v value).  Used to push
  * UI-driven flags (route-nopull, force-default-gateway, block-ipv6,

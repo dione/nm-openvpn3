@@ -109,12 +109,20 @@ typedef struct {
 	gchar       *session_path;
 	gchar       *config_path;
 	guint        status_sub_id;
+	guint        attention_sub_id;  /* AttentionRequired signal (Plan 2) */
 	guint        poll_timer_id;
 	guint        poll_ticks;
 	gboolean     ip4_emitted;     /* TRUE after first STARTED transition; gate Ip4Config re-emit
 	                                 and switches poll cadence to watchdog mode */
 	GMainLoop   *wait_loop;
 	int          wait_state;    /* most recent ovpn3_status_to_nm_state result */
+
+	/* Plan 2: most recent NMConnection (weak ref to its s_vpn) and the slot
+	 * list fetched in response to the last AttentionRequired signal.
+	 * real_new_secrets walks the list pushing each slot's value back to
+	 * openvpn3 via UserInputProvide. */
+	NMConnection *current_connection;
+	GSList       *pending_slots;   /* Ovpn3InputSlot* — owned */
 } NMOpenvpn3PluginPrivate;
 
 G_DEFINE_TYPE (NMOpenvpn3Plugin, nm_openvpn3_plugin, NM_TYPE_VPN_SERVICE_PLUGIN)
@@ -214,6 +222,8 @@ check_need_secrets (NMSettingVpn *s_vpn, gboolean *need_secrets)
 	return ctype;
 }
 
+static void clear_pending_slots (NMOpenvpn3PluginPrivate *priv);
+
 static gboolean
 real_disconnect (NMVpnServicePlugin *plugin, GError **error)
 {
@@ -233,11 +243,17 @@ real_disconnect (NMVpnServicePlugin *plugin, GError **error)
 		ovpn3_session_unsubscribe (priv->ovpn3, priv->status_sub_id);
 		priv->status_sub_id = 0;
 	}
+	if (priv->attention_sub_id) {
+		ovpn3_session_unsubscribe (priv->ovpn3, priv->attention_sub_id);
+		priv->attention_sub_id = 0;
+	}
 	if (priv->poll_timer_id) {
 		g_source_remove (priv->poll_timer_id);
 		priv->poll_timer_id = 0;
 	}
 	priv->ip4_emitted = FALSE;
+	clear_pending_slots (priv);
+	g_clear_object (&priv->current_connection);
 	g_clear_pointer (&priv->session_path, g_free);
 	g_clear_pointer (&priv->config_path, g_free);
 
@@ -472,6 +488,149 @@ emit_started_ip4_config (NMOpenvpn3Plugin *self)
 	priv->poll_timer_id = g_timeout_add_seconds (5, poll_status_cb, self);
 }
 
+/* Map an openvpn3 input slot name (e.g. "password", "static_challenge") to
+ * the NM vpn-secrets key NM uses when popping the inline auth prompt.  The
+ * mapping is heuristic because openvpn3 has more slot kinds than NM's
+ * upstream key set; unknown names fall back to PASSWORD so the user still
+ * gets a generic prompt. */
+static const char *
+slot_name_to_vpn_key (const Ovpn3InputSlot *slot)
+{
+	if (!slot || !slot->name)
+		return NM_OPENVPN3_KEY_PASSWORD;
+	if (g_strcmp0 (slot->name, "username") == 0)
+		return NM_OPENVPN3_KEY_USERNAME;
+	if (g_strcmp0 (slot->name, "password") == 0)
+		return NM_OPENVPN3_KEY_PASSWORD;
+	if (strstr (slot->name, "challenge") || strstr (slot->name, "response"))
+		return NM_OPENVPN3_KEY_CHALLENGE_RESPONSE;
+	if (strstr (slot->name, "private_key") || strstr (slot->name, "key_pass"))
+		return NM_OPENVPN3_KEY_CERTPASS;
+	if (strstr (slot->name, "http_proxy_user"))
+		return NM_OPENVPN3_KEY_HTTP_PROXY_USERNAME;
+	if (strstr (slot->name, "http_proxy_pass"))
+		return NM_OPENVPN3_KEY_HTTP_PROXY_PASSWORD;
+	return NM_OPENVPN3_KEY_PASSWORD;
+}
+
+static void
+clear_pending_slots (NMOpenvpn3PluginPrivate *priv)
+{
+	g_slist_free_full (priv->pending_slots,
+	                   (GDestroyNotify) ovpn3_input_slot_free);
+	priv->pending_slots = NULL;
+}
+
+/* Pre-provide slots that have an obvious value already stored in the
+ * connection (username from vpn.data, persistent password from
+ * vpn.secrets) — saves a round-trip through NM's secret dialog when the
+ * user already saved their credentials.  Returns the subset of slots that
+ * still need NM to prompt the user. */
+static GSList *
+auto_provide_known_slots (NMOpenvpn3Plugin *self, GSList *slots)
+{
+	NMOpenvpn3PluginPrivate *priv = NM_OPENVPN3_PLUGIN_GET_PRIVATE (self);
+	NMSettingVpn *s_vpn = priv->current_connection
+		? nm_connection_get_setting_vpn (priv->current_connection) : NULL;
+	GSList *still_needed = NULL;
+
+	for (GSList *l = slots; l; l = l->next) {
+		Ovpn3InputSlot *slot = l->data;
+		const char *vkey = slot_name_to_vpn_key (slot);
+		const char *value = NULL;
+
+		if (s_vpn) {
+			if (nm_streq0 (vkey, NM_OPENVPN3_KEY_USERNAME)) {
+				value = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_USERNAME);
+			} else {
+				value = nm_setting_vpn_get_secret (s_vpn, vkey);
+			}
+		}
+
+		if (value && *value) {
+			g_autoptr (GError) pe = NULL;
+			if (!ovpn3_session_provide_input (priv->ovpn3, priv->session_path,
+			                                  slot->type, slot->group, slot->id,
+			                                  value, &pe)) {
+				_LOGW ("auto-ProvideInput(%s) failed: %s",
+				       slot->name, pe ? pe->message : "(unknown)");
+				still_needed = g_slist_append (still_needed, slot);
+			} else {
+				ovpn3_trace ("auto-ProvideInput(%s) ok", slot->name);
+				ovpn3_input_slot_free (slot);
+			}
+		} else {
+			still_needed = g_slist_append (still_needed, slot);
+		}
+	}
+	g_slist_free (slots);
+	return still_needed;
+}
+
+static void
+attention_required_cb (guint32      type,
+                       guint32      group,
+                       const gchar *msg,
+                       gpointer     user_data)
+{
+	NMOpenvpn3Plugin *self = NM_OPENVPN3_PLUGIN (user_data);
+	NMOpenvpn3PluginPrivate *priv = NM_OPENVPN3_PLUGIN_GET_PRIVATE (self);
+	NMVpnServicePlugin *plugin = (NMVpnServicePlugin *) self;
+
+	ovpn3_trace ("AttentionRequired: type=%u group=%u msg='%s'",
+	             type, group, msg ?: "");
+
+	if (!priv->session_path) {
+		ovpn3_trace ("AttentionRequired: no session_path, ignoring");
+		return;
+	}
+
+	/* Fetch every pending slot (across all type/group pairs, not just
+	 * the one named in this signal — openvpn3 may have queued multiples). */
+	g_autoptr (GError) fe = NULL;
+	GSList *slots = ovpn3_session_fetch_input_slots (priv->ovpn3,
+	                                                 priv->session_path,
+	                                                 &fe);
+	if (fe) {
+		_LOGW ("FetchInputSlots failed: %s", fe->message);
+		return;
+	}
+	if (!slots) {
+		ovpn3_trace ("AttentionRequired: queue empty, nothing to ask for");
+		return;
+	}
+
+	/* Auto-provide whatever the connection already has stored. */
+	slots = auto_provide_known_slots (self, slots);
+	if (!slots) {
+		ovpn3_trace ("AttentionRequired: all slots auto-provided");
+		return;
+	}
+
+	/* Stash the remainder so real_new_secrets can fulfil them. */
+	clear_pending_slots (priv);
+	priv->pending_slots = slots;
+
+	/* Build a hint array for NM.  NM_VPN_PLUGIN_SECRET_HINT_X_VPN_MESSAGE
+	 * (string "x-vpn-message:<text>") lets us pass a human description,
+	 * the remaining entries are vpn-secrets keys NM should prompt for. */
+	GPtrArray *hints = g_ptr_array_new_with_free_func (g_free);
+	if (msg && *msg)
+		g_ptr_array_add (hints, g_strdup_printf ("x-vpn-message:%s", msg));
+	for (GSList *l = priv->pending_slots; l; l = l->next) {
+		Ovpn3InputSlot *slot = l->data;
+		g_ptr_array_add (hints, g_strdup (slot_name_to_vpn_key (slot)));
+	}
+	g_ptr_array_add (hints, NULL);
+
+	const char *prompt = (msg && *msg) ? msg
+	                                   : _("OpenVPN 3 needs authentication");
+	nm_vpn_service_plugin_secrets_required (plugin,
+	                                        prompt,
+	                                        (const char **) hints->pdata);
+	g_ptr_array_free (hints, TRUE);
+}
+
 /* Dispatch a (maj, min, msg) status triple to the right post-state action.
  * Invoked from BOTH the StatusChange D-Bus signal callback (fires within
  * milliseconds of the openvpn3 backend updating its state) and the polling
@@ -579,6 +738,11 @@ real_connect (NMVpnServicePlugin *plugin,
 	g_autofree gchar *profile = NULL;
 	const gchar *id;
 
+	/* Keep a reference to the connection so the AttentionRequired callback
+	 * can auto-provide username / saved secrets. */
+	g_clear_object (&priv->current_connection);
+	priv->current_connection = g_object_ref (connection);
+
 	if (!priv->ovpn3) {
 		priv->ovpn3 = ovpn3_client_new (error);
 		if (!priv->ovpn3)
@@ -650,6 +814,23 @@ real_connect (NMVpnServicePlugin *plugin,
 			             sub_err ? sub_err->message : "(unknown)");
 		} else {
 			ovpn3_trace ("StatusChange subscribed sub_id=%u", priv->status_sub_id);
+		}
+	}
+
+	/* Subscribe to AttentionRequired so password / 2FA prompts trigger an
+	 * NM inline auth dialog via real_new_secrets.  Best-effort: a failure
+	 * here only breaks interactive auth, the rest of the flow continues. */
+	{
+		g_autoptr (GError) sub_err = NULL;
+		priv->attention_sub_id = ovpn3_session_subscribe_attention (
+			priv->ovpn3, priv->session_path,
+			attention_required_cb, self, &sub_err);
+		if (!priv->attention_sub_id) {
+			ovpn3_trace ("AttentionRequired subscribe failed: %s",
+			             sub_err ? sub_err->message : "(unknown)");
+		} else {
+			ovpn3_trace ("AttentionRequired subscribed sub_id=%u",
+			             priv->attention_sub_id);
 		}
 	}
 
@@ -801,12 +982,71 @@ real_new_secrets (NMVpnServicePlugin *base_plugin,
                   NMConnection *connection,
                   GError **error)
 {
-	/* TODO Plan 2: feed AttentionRequired / UserInputQueue prompts back to NM.
-	 * In the current D-Bus proxy architecture the openvpn3 backend handles
-	 * its own challenge/response loop, so this hook has nothing to do yet. */
-	(void) base_plugin;
-	(void) connection;
-	(void) error;
+	NMOpenvpn3Plugin *self = NM_OPENVPN3_PLUGIN (base_plugin);
+	NMOpenvpn3PluginPrivate *priv = NM_OPENVPN3_PLUGIN_GET_PRIVATE (self);
+	NMSettingVpn *s_vpn = nm_connection_get_setting_vpn (connection);
+
+	if (!s_vpn) {
+		g_set_error_literal (error, NM_VPN_PLUGIN_ERROR,
+		                     NM_VPN_PLUGIN_ERROR_INVALID_CONNECTION,
+		                     _("Could not process the request because the VPN connection settings were invalid."));
+		return FALSE;
+	}
+
+	if (!priv->pending_slots) {
+		/* Nothing was queued by AttentionRequired — NM may have called
+		 * us speculatively after a connect retry.  Nothing to do. */
+		ovpn3_trace ("new_secrets: no pending slots, nop");
+		return TRUE;
+	}
+
+	/* Refresh our connection ref so future AttentionRequired bursts pick
+	 * up any newly-persisted credentials. */
+	g_clear_object (&priv->current_connection);
+	priv->current_connection = g_object_ref (connection);
+
+	guint sent = 0, missing = 0;
+	for (GSList *l = priv->pending_slots; l; l = l->next) {
+		Ovpn3InputSlot *slot = l->data;
+		const char *vkey = slot_name_to_vpn_key (slot);
+		const char *value = NULL;
+
+		if (nm_streq0 (vkey, NM_OPENVPN3_KEY_USERNAME))
+			value = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_USERNAME);
+		else
+			value = nm_setting_vpn_get_secret (s_vpn, vkey);
+
+		if (!value || !*value) {
+			ovpn3_trace ("new_secrets: slot '%s' has no value in vpn.secrets[%s]",
+			             slot->name, vkey);
+			missing++;
+			continue;
+		}
+
+		g_autoptr (GError) pe = NULL;
+		if (!ovpn3_session_provide_input (priv->ovpn3, priv->session_path,
+		                                  slot->type, slot->group, slot->id,
+		                                  value, &pe)) {
+			_LOGW ("ProvideInput(%s) failed: %s",
+			       slot->name, pe ? pe->message : "(unknown)");
+			missing++;
+		} else {
+			ovpn3_trace ("ProvideInput(%s) ok", slot->name);
+			sent++;
+		}
+	}
+
+	clear_pending_slots (priv);
+
+	if (missing > 0) {
+		g_set_error (error, NM_VPN_PLUGIN_ERROR,
+		             NM_VPN_PLUGIN_ERROR_FAILED,
+		             _("Could not provide %u authentication slot(s)."),
+		             missing);
+		return FALSE;
+	}
+
+	ovpn3_trace ("new_secrets: provided %u slots", sent);
 	return TRUE;
 }
 
@@ -833,6 +1073,12 @@ dispose (GObject *object)
 		ovpn3_session_unsubscribe (priv->ovpn3, priv->status_sub_id);
 		priv->status_sub_id = 0;
 	}
+	if (priv->attention_sub_id && priv->ovpn3) {
+		ovpn3_session_unsubscribe (priv->ovpn3, priv->attention_sub_id);
+		priv->attention_sub_id = 0;
+	}
+	clear_pending_slots (priv);
+	g_clear_object (&priv->current_connection);
 	g_clear_pointer (&priv->session_path, g_free);
 	g_clear_pointer (&priv->config_path, g_free);
 	if (priv->ovpn3) {
