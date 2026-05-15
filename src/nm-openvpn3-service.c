@@ -241,6 +241,22 @@ clear_signal_sub (Ovpn3Client *client, guint *sub_id)
 	}
 }
 
+/* Drop every per-session resource: signal subs, poll timer, pending slot
+ * queue, cached connection ref, and the two D-Bus paths.  Shared by
+ * real_disconnect (after telling openvpn3 to tear down) and dispose. */
+static void
+cleanup_session_state (NMOpenvpn3PluginPrivate *priv)
+{
+	clear_signal_sub (priv->ovpn3, &priv->status_sub_id);
+	clear_signal_sub (priv->ovpn3, &priv->attention_sub_id);
+	nm_clear_g_source (&priv->poll_timer_id);
+	priv->ip4_emitted = FALSE;
+	clear_pending_slots (priv);
+	g_clear_object (&priv->current_connection);
+	g_clear_pointer (&priv->session_path, g_free);
+	g_clear_pointer (&priv->config_path, g_free);
+}
+
 static gboolean
 real_disconnect (NMVpnServicePlugin *plugin, GError **error)
 {
@@ -256,15 +272,7 @@ real_disconnect (NMVpnServicePlugin *plugin, GError **error)
 		g_clear_error (&local);
 	}
 
-	clear_signal_sub (priv->ovpn3, &priv->status_sub_id);
-	clear_signal_sub (priv->ovpn3, &priv->attention_sub_id);
-	nm_clear_g_source (&priv->poll_timer_id);
-	priv->ip4_emitted = FALSE;
-	clear_pending_slots (priv);
-	g_clear_object (&priv->current_connection);
-	g_clear_pointer (&priv->session_path, g_free);
-	g_clear_pointer (&priv->config_path, g_free);
-
+	cleanup_session_state (priv);
 	return TRUE;
 }
 
@@ -272,6 +280,182 @@ real_disconnect (NMVpnServicePlugin *plugin, GError **error)
 #define POLL_MAX_TICKS   120  /* 120 * 500 ms = 60 s */
 
 static gboolean poll_status_cb (gpointer user_data);
+
+/* Walk getifaddrs() looking for the AF_INET entry on @tundev.  On success
+ * fills @addr_be / @prefix from the kernel (PtP peer pulled into @peer_be
+ * for trace logging) and returns TRUE.  On miss/failure leaves outputs
+ * untouched and returns FALSE.  Output BE values are network byte order. */
+static gboolean
+lookup_tun_ipv4 (const gchar *tundev,
+                 guint32     *addr_be,
+                 guint32     *peer_be,
+                 guint32     *prefix)
+{
+	struct ifaddrs *ifap = NULL;
+	gboolean found = FALSE;
+
+	if (getifaddrs (&ifap) != 0)
+		return FALSE;
+
+	for (struct ifaddrs *p = ifap; p; p = p->ifa_next) {
+		if (!p->ifa_addr || p->ifa_addr->sa_family != AF_INET)
+			continue;
+		if (g_strcmp0 (p->ifa_name, tundev) != 0)
+			continue;
+		*addr_be = ((struct sockaddr_in *) p->ifa_addr)->sin_addr.s_addr;
+		if (p->ifa_dstaddr && p->ifa_dstaddr->sa_family == AF_INET)
+			*peer_be = ((struct sockaddr_in *) p->ifa_dstaddr)->sin_addr.s_addr;
+		if (p->ifa_netmask && p->ifa_netmask->sa_family == AF_INET) {
+			guint32 mask_be = ((struct sockaddr_in *) p->ifa_netmask)->sin_addr.s_addr;
+			*prefix = __builtin_popcount (mask_be);
+		}
+		found = TRUE;
+		break;
+	}
+	freeifaddrs (ifap);
+	return found;
+}
+
+/* Query openvpn3 for the remote endpoint host and parse to a BE uint32.
+ * 0 on miss / parse failure (NM treats 0 as "no ext-gateway hint"). */
+static guint32
+lookup_ext_gateway_be (Ovpn3Client *ovpn3, const gchar *session_path)
+{
+	g_autofree gchar *ext_host = NULL;
+	struct in_addr ia;
+
+	if (!ovpn3_session_get_connected_to (ovpn3, session_path,
+	                                     NULL, &ext_host, NULL, NULL))
+		return 0;
+	if (!ext_host || !*ext_host)
+		return 0;
+	if (!inet_aton (ext_host, &ia))
+		return 0;
+	ovpn3_trace ("STARTED branch: ext_host='%s'", ext_host);
+	return ia.s_addr;
+}
+
+/* Build the SetConfig vardict and hand it to NM.  This MUST happen before
+ * SetIp4Config — without HAS_IP4=TRUE here, NM ignores the IP4 config. */
+static void
+emit_set_config (NMVpnServicePlugin *plugin,
+                 const gchar        *tundev,
+                 guint32             ext_gw_be,
+                 gboolean            have_ip)
+{
+	GVariantBuilder cfgb;
+
+	g_variant_builder_init (&cfgb, G_VARIANT_TYPE_VARDICT);
+	g_variant_builder_add (&cfgb, "{sv}",
+	                       NM_VPN_PLUGIN_CONFIG_TUNDEV,
+	                       g_variant_new_string (tundev));
+	if (ext_gw_be != 0)
+		g_variant_builder_add (&cfgb, "{sv}",
+		                       NM_VPN_PLUGIN_CONFIG_EXT_GATEWAY,
+		                       g_variant_new_uint32 (ext_gw_be));
+	g_variant_builder_add (&cfgb, "{sv}",
+	                       NM_VPN_PLUGIN_CONFIG_HAS_IP4,
+	                       g_variant_new_boolean (have_ip));
+	g_variant_builder_add (&cfgb, "{sv}",
+	                       NM_VPN_PLUGIN_CONFIG_HAS_IP6,
+	                       g_variant_new_boolean (FALSE));
+	g_variant_builder_add (&cfgb, "{sv}",
+	                       NM_VPN_PLUGIN_CAN_PERSIST,
+	                       g_variant_new_boolean (FALSE));
+	nm_vpn_service_plugin_set_config (plugin, g_variant_builder_end (&cfgb));
+}
+
+/* Pack the DNS server list into a "au" (network-byte-order uint32 array)
+ * and add it under the NM_VPN_PLUGIN_IP4_CONFIG_DNS key on @b. */
+static void
+add_dns_servers (GVariantBuilder *b, GStrv dns_servers)
+{
+	GVariantBuilder dnsb;
+
+	if (!dns_servers || !dns_servers[0])
+		return;
+
+	g_variant_builder_init (&dnsb, G_VARIANT_TYPE ("au"));
+	for (gchar **p = dns_servers; *p; p++) {
+		struct in_addr ia;
+		if (inet_aton (*p, &ia))
+			g_variant_builder_add (&dnsb, "u", ia.s_addr);
+		else
+			ovpn3_trace ("DNS skip non-IPv4 entry '%s'", *p);
+	}
+	g_variant_builder_add (b, "{sv}",
+	                       NM_VPN_PLUGIN_IP4_CONFIG_DNS,
+	                       g_variant_builder_end (&dnsb));
+}
+
+/* Pack DNS search domains into a "as" array on @b. */
+static void
+add_dns_search (GVariantBuilder *b, GStrv dns_search)
+{
+	GVariantBuilder dsb;
+
+	if (!dns_search || !dns_search[0])
+		return;
+
+	g_variant_builder_init (&dsb, G_VARIANT_TYPE ("as"));
+	for (gchar **p = dns_search; *p; p++)
+		g_variant_builder_add (&dsb, "s", *p);
+	g_variant_builder_add (b, "{sv}",
+	                       NM_VPN_PLUGIN_IP4_CONFIG_DOMAINS,
+	                       g_variant_builder_end (&dsb));
+}
+
+/* Look for a 0.0.0.0/0 route on the tun device.  Absence implies the
+ * profile has no redirect-gateway flag → split tunnel intent. */
+static gboolean
+routes_have_default (GArray *routes)
+{
+	if (!routes)
+		return FALSE;
+	for (guint i = 0; i < routes->len; i++) {
+		Ovpn3Route r = g_array_index (routes, Ovpn3Route, i);
+		if (r.prefix == 0 && r.dest_be == 0)
+			return TRUE;
+	}
+	return FALSE;
+}
+
+/* Pack kernel routes into "aau" and add under IP4_CONFIG_ROUTES on @b.
+ * Skips the on-link route NM derives from ADDRESS/PREFIX. */
+static void
+add_routes (GVariantBuilder *b, GArray *routes, guint32 addr_be, guint32 prefix)
+{
+	GVariantBuilder rb;
+	guint emitted = 0;
+
+	if (!routes || routes->len == 0)
+		return;
+
+	g_variant_builder_init (&rb, G_VARIANT_TYPE ("aau"));
+	for (guint i = 0; i < routes->len; i++) {
+		Ovpn3Route r = g_array_index (routes, Ovpn3Route, i);
+		const guint32 mask = mask_for_prefix (prefix);
+
+		if (r.prefix == prefix
+		    && (r.dest_be & mask) == (addr_be & mask)
+		    && r.next_hop_be == 0)
+			continue;
+
+		GVariantBuilder one;
+		g_variant_builder_init (&one, G_VARIANT_TYPE ("au"));
+		g_variant_builder_add (&one, "u", r.dest_be);
+		g_variant_builder_add (&one, "u", r.prefix);
+		g_variant_builder_add (&one, "u", r.next_hop_be);
+		g_variant_builder_add (&one, "u", r.metric);
+		g_variant_builder_add_value (&rb, g_variant_builder_end (&one));
+		emitted++;
+	}
+	ovpn3_trace ("routes emitted to NM: %u (of %u parsed)",
+	             emitted, routes->len);
+	g_variant_builder_add (b, "{sv}",
+	                       NM_VPN_PLUGIN_IP4_CONFIG_ROUTES,
+	                       g_variant_builder_end (&rb));
+}
 
 /* Emit the SetConfig + SetIp4Config bundle that flips NM from "activating"
  * to "activated".  Pre: priv->session_path is live and we have seen a
@@ -291,200 +475,87 @@ emit_started_ip4_config (NMOpenvpn3Plugin *self)
 	const gchar *tundev = (dev && *dev) ? dev : "tun0";
 	ovpn3_trace ("STARTED branch: device_name='%s'", tundev);
 
-		/* Pull the IPv4 address openvpn3 already programmed on the tun
-		 * device.  NM requires ADDRESS + PREFIX + INT_GATEWAY to mark
-		 * the VPN as activated; emitting TUNDEV alone is not enough. */
-		guint32 addr_be = 0, peer_be = 0;
-		guint32 prefix = 32;
-		gboolean have_ip = FALSE;
-		struct ifaddrs *ifap = NULL;
-		if (getifaddrs (&ifap) == 0) {
-			for (struct ifaddrs *p = ifap; p; p = p->ifa_next) {
-				if (!p->ifa_addr || p->ifa_addr->sa_family != AF_INET)
-					continue;
-				if (g_strcmp0 (p->ifa_name, tundev) != 0)
-					continue;
-				addr_be = ((struct sockaddr_in *) p->ifa_addr)->sin_addr.s_addr;
-				if (p->ifa_dstaddr && p->ifa_dstaddr->sa_family == AF_INET)
-					peer_be = ((struct sockaddr_in *) p->ifa_dstaddr)->sin_addr.s_addr;
-				if (p->ifa_netmask && p->ifa_netmask->sa_family == AF_INET) {
-					guint32 mask_be = ((struct sockaddr_in *) p->ifa_netmask)->sin_addr.s_addr;
-					prefix = __builtin_popcount (mask_be);
-				}
-				have_ip = TRUE;
-				break;
-			}
-			freeifaddrs (ifap);
-		}
-		ovpn3_trace ("STARTED branch: have_ip=%d addr=0x%08x peer=0x%08x prefix=%u",
-		             have_ip, addr_be, peer_be, prefix);
+	/* Pull the IPv4 address openvpn3 already programmed on the tun
+	 * device.  NM requires ADDRESS + PREFIX + INT_GATEWAY to mark
+	 * the VPN as activated; emitting TUNDEV alone is not enough. */
+	guint32 addr_be = 0, peer_be = 0;
+	guint32 prefix = 32;
+	gboolean have_ip = lookup_tun_ipv4 (tundev, &addr_be, &peer_be, &prefix);
+	ovpn3_trace ("STARTED branch: have_ip=%d addr=0x%08x peer=0x%08x prefix=%u",
+	             have_ip, addr_be, peer_be, prefix);
 
-		/* Read remote VPN endpoint (ext-gateway) so NM keeps a host route
-		 * to it OUTSIDE the tunnel. */
-		g_autofree gchar *ext_host = NULL;
-		guint32 ext_gw_be = 0;
-		if (ovpn3_session_get_connected_to (priv->ovpn3, priv->session_path,
-		                                    NULL, &ext_host, NULL, NULL)
-		    && ext_host && *ext_host) {
-			struct in_addr ia;
-			if (inet_aton (ext_host, &ia))
-				ext_gw_be = ia.s_addr;
-		}
-		ovpn3_trace ("STARTED branch: ext_host='%s' ext_gw=0x%08x",
-		             ext_host ? ext_host : "", ext_gw_be);
+	/* Read remote VPN endpoint (ext-gateway) so NM keeps a host route
+	 * to it OUTSIDE the tunnel. */
+	guint32 ext_gw_be = lookup_ext_gateway_be (priv->ovpn3, priv->session_path);
+	ovpn3_trace ("STARTED branch: ext_gw=0x%08x", ext_gw_be);
 
-		/* Pull DNS + search domains from the openvpn3 netcfg device. */
-		g_autofree gchar *dev_path = ovpn3_session_get_device_path (
-			priv->ovpn3, priv->session_path, NULL);
-		g_auto (GStrv) dns_servers = NULL;
-		g_auto (GStrv) dns_search  = NULL;
-		if (dev_path) {
-			dns_servers = ovpn3_netcfg_get_dns_servers (priv->ovpn3,
-			                                            dev_path, NULL);
-			dns_search  = ovpn3_netcfg_get_dns_search  (priv->ovpn3,
-			                                            dev_path, NULL);
-		}
-		ovpn3_trace ("STARTED branch: dev_path=%s dns_count=%u search_count=%u",
-		             dev_path ? dev_path : "(null)",
-		             dns_servers ? g_strv_length (dns_servers) : 0,
-		             dns_search  ? g_strv_length (dns_search)  : 0);
+	/* Pull DNS + search domains from the openvpn3 netcfg device. */
+	g_autofree gchar *dev_path = ovpn3_session_get_device_path (
+		priv->ovpn3, priv->session_path, NULL);
+	g_auto (GStrv) dns_servers = NULL;
+	g_auto (GStrv) dns_search  = NULL;
+	if (dev_path) {
+		dns_servers = ovpn3_netcfg_get_dns_servers (priv->ovpn3, dev_path, NULL);
+		dns_search  = ovpn3_netcfg_get_dns_search  (priv->ovpn3, dev_path, NULL);
+	}
+	ovpn3_trace ("STARTED branch: dev_path=%s dns_count=%u search_count=%u",
+	             dev_path ? dev_path : "(null)",
+	             dns_servers ? g_strv_length (dns_servers) : 0,
+	             dns_search  ? g_strv_length (dns_search)  : 0);
 
-		/* NM requires SetConfig BEFORE SetIp4Config, declaring HAS_IP4=TRUE
-		 * (otherwise NM does not know to expect any IPv4 config and the
-		 * subsequent SetIp4Config is silently ignored). */
-		GVariantBuilder cfgb;
-		g_variant_builder_init (&cfgb, G_VARIANT_TYPE_VARDICT);
-		g_variant_builder_add (&cfgb, "{sv}",
-		                       NM_VPN_PLUGIN_CONFIG_TUNDEV,
-		                       g_variant_new_string (tundev));
-		if (ext_gw_be != 0)
-			g_variant_builder_add (&cfgb, "{sv}",
-			                       NM_VPN_PLUGIN_CONFIG_EXT_GATEWAY,
-			                       g_variant_new_uint32 (ext_gw_be));
-		g_variant_builder_add (&cfgb, "{sv}",
-		                       NM_VPN_PLUGIN_CONFIG_HAS_IP4,
-		                       g_variant_new_boolean (have_ip));
-		g_variant_builder_add (&cfgb, "{sv}",
-		                       NM_VPN_PLUGIN_CONFIG_HAS_IP6,
-		                       g_variant_new_boolean (FALSE));
-		g_variant_builder_add (&cfgb, "{sv}",
-		                       NM_VPN_PLUGIN_CAN_PERSIST,
-		                       g_variant_new_boolean (FALSE));
-		nm_vpn_service_plugin_set_config (plugin,
-		                                  g_variant_builder_end (&cfgb));
+	emit_set_config (plugin, tundev, ext_gw_be, have_ip);
 
-		GVariantBuilder b;
-		g_variant_builder_init (&b, G_VARIANT_TYPE_VARDICT);
+	GVariantBuilder b;
+	g_variant_builder_init (&b, G_VARIANT_TYPE_VARDICT);
+	g_variant_builder_add (&b, "{sv}",
+	                       NM_VPN_PLUGIN_IP4_CONFIG_TUNDEV,
+	                       g_variant_new_string (tundev));
+	g_variant_builder_add (&b, "{sv}",
+	                       NM_VPN_PLUGIN_IP4_CONFIG_ADDRESS,
+	                       g_variant_new_uint32 (addr_be));
+	g_variant_builder_add (&b, "{sv}",
+	                       NM_VPN_PLUGIN_IP4_CONFIG_PREFIX,
+	                       g_variant_new_uint32 (prefix));
+	/* openvpn3's tun device shows the broadcast address as PtP peer
+	 * (e.g. .255 of a /20).  Pass 0 to let NM skip installing a
+	 * gateway route — kernel already has the on-link route from
+	 * openvpn3's netcfg setup. */
+	g_variant_builder_add (&b, "{sv}",
+	                       NM_VPN_PLUGIN_IP4_CONFIG_INT_GATEWAY,
+	                       g_variant_new_uint32 (0));
+	/* openvpn3 already installed routes via netcfg; tell NM not to
+	 * recompute them. */
+	g_variant_builder_add (&b, "{sv}",
+	                       NM_VPN_PLUGIN_IP4_CONFIG_PRESERVE_ROUTES,
+	                       g_variant_new_boolean (TRUE));
+
+	add_dns_servers (&b, dns_servers);
+	add_dns_search  (&b, dns_search);
+
+	/* Pull installed routes from kernel for our tun device. */
+	g_autoptr (GError) re = NULL;
+	g_autoptr (GArray) routes = ovpn3_read_proc_routes (tundev, &re);
+	ovpn3_trace ("STARTED branch: route_count=%u%s%s",
+	             routes ? routes->len : 0,
+	             re ? " err=" : "",
+	             re ? re->message : "");
+
+	/* Detect openvpn3's split-tunnel intent: if it did NOT install a
+	 * 0.0.0.0/0 route on the tun device, the profile has no
+	 * redirect-gateway flag and the user wants split tunnel.  Tell NM
+	 * to NOT promote the VPN to system default route — without this NM
+	 * unconditionally installs 'default dev tunX' on top of openvpn3's
+	 * per-subnet routes. */
+	if (!routes_have_default (routes)) {
 		g_variant_builder_add (&b, "{sv}",
-		                       NM_VPN_PLUGIN_IP4_CONFIG_TUNDEV,
-		                       g_variant_new_string (tundev));
-		g_variant_builder_add (&b, "{sv}",
-		                       NM_VPN_PLUGIN_IP4_CONFIG_ADDRESS,
-		                       g_variant_new_uint32 (addr_be));
-		g_variant_builder_add (&b, "{sv}",
-		                       NM_VPN_PLUGIN_IP4_CONFIG_PREFIX,
-		                       g_variant_new_uint32 (prefix));
-		/* openvpn3's tun device shows the broadcast address as PtP peer
-		 * (e.g. .255 of a /20).  Pass 0 to let NM skip installing a
-		 * gateway route — kernel already has the on-link route from
-		 * openvpn3's netcfg setup. */
-		g_variant_builder_add (&b, "{sv}",
-		                       NM_VPN_PLUGIN_IP4_CONFIG_INT_GATEWAY,
-		                       g_variant_new_uint32 (0));
-		/* openvpn3 already installed routes via netcfg; tell NM not to
-		 * recompute them. */
-		g_variant_builder_add (&b, "{sv}",
-		                       NM_VPN_PLUGIN_IP4_CONFIG_PRESERVE_ROUTES,
+		                       NM_VPN_PLUGIN_IP4_CONFIG_NEVER_DEFAULT,
 		                       g_variant_new_boolean (TRUE));
+		ovpn3_trace ("split-tunnel: emit never-default=TRUE (no 0.0.0.0/0 on tun)");
+	}
 
-		/* DNS servers: array of guint32 in network byte order. */
-		if (dns_servers && dns_servers[0]) {
-			GVariantBuilder dnsb;
-			g_variant_builder_init (&dnsb, G_VARIANT_TYPE ("au"));
-			for (gchar **p = dns_servers; *p; p++) {
-				struct in_addr ia;
-				if (inet_aton (*p, &ia))
-					g_variant_builder_add (&dnsb, "u", ia.s_addr);
-				else
-					ovpn3_trace ("DNS skip non-IPv4 entry '%s'", *p);
-			}
-			g_variant_builder_add (&b, "{sv}",
-			                       NM_VPN_PLUGIN_IP4_CONFIG_DNS,
-			                       g_variant_builder_end (&dnsb));
-		}
+	add_routes (&b, routes, addr_be, prefix);
 
-		/* DNS search domains: array of strings. */
-		if (dns_search && dns_search[0]) {
-			GVariantBuilder dsb;
-			g_variant_builder_init (&dsb, G_VARIANT_TYPE ("as"));
-			for (gchar **p = dns_search; *p; p++)
-				g_variant_builder_add (&dsb, "s", *p);
-			g_variant_builder_add (&b, "{sv}",
-			                       NM_VPN_PLUGIN_IP4_CONFIG_DOMAINS,
-			                       g_variant_builder_end (&dsb));
-		}
-
-		/* Pull installed routes from kernel for our tun device. */
-		g_autoptr (GError) re = NULL;
-		g_autoptr (GArray) routes = ovpn3_read_proc_routes (tundev, &re);
-		guint n_routes = routes ? routes->len : 0;
-		ovpn3_trace ("STARTED branch: route_count=%u%s%s",
-		             n_routes,
-		             re ? " err=" : "",
-		             re ? re->message : "");
-
-		/* Detect openvpn3's split-tunnel intent: if it did NOT install
-		 * a 0.0.0.0/0 route on the tun device, the profile has no
-		 * redirect-gateway flag and the user wants split tunnel.  Tell
-		 * NM to NOT promote the VPN to system default route — without
-		 * this NM unconditionally installs 'default dev tunX' on top
-		 * of openvpn3's per-subnet routes. */
-		gboolean has_default_route = FALSE;
-		for (guint i = 0; routes && i < routes->len; i++) {
-			Ovpn3Route r = g_array_index (routes, Ovpn3Route, i);
-			if (r.prefix == 0 && r.dest_be == 0) {
-				has_default_route = TRUE;
-				break;
-			}
-		}
-		if (!has_default_route) {
-			g_variant_builder_add (&b, "{sv}",
-			                       NM_VPN_PLUGIN_IP4_CONFIG_NEVER_DEFAULT,
-			                       g_variant_new_boolean (TRUE));
-			ovpn3_trace ("split-tunnel: emit never-default=TRUE (no 0.0.0.0/0 on tun)");
-		}
-
-		if (routes && routes->len > 0) {
-			GVariantBuilder rb;
-			guint emitted = 0;
-			g_variant_builder_init (&rb, G_VARIANT_TYPE ("aau"));
-			for (guint i = 0; i < routes->len; i++) {
-				Ovpn3Route r = g_array_index (routes, Ovpn3Route, i);
-				/* Skip the auto on-link route for the tun's own
-				 * subnet — NM derives it from ADDRESS/PREFIX. */
-				if (r.prefix == prefix
-				    && (r.dest_be & mask_for_prefix (prefix))
-				       == (addr_be & mask_for_prefix (prefix))
-				    && r.next_hop_be == 0)
-					continue;
-				GVariantBuilder one;
-				g_variant_builder_init (&one, G_VARIANT_TYPE ("au"));
-				g_variant_builder_add (&one, "u", r.dest_be);
-				g_variant_builder_add (&one, "u", r.prefix);
-				g_variant_builder_add (&one, "u", r.next_hop_be);
-				g_variant_builder_add (&one, "u", r.metric);
-				g_variant_builder_add_value (&rb, g_variant_builder_end (&one));
-				emitted++;
-			}
-			ovpn3_trace ("routes emitted to NM: %u (of %u parsed)",
-			             emitted, routes->len);
-			g_variant_builder_add (&b, "{sv}",
-			                       NM_VPN_PLUGIN_IP4_CONFIG_ROUTES,
-			                       g_variant_builder_end (&rb));
-		}
-
-	nm_vpn_service_plugin_set_ip4_config (plugin,
-	                                      g_variant_builder_end (&b));
+	nm_vpn_service_plugin_set_ip4_config (plugin, g_variant_builder_end (&b));
 
 	/* Drop the fast-poll cadence, re-arm a 5 s watchdog that checks the
 	 * session is still alive.  When openvpn3 disconnects (either via
@@ -675,12 +746,26 @@ status_change_signal_cb (guint32 maj, guint32 min, const gchar *msg, gpointer us
 	status_handle_state (NM_OPENVPN3_PLUGIN (user_data), maj, min, msg);
 }
 
+/* Tell NM the connect attempt failed, clear the poll timer id (the source
+ * itself is dropped via G_SOURCE_REMOVE by the caller) and return
+ * G_SOURCE_REMOVE so the calling timer callback can return it directly. */
+static gboolean
+poll_fail (NMOpenvpn3Plugin *self)
+{
+	NMOpenvpn3PluginPrivate *priv = NM_OPENVPN3_PLUGIN_GET_PRIVATE (self);
+	NMVpnServicePlugin *plugin = (NMVpnServicePlugin *) self;
+
+	nm_vpn_service_plugin_failure (plugin,
+	                               NM_VPN_PLUGIN_FAILURE_CONNECT_FAILED);
+	priv->poll_timer_id = 0;
+	return G_SOURCE_REMOVE;
+}
+
 static gboolean
 poll_status_cb (gpointer user_data)
 {
 	NMOpenvpn3Plugin *self = NM_OPENVPN3_PLUGIN (user_data);
 	NMOpenvpn3PluginPrivate *priv = NM_OPENVPN3_PLUGIN_GET_PRIVATE (self);
-	NMVpnServicePlugin *plugin = (NMVpnServicePlugin *) self;
 
 	priv->poll_ticks++;
 
@@ -701,17 +786,10 @@ poll_status_cb (gpointer user_data)
 			 * NM the tunnel is gone so it tears the connection down
 			 * instead of showing ACTIVATED with a dead tun. */
 			ovpn3_trace ("session disappeared post-connect; failing to NM");
-			nm_vpn_service_plugin_failure (plugin,
-			                               NM_VPN_PLUGIN_FAILURE_CONNECT_FAILED);
-			priv->poll_timer_id = 0;
-			return G_SOURCE_REMOVE;
+			return poll_fail (self);
 		}
-		if (priv->poll_ticks >= POLL_MAX_TICKS) {
-			nm_vpn_service_plugin_failure (plugin,
-			                               NM_VPN_PLUGIN_FAILURE_CONNECT_FAILED);
-			priv->poll_timer_id = 0;
-			return G_SOURCE_REMOVE;
-		}
+		if (priv->poll_ticks >= POLL_MAX_TICKS)
+			return poll_fail (self);
 		return G_SOURCE_CONTINUE;
 	}
 
@@ -725,13 +803,146 @@ poll_status_cb (gpointer user_data)
 	if (priv->poll_ticks >= POLL_MAX_TICKS) {
 		_LOGW ("status poll timed out after %u ticks (last status %u/%u)",
 		       priv->poll_ticks, maj, min);
-		nm_vpn_service_plugin_failure (plugin,
-		                               NM_VPN_PLUGIN_FAILURE_CONNECT_FAILED);
-		priv->poll_timer_id = 0;
-		return G_SOURCE_REMOVE;
+		return poll_fail (self);
 	}
 
 	return G_SOURCE_CONTINUE;
+}
+
+/* Push UI-toggled SetOverride flags to the freshly imported config.
+ * Each table entry maps a vpn.data key to an openvpn3 override name;
+ * the override is sent only when the vpn.data key is present and
+ * equals "yes" (matches the rest of the plugin's boolean convention).
+ * Best-effort: per-override failures are logged, not propagated. */
+static void
+apply_config_overrides (Ovpn3Client *ovpn3,
+                        const gchar *config_path,
+                        NMConnection *connection)
+{
+	static const struct {
+		const char *vpn_key;
+		const char *ovpn3_name;
+	} override_map[] = {
+		{ NM_OPENVPN3_KEY_OVERRIDE_ROUTE_NOPULL,          "route-nopull" },
+		{ NM_OPENVPN3_KEY_OVERRIDE_FORCE_DEFAULT_GATEWAY, "force-default-gateway" },
+		{ NM_OPENVPN3_KEY_OVERRIDE_BLOCK_IPV6,            "block-ipv6" },
+		{ NM_OPENVPN3_KEY_OVERRIDE_DNS_SETUP_DISABLED,    "dns-setup-disabled" },
+		{ NM_OPENVPN3_KEY_OVERRIDE_DCO,                   "dco" },
+	};
+	NMSettingVpn *s_vpn = nm_connection_get_setting_vpn (connection);
+
+	if (!s_vpn)
+		return;
+
+	for (gsize i = 0; i < G_N_ELEMENTS (override_map); i++) {
+		const char *val = nm_setting_vpn_get_data_item (s_vpn,
+		                                                override_map[i].vpn_key);
+		if (!nm_streq0 (val, "yes"))
+			continue;
+
+		g_autoptr (GError) ov_err = NULL;
+		if (!ovpn3_config_set_override_bool (ovpn3, config_path,
+		                                     override_map[i].ovpn3_name,
+		                                     TRUE, &ov_err)) {
+			_LOGW ("SetOverride(%s) failed: %s",
+			       override_map[i].ovpn3_name,
+			       ov_err ? ov_err->message : "(unknown)");
+		} else {
+			ovpn3_trace ("SetOverride(%s)=TRUE", override_map[i].ovpn3_name);
+		}
+	}
+}
+
+/* Scan /run/user for the lowest non-zero uid (systemd marks active user
+ * sessions with these directories), and grant it sessions-list access.
+ * Called when the NM connection has no explicit user:NAME permission —
+ * service runs as root, so XDG_RUNTIME_DIR points at /run/user/0 and
+ * doesn't help us guess who triggered the NM activation. */
+static void
+grant_access_run_user_fallback (Ovpn3Client *ovpn3, const gchar *session_path)
+{
+	GDir *d = g_dir_open ("/run/user", 0, NULL);
+	const gchar *name;
+	guint32 best_uid = 0;
+
+	if (!d)
+		return;
+
+	while ((name = g_dir_read_name (d)) != NULL) {
+		gchar *endptr = NULL;
+		guint64 v = g_ascii_strtoull (name, &endptr, 10);
+		if (!endptr || *endptr != '\0' || v == 0 || v > G_MAXUINT32)
+			continue;
+		if (best_uid == 0 || v < best_uid)
+			best_uid = (guint32) v;
+	}
+	g_dir_close (d);
+
+	if (best_uid == 0) {
+		ovpn3_trace ("AccessGrant fallback: no non-root uid in /run/user");
+		return;
+	}
+
+	g_autoptr (GError) ag_err = NULL;
+	if (!ovpn3_session_access_grant (ovpn3, session_path, best_uid, &ag_err)) {
+		ovpn3_trace ("AccessGrant fallback uid=%u failed: %s",
+		             best_uid, ag_err ? ag_err->message : "(unknown)");
+	} else {
+		ovpn3_trace ("AccessGrant fallback uid=%u (/run/user scan) ok", best_uid);
+	}
+}
+
+/* Our service runs as root; without explicit ACL entries, every other
+ * UID (incl. the user who triggered the NM activation) gets a blank
+ * `openvpn3 sessions-list` view.  public_access=TRUE authorises the
+ * management methods (Connect/Disconnect/Pause/…); AccessGrant adds
+ * a UID to the per-property ACL so `sessions-list` can read status,
+ * device, owner, etc.  Best-effort on both calls — a failure here is
+ * a usability regression, not a connectivity blocker. */
+static void
+grant_access_for_connection (Ovpn3Client *ovpn3,
+                             const gchar *session_path,
+                             NMConnection *connection)
+{
+	g_autoptr (GError) pa_err = NULL;
+	if (!ovpn3_session_set_public_access (ovpn3, session_path, TRUE, &pa_err)) {
+		ovpn3_trace ("set public_access=TRUE failed: %s",
+		             pa_err ? pa_err->message : "(unknown)");
+	}
+
+	NMSettingConnection *s_con = nm_connection_get_setting_connection (connection);
+	guint n_perms = s_con ? nm_setting_connection_get_num_permissions (s_con) : 0;
+	gboolean granted_any = FALSE;
+
+	for (guint i = 0; i < n_perms; i++) {
+		const char *ptype = NULL;
+		const char *pitem = NULL;
+		if (!nm_setting_connection_get_permission (s_con, i, &ptype, &pitem, NULL))
+			continue;
+		if (g_strcmp0 (ptype, "user") != 0 || !pitem)
+			continue;
+
+		struct passwd *pw = getpwnam (pitem);
+		if (!pw) {
+			ovpn3_trace ("AccessGrant: getpwnam(%s) failed", pitem);
+			continue;
+		}
+
+		g_autoptr (GError) ag_err = NULL;
+		if (!ovpn3_session_access_grant (ovpn3, session_path,
+		                                 (guint32) pw->pw_uid, &ag_err)) {
+			ovpn3_trace ("AccessGrant uid=%u (%s) failed: %s",
+			             (guint) pw->pw_uid, pitem,
+			             ag_err ? ag_err->message : "(unknown)");
+		} else {
+			granted_any = TRUE;
+			ovpn3_trace ("AccessGrant uid=%u (%s) ok",
+			             (guint) pw->pw_uid, pitem);
+		}
+	}
+
+	if (!granted_any)
+		grant_access_run_user_fallback (ovpn3, session_path);
 }
 
 static gboolean
@@ -764,39 +975,7 @@ real_connect (NMVpnServicePlugin *plugin,
 	if (!priv->config_path)
 		return FALSE;
 
-	/* Push UI-toggled SetOverride flags to the freshly imported config.
-	 * Each table entry maps a vpn.data key to an openvpn3 override name;
-	 * the override is sent only when the vpn.data key is present and
-	 * equals "yes" (matches the rest of the plugin's boolean convention). */
-	{
-		NMSettingVpn *s_vpn_for_overrides = nm_connection_get_setting_vpn (connection);
-		static const struct {
-			const char *vpn_key;
-			const char *ovpn3_name;
-		} override_map[] = {
-			{ NM_OPENVPN3_KEY_OVERRIDE_ROUTE_NOPULL,          "route-nopull" },
-			{ NM_OPENVPN3_KEY_OVERRIDE_FORCE_DEFAULT_GATEWAY, "force-default-gateway" },
-			{ NM_OPENVPN3_KEY_OVERRIDE_BLOCK_IPV6,            "block-ipv6" },
-			{ NM_OPENVPN3_KEY_OVERRIDE_DNS_SETUP_DISABLED,    "dns-setup-disabled" },
-			{ NM_OPENVPN3_KEY_OVERRIDE_DCO,                   "dco" },
-		};
-		for (gsize i = 0; s_vpn_for_overrides && i < G_N_ELEMENTS (override_map); i++) {
-			const char *val = nm_setting_vpn_get_data_item (s_vpn_for_overrides,
-			                                                override_map[i].vpn_key);
-			if (!nm_streq0 (val, "yes"))
-				continue;
-			g_autoptr (GError) ov_err = NULL;
-			if (!ovpn3_config_set_override_bool (priv->ovpn3, priv->config_path,
-			                                     override_map[i].ovpn3_name,
-			                                     TRUE, &ov_err)) {
-				_LOGW ("SetOverride(%s) failed: %s",
-				       override_map[i].ovpn3_name,
-				       ov_err ? ov_err->message : "(unknown)");
-			} else {
-				ovpn3_trace ("SetOverride(%s)=TRUE", override_map[i].ovpn3_name);
-			}
-		}
-	}
+	apply_config_overrides (priv->ovpn3, priv->config_path, connection);
 
 	priv->session_path = ovpn3_new_tunnel (priv->ovpn3, priv->config_path, error);
 	if (!priv->session_path)
@@ -840,87 +1019,7 @@ real_connect (NMVpnServicePlugin *plugin,
 		}
 	}
 
-	/* Our service runs as root; without explicit ACL entries, every other
-	 * UID (incl. the user who triggered the NM activation) gets a blank
-	 * `openvpn3 sessions-list` view.  public_access=TRUE authorises the
-	 * management methods (Connect/Disconnect/Pause/…); AccessGrant adds
-	 * a UID to the per-property ACL so `sessions-list` can read status,
-	 * device, owner, etc.  Best-effort on both calls — a failure here is
-	 * a usability regression, not a connectivity blocker. */
-	{
-		g_autoptr (GError) pa_err = NULL;
-		if (!ovpn3_session_set_public_access (priv->ovpn3, priv->session_path,
-		                                      TRUE, &pa_err)) {
-			ovpn3_trace ("set public_access=TRUE failed: %s",
-			             pa_err ? pa_err->message : "(unknown)");
-		}
-
-		NMSettingConnection *s_con = nm_connection_get_setting_connection (connection);
-		guint n_perms = s_con ? nm_setting_connection_get_num_permissions (s_con) : 0;
-		gboolean granted_any = FALSE;
-		for (guint i = 0; i < n_perms; i++) {
-			const char *ptype = NULL;
-			const char *pitem = NULL;
-			if (!nm_setting_connection_get_permission (s_con, i, &ptype, &pitem, NULL))
-				continue;
-			if (g_strcmp0 (ptype, "user") != 0 || !pitem)
-				continue;
-			struct passwd *pw = getpwnam (pitem);
-			if (!pw) {
-				ovpn3_trace ("AccessGrant: getpwnam(%s) failed", pitem);
-				continue;
-			}
-			g_autoptr (GError) ag_err = NULL;
-			if (!ovpn3_session_access_grant (priv->ovpn3, priv->session_path,
-			                                 (guint32) pw->pw_uid, &ag_err)) {
-				ovpn3_trace ("AccessGrant uid=%u (%s) failed: %s",
-				             (guint) pw->pw_uid, pitem,
-				             ag_err ? ag_err->message : "(unknown)");
-			} else {
-				granted_any = TRUE;
-				ovpn3_trace ("AccessGrant uid=%u (%s) ok",
-				             (guint) pw->pw_uid, pitem);
-			}
-		}
-		if (!granted_any) {
-			/* Fall back: NM connection has no user:NAME permission
-			 * (system connection).  Service runs as root so
-			 * XDG_RUNTIME_DIR points at /run/user/0 — useless.
-			 * Scan /run/user/<uid>/ for the lowest non-zero uid that
-			 * has an active systemd user session — that is the
-			 * foreground graphical user on a single-user-laptop and
-			 * matches who triggered the NM activation in practice. */
-			GDir *d = g_dir_open ("/run/user", 0, NULL);
-			if (d) {
-				const gchar *name;
-				guint32 best_uid = 0;
-				while ((name = g_dir_read_name (d)) != NULL) {
-					gchar *endptr = NULL;
-					guint64 v = g_ascii_strtoull (name, &endptr, 10);
-					if (!endptr || *endptr != '\0' || v == 0 || v > G_MAXUINT32)
-						continue;
-					if (best_uid == 0 || v < best_uid)
-						best_uid = (guint32) v;
-				}
-				g_dir_close (d);
-				if (best_uid != 0) {
-					g_autoptr (GError) ag_err = NULL;
-					if (!ovpn3_session_access_grant (priv->ovpn3,
-					                                 priv->session_path,
-					                                 best_uid, &ag_err)) {
-						ovpn3_trace ("AccessGrant fallback uid=%u failed: %s",
-						             best_uid,
-						             ag_err ? ag_err->message : "(unknown)");
-					} else {
-						ovpn3_trace ("AccessGrant fallback uid=%u (/run/user scan) ok",
-						             best_uid);
-					}
-				} else {
-					ovpn3_trace ("AccessGrant fallback: no non-root uid in /run/user");
-				}
-			}
-		}
-	}
+	grant_access_for_connection (priv->ovpn3, priv->session_path, connection);
 
 	if (!ovpn3_session_connect (priv->ovpn3, priv->session_path, error))
 		return FALSE;
