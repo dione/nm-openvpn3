@@ -509,10 +509,10 @@ stats_timer_cb (gpointer user_data)
 		return G_SOURCE_CONTINUE;
 	}
 
-	gint64 in      = hash_lookup_i64 (s, "bytes_in");
-	gint64 out     = hash_lookup_i64 (s, "bytes_out");
-	gint64 pkt_in  = hash_lookup_i64 (s, "packets_in");
-	gint64 pkt_out = hash_lookup_i64 (s, "packets_out");
+	gint64 in      = hash_lookup_i64 (s, "BYTES_IN");
+	gint64 out     = hash_lookup_i64 (s, "BYTES_OUT");
+	gint64 pkt_in  = hash_lookup_i64 (s, "PACKETS_IN");
+	gint64 pkt_out = hash_lookup_i64 (s, "PACKETS_OUT");
 
 	gint64 now_us  = g_get_monotonic_time ();
 	gint64 dt_us   = now_us - priv->stats_last_monotonic_us;
