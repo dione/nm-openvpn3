@@ -464,10 +464,18 @@ ovpn3_session_fetch_input_slots (Ovpn3Client *self,
 				G_VARIANT_TYPE ("(uuussb)"),
 				G_DBUS_CALL_FLAGS_NONE, -1, NULL, &fe);
 			if (!f) {
-				ovpn3_trace ("UserInputQueueFetch(%u,%u,%u) failed: %s",
-				             type, group, id,
-				             fe ? fe->message : "(unknown)");
-				continue;
+				/* Propagate the error up — silently dropping a slot makes
+				 * the caller emit an incomplete hint array to NM, and
+				 * openvpn3 then hangs waiting for input that we never
+				 * forward back via UserInputProvide. */
+				if (error && !*error) {
+					g_propagate_prefixed_error (error, g_steal_pointer (&fe),
+					                            "UserInputQueueFetch(%u,%u,%u): ",
+					                            type, group, id);
+				}
+				g_slist_free_full (out,
+				                   (GDestroyNotify) ovpn3_input_slot_free);
+				return NULL;
 			}
 
 			guint32 r_type, r_group, r_id;
@@ -484,11 +492,12 @@ ovpn3_session_fetch_input_slots (Ovpn3Client *self,
 			slot->name         = g_strdup (r_name);
 			slot->description  = g_strdup (r_desc);
 			slot->hidden_input = r_hidden;
-			out = g_slist_append (out, slot);
+			out = g_slist_prepend (out, slot);
 		}
 	}
 
-	return out;
+	/* Built with prepend for O(n); restore daemon-returned order. */
+	return g_slist_reverse (out);
 }
 
 gboolean

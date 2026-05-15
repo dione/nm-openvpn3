@@ -222,7 +222,24 @@ check_need_secrets (NMSettingVpn *s_vpn, gboolean *need_secrets)
 	return ctype;
 }
 
-static void clear_pending_slots (NMOpenvpn3PluginPrivate *priv);
+static void
+clear_pending_slots (NMOpenvpn3PluginPrivate *priv)
+{
+	g_slist_free_full (priv->pending_slots,
+	                   (GDestroyNotify) ovpn3_input_slot_free);
+	priv->pending_slots = NULL;
+}
+
+/* Unsubscribe a signal id stored in @sub_id (zeroing it on the way out) iff
+ * both the id and the client are still alive. */
+static void
+clear_signal_sub (Ovpn3Client *client, guint *sub_id)
+{
+	if (*sub_id && client) {
+		ovpn3_session_unsubscribe (client, *sub_id);
+		*sub_id = 0;
+	}
+}
 
 static gboolean
 real_disconnect (NMVpnServicePlugin *plugin, GError **error)
@@ -239,18 +256,9 @@ real_disconnect (NMVpnServicePlugin *plugin, GError **error)
 		g_clear_error (&local);
 	}
 
-	if (priv->status_sub_id) {
-		ovpn3_session_unsubscribe (priv->ovpn3, priv->status_sub_id);
-		priv->status_sub_id = 0;
-	}
-	if (priv->attention_sub_id) {
-		ovpn3_session_unsubscribe (priv->ovpn3, priv->attention_sub_id);
-		priv->attention_sub_id = 0;
-	}
-	if (priv->poll_timer_id) {
-		g_source_remove (priv->poll_timer_id);
-		priv->poll_timer_id = 0;
-	}
+	clear_signal_sub (priv->ovpn3, &priv->status_sub_id);
+	clear_signal_sub (priv->ovpn3, &priv->attention_sub_id);
+	nm_clear_g_source (&priv->poll_timer_id);
 	priv->ip4_emitted = FALSE;
 	clear_pending_slots (priv);
 	g_clear_object (&priv->current_connection);
@@ -513,12 +521,17 @@ slot_name_to_vpn_key (const Ovpn3InputSlot *slot)
 	return NM_OPENVPN3_KEY_PASSWORD;
 }
 
-static void
-clear_pending_slots (NMOpenvpn3PluginPrivate *priv)
+/* Read the value backing @vkey: NM_OPENVPN3_KEY_USERNAME lives in vpn.data,
+ * every other secrets-style key lives in vpn.secrets.  Returns NULL when the
+ * key is unset or @s_vpn is NULL. */
+static const char *
+slot_value_from_s_vpn (NMSettingVpn *s_vpn, const char *vkey)
 {
-	g_slist_free_full (priv->pending_slots,
-	                   (GDestroyNotify) ovpn3_input_slot_free);
-	priv->pending_slots = NULL;
+	if (!s_vpn)
+		return NULL;
+	if (nm_streq0 (vkey, NM_OPENVPN3_KEY_USERNAME))
+		return nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_USERNAME);
+	return nm_setting_vpn_get_secret (s_vpn, vkey);
 }
 
 /* Pre-provide slots that have an obvious value already stored in the
@@ -537,34 +550,27 @@ auto_provide_known_slots (NMOpenvpn3Plugin *self, GSList *slots)
 	for (GSList *l = slots; l; l = l->next) {
 		Ovpn3InputSlot *slot = l->data;
 		const char *vkey = slot_name_to_vpn_key (slot);
-		const char *value = NULL;
+		const char *value = slot_value_from_s_vpn (s_vpn, vkey);
 
-		if (s_vpn) {
-			if (nm_streq0 (vkey, NM_OPENVPN3_KEY_USERNAME)) {
-				value = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_USERNAME);
-			} else {
-				value = nm_setting_vpn_get_secret (s_vpn, vkey);
-			}
+		if (!value || !*value) {
+			still_needed = g_slist_prepend (still_needed, slot);
+			continue;
 		}
 
-		if (value && *value) {
-			g_autoptr (GError) pe = NULL;
-			if (!ovpn3_session_provide_input (priv->ovpn3, priv->session_path,
-			                                  slot->type, slot->group, slot->id,
-			                                  value, &pe)) {
-				_LOGW ("auto-ProvideInput(%s) failed: %s",
-				       slot->name, pe ? pe->message : "(unknown)");
-				still_needed = g_slist_append (still_needed, slot);
-			} else {
-				ovpn3_trace ("auto-ProvideInput(%s) ok", slot->name);
-				ovpn3_input_slot_free (slot);
-			}
+		g_autoptr (GError) pe = NULL;
+		if (ovpn3_session_provide_input (priv->ovpn3, priv->session_path,
+		                                 slot->type, slot->group, slot->id,
+		                                 value, &pe)) {
+			ovpn3_trace ("auto-ProvideInput(%s) ok", slot->name);
+			ovpn3_input_slot_free (slot);
 		} else {
-			still_needed = g_slist_append (still_needed, slot);
+			_LOGW ("auto-ProvideInput(%s) failed: %s",
+			       slot->name, pe ? pe->message : "(unknown)");
+			still_needed = g_slist_prepend (still_needed, slot);
 		}
 	}
 	g_slist_free (slots);
-	return still_needed;
+	return g_slist_reverse (still_needed);
 }
 
 static void
@@ -1009,12 +1015,7 @@ real_new_secrets (NMVpnServicePlugin *base_plugin,
 	for (GSList *l = priv->pending_slots; l; l = l->next) {
 		Ovpn3InputSlot *slot = l->data;
 		const char *vkey = slot_name_to_vpn_key (slot);
-		const char *value = NULL;
-
-		if (nm_streq0 (vkey, NM_OPENVPN3_KEY_USERNAME))
-			value = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_USERNAME);
-		else
-			value = nm_setting_vpn_get_secret (s_vpn, vkey);
+		const char *value = slot_value_from_s_vpn (s_vpn, vkey);
 
 		if (!value || !*value) {
 			ovpn3_trace ("new_secrets: slot '%s' has no value in vpn.secrets[%s]",
@@ -1024,15 +1025,15 @@ real_new_secrets (NMVpnServicePlugin *base_plugin,
 		}
 
 		g_autoptr (GError) pe = NULL;
-		if (!ovpn3_session_provide_input (priv->ovpn3, priv->session_path,
-		                                  slot->type, slot->group, slot->id,
-		                                  value, &pe)) {
+		if (ovpn3_session_provide_input (priv->ovpn3, priv->session_path,
+		                                 slot->type, slot->group, slot->id,
+		                                 value, &pe)) {
+			ovpn3_trace ("ProvideInput(%s) ok", slot->name);
+			sent++;
+		} else {
 			_LOGW ("ProvideInput(%s) failed: %s",
 			       slot->name, pe ? pe->message : "(unknown)");
 			missing++;
-		} else {
-			ovpn3_trace ("ProvideInput(%s) ok", slot->name);
-			sent++;
 		}
 	}
 
@@ -1069,14 +1070,8 @@ dispose (GObject *object)
 	NMOpenvpn3PluginPrivate *priv = NM_OPENVPN3_PLUGIN_GET_PRIVATE (object);
 
 	/* Clean up ovpn3 session state */
-	if (priv->status_sub_id && priv->ovpn3) {
-		ovpn3_session_unsubscribe (priv->ovpn3, priv->status_sub_id);
-		priv->status_sub_id = 0;
-	}
-	if (priv->attention_sub_id && priv->ovpn3) {
-		ovpn3_session_unsubscribe (priv->ovpn3, priv->attention_sub_id);
-		priv->attention_sub_id = 0;
-	}
+	clear_signal_sub (priv->ovpn3, &priv->status_sub_id);
+	clear_signal_sub (priv->ovpn3, &priv->attention_sub_id);
 	clear_pending_slots (priv);
 	g_clear_object (&priv->current_connection);
 	g_clear_pointer (&priv->session_path, g_free);
