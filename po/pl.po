@@ -8,9 +8,9 @@
 msgid ""
 msgstr ""
 "Project-Id-Version: NetworkManager-openvpn\n"
-"Report-Msgid-Bugs-To: https://gitlab.gnome.org/GNOME/NetworkManager-openvpn/"
-"issues\n"
-"POT-Creation-Date: 2024-02-19 08:23+0000\n"
+"Report-Msgid-Bugs-To: https://gitlab.gnome.org/GNOME/NetworkManager-"
+"openvpn3/\n"
+"POT-Creation-Date: 2026-05-15 11:12+0200\n"
 "PO-Revision-Date: 2024-09-15 19:14+0200\n"
 "Last-Translator: Piotr Drąg <piotrdrag@gmail.com>\n"
 "Language-Team: Polish <community-poland@mozilla.org>\n"
@@ -21,65 +21,102 @@ msgstr ""
 "Plural-Forms: nplurals=3; plural=n==1 ? 0 : n%10>=2 && n%10<=4 && (n%100<10 "
 "|| n%100>=20) ? 1 : 2;\n"
 
-#: appdata/network-manager-openvpn.metainfo.xml.in:10
-msgid "OpenVPN client"
+#: appdata/network-manager-openvpn3.metainfo.xml.in:10
+#, fuzzy
+#| msgid "OpenVPN client"
+msgid "OpenVPN 3 client"
 msgstr "Klient OpenVPN"
 
-#: appdata/network-manager-openvpn.metainfo.xml.in:11
-msgid "Client for OpenVPN virtual private networks"
+#: appdata/network-manager-openvpn3.metainfo.xml.in:11
+#, fuzzy
+#| msgid "Client for OpenVPN virtual private networks"
+msgid "Client for OpenVPN 3 virtual private networks"
 msgstr "Klient dla wirtualnych sieci prywatnych OpenVPN"
 
-#: appdata/network-manager-openvpn.metainfo.xml.in:23
-msgid "Support for configuring OpenVPN virtual private network connections."
+#: appdata/network-manager-openvpn3.metainfo.xml.in:14
+msgid "network"
+msgstr ""
+
+#: appdata/network-manager-openvpn3.metainfo.xml.in:15
+msgid "manager"
+msgstr ""
+
+#: appdata/network-manager-openvpn3.metainfo.xml.in:16
+#, fuzzy
+#| msgid "The NetworkManager Developers"
+msgid "NetworkManager"
+msgstr "Programiści projektu NetworkManager"
+
+#: appdata/network-manager-openvpn3.metainfo.xml.in:17
+#, fuzzy
+#| msgid "Use a _TCP connection"
+msgid "connection"
+msgstr "Połączenie _TCP"
+
+#: appdata/network-manager-openvpn3.metainfo.xml.in:18
+#, fuzzy
+#| msgid "OpenVPN"
+msgid "VPN"
+msgstr "OpenVPN"
+
+#: appdata/network-manager-openvpn3.metainfo.xml.in:19
+msgid "OpenVPN"
+msgstr "OpenVPN"
+
+#: appdata/network-manager-openvpn3.metainfo.xml.in:23
+#, fuzzy
+#| msgid "Support for configuring OpenVPN virtual private network connections."
+msgid "Support for configuring OpenVPN 3 virtual private network connections."
 msgstr "Obsługa konfigurowania połączeń wirtualnych sieci prywatnych OpenVPN."
 
-#: appdata/network-manager-openvpn.metainfo.xml.in:24
-msgid "OpenVPN is a popular and flexible free-software VPN solution."
+#: appdata/network-manager-openvpn3.metainfo.xml.in:24
+msgid ""
+"OpenVPN 3 is a modern, D-Bus-based VPN solution using the OpenVPN 3 Core "
+"library."
 msgstr ""
-"OpenVPN to popularne i elastyczne oprogramowanie VPN na wolnej licencji."
 
-#: appdata/network-manager-openvpn.metainfo.xml.in:32
+#: appdata/network-manager-openvpn3.metainfo.xml.in:32
 msgid "The advanced options dialog"
 msgstr "Okno zaawansowanych opcji"
 
-#: appdata/network-manager-openvpn.metainfo.xml.in:41
-msgid "The NetworkManager Developers"
-msgstr "Programiści projektu NetworkManager"
+#: appdata/network-manager-openvpn3.metainfo.xml.in:43
+msgid "The nm-openvpn3 fork authors"
+msgstr ""
 
-#: auth-dialog/main.c:180
+#: auth-dialog/main.c:186
 msgid "Authentication required"
 msgstr "Wymagane jest uwierzytelnienie"
 
-#: auth-dialog/main.c:187 properties/nm-openvpn-dialog.ui:336
-#: properties/nm-openvpn-dialog.ui:435 properties/nm-openvpn-editor.c:2737
+#: auth-dialog/main.c:193 properties/nm-openvpn3-dialog.ui:345
+#: properties/nm-openvpn3-dialog.ui:444 properties/nm-openvpn3-editor.c:2702
 msgid "Password"
 msgstr "Hasło"
 
-#: auth-dialog/main.c:194
+#: auth-dialog/main.c:200
 msgid "Certificate password"
 msgstr "Hasło certyfikatu"
 
-#: auth-dialog/main.c:201
+#: auth-dialog/main.c:207
 msgid "HTTP proxy password"
 msgstr "Hasło pośrednika HTTP"
 
-#: auth-dialog/main.c:208
+#: auth-dialog/main.c:215
 msgid "Challenge response"
 msgstr "Odpowiedź wyzwania"
 
-#: auth-dialog/main.c:248
+#: auth-dialog/main.c:255
 msgid "Authenticate VPN"
 msgstr "Uwierzytelnianie VPN"
 
-#: auth-dialog/main.c:257
+#: auth-dialog/main.c:264
 msgid "Certificate pass_word:"
 msgstr "Hasło _certyfikatu:"
 
-#: auth-dialog/main.c:263
+#: auth-dialog/main.c:270
 msgid "_HTTP proxy password:"
 msgstr "_Hasło pośrednika HTTP:"
 
-#: auth-dialog/main.c:545
+#: auth-dialog/main.c:559
 #, c-format
 msgid "You need to authenticate to access the Virtual Private Network “%s”."
 msgstr ""
@@ -197,103 +234,103 @@ msgstr ""
 "użytkownik/hasło z pliku uwierzytelniania pośrednika HTTP musi być "
 "zakodowane w UTF-8"
 
-#: properties/import-export.c:718
+#: properties/import-export.c:720
 #, c-format
 msgid "“%s” is not a directory"
 msgstr "„%s” nie jest katalogiem"
 
-#: properties/import-export.c:726
+#: properties/import-export.c:728
 #, c-format
 msgid "cannot create “%s” directory"
 msgstr "nie można utworzyć katalogu „%s”"
 
-#: properties/import-export.c:746
+#: properties/import-export.c:748
 #, c-format
 msgid "cannot write <%s> blob from line %ld to file (%s)"
 msgstr "nie można zapisać „blob” <%s> z wiersza %ld do pliku (%s)"
 
-#: properties/import-export.c:763
+#: properties/import-export.c:765
 #, c-format
 msgid "cannot write <%s> blob from line %ld to file “%s”"
 msgstr "nie można zapisać „blob” <%s> z wiersza %ld do pliku „%s”"
 
-#: properties/import-export.c:907
+#: properties/import-export.c:909
 msgid "proto expects protocol type like “udp” or “tcp”"
 msgstr "parametr „proto” oczekuje typu protokołu, takiego jak „udp” lub „tcp”"
 
-#: properties/import-export.c:932
+#: properties/import-export.c:934
 msgid "unsupported mtu-disc argument"
 msgstr "nieobsługiwany parametr „mtu-disc”"
 
-#: properties/import-export.c:948
+#: properties/import-export.c:950
 msgid "unsupported crl-verify argument"
 msgstr "nieobsługiwany parametr „crl-verify”"
 
-#: properties/import-export.c:966 properties/import-export.c:1446
+#: properties/import-export.c:968 properties/import-export.c:1457
 msgid "invalid option"
 msgstr "nieprawidłowa opcja"
 
-#: properties/import-export.c:1007
+#: properties/import-export.c:1009
 msgid "allow-compression: invalid argument"
 msgstr "allow-compression: nieprawidłowy parametr"
 
-#: properties/import-export.c:1029
+#: properties/import-export.c:1031
 msgid "unsupported comp-lzo argument"
 msgstr "nieobsługiwany parametr „comp-lzo”"
 
-#: properties/import-export.c:1041
+#: properties/import-export.c:1043
 msgid "unsupported compress argument"
 msgstr "nieobsługiwany parametr „compress”"
 
-#: properties/import-export.c:1142
+#: properties/import-export.c:1144
 msgid "remote cannot contain space"
 msgstr "parametr „remote” nie może zawierać spacji"
 
-#: properties/import-export.c:1146
+#: properties/import-export.c:1148
 msgid "remote cannot contain comma"
 msgstr "parametr „remote” nie może zawierać przecinków"
 
-#: properties/import-export.c:1157
+#: properties/import-export.c:1159
 msgid "remote expects protocol type like “udp” or “tcp”"
 msgstr "parametr „remote” oczekuje typu protokołu, takiego jak „udp” lub „tcp”"
 
-#: properties/import-export.c:1269
+#: properties/import-export.c:1271
 #, c-format
 msgid "invalid keyword “%s” in tls-version-min"
 msgstr "nieprawidłowe słowo kluczowe „%s” w „tls-version-min”"
 
-#: properties/import-export.c:1430
+#: properties/import-export.c:1441
 msgid "invalid verify-x509-name type"
 msgstr "nieprawidłowy typ „verify-x509-name”"
 
-#: properties/import-export.c:1566
+#: properties/import-export.c:1577
 msgid "unsupported blob/xml element"
 msgstr "nieobsługiwany element „blob/xml”"
 
-#: properties/import-export.c:1595
+#: properties/import-export.c:1606
 #, c-format
 msgid "unterminated blob element <%s>"
 msgstr "niezakończony element „blob” <%s>"
 
-#: properties/import-export.c:1651
+#: properties/import-export.c:1662
 #, c-format
 msgid "configuration error: %s (line %ld)"
 msgstr "błąd konfiguracji: %s (wiersz %ld)"
 
-#: properties/import-export.c:1652
+#: properties/import-export.c:1663
 msgid "unknown or unsupported option"
 msgstr "nieznana lub nieobsługiwana opcja"
 
-#: properties/import-export.c:1667
+#: properties/import-export.c:1678
 msgid "The file to import wasn’t a valid OpenVPN client configuration"
 msgstr "Importowany plik nie jest prawidłową konfiguracją klienta OpenVPN"
 
-#: properties/import-export.c:1675
+#: properties/import-export.c:1686
 msgid "The file to import wasn’t a valid OpenVPN configuration (no remote)"
 msgstr ""
 "Importowany plik nie jest prawidłową konfiguracją OpenVPN (brak „remote”)"
 
-#: properties/import-export.c:1686
+#: properties/import-export.c:1697
 msgid ""
 "The file to import wasn’t a valid OpenVPN configuration (--pkcs12 can not be "
 "used with --cert or --key)"
@@ -301,7 +338,7 @@ msgstr ""
 "Importowany plik nie jest prawidłową konfiguracją OpenVPN (--pkcs12 nie może "
 "być używane z --cert lub --key)"
 
-#: properties/import-export.c:1696
+#: properties/import-export.c:1707
 msgid ""
 "The file to import wasn’t a valid OpenVPN configuration (--ca can not be "
 "PKCS#12 format)"
@@ -309,11 +346,11 @@ msgstr ""
 "Importowany plik nie jest prawidłową konfiguracją OpenVPN (--ca nie może być "
 "w formacie PKCS#12)"
 
-#: properties/import-export.c:1705
+#: properties/import-export.c:1716
 msgid "The file to import wasn’t a valid OpenVPN configuration (missing --ca)"
 msgstr "Importowany plik nie jest prawidłową konfiguracją OpenVPN (brak --ca)"
 
-#: properties/import-export.c:1715
+#: properties/import-export.c:1726
 msgid ""
 "The file to import wasn’t a valid OpenVPN configuration (if you use one of --"
 "cert or --key, you must use them both)"
@@ -321,7 +358,7 @@ msgstr ""
 "Importowany plik nie jest prawidłową konfiguracją OpenVPN (jeśli używana "
 "jest jedna z opcji --cert lub --key, to muszą być używane obie)"
 
-#: properties/import-export.c:1726
+#: properties/import-export.c:1737
 msgid ""
 "The file to import wasn’t a valid OpenVPN configuration (--cert can not be "
 "PKCS#12 format.)"
@@ -329,7 +366,7 @@ msgstr ""
 "Importowany plik nie jest prawidłową konfiguracją OpenVPN (--cert nie może "
 "być w formacie PKCS#12)."
 
-#: properties/import-export.c:1734
+#: properties/import-export.c:1745
 msgid ""
 "The file to import wasn’t a valid OpenVPN configuration (--key can not be "
 "PKCS#12 format.)"
@@ -337,122 +374,112 @@ msgstr ""
 "Importowany plik nie jest prawidłową konfiguracją OpenVPN (--key nie może "
 "być w formacie PKCS#12)."
 
-#: properties/import-export.c:1988
+#: properties/import-export.c:1999
 msgid "missing path argument"
 msgstr "brak parametru ścieżki"
 
-#: properties/import-export.c:1998
+#: properties/import-export.c:2009
 msgid "connection is not a valid OpenVPN connection"
 msgstr "połączenie nie jest prawidłowym połączeniem OpenVPN"
 
-#: properties/import-export.c:2007
+#: properties/import-export.c:2018
 msgid "connection was incomplete (missing gateway)"
 msgstr "niepełne połączenie (brak bramy)"
 
-#: properties/import-export.c:2383
+#: properties/import-export.c:2399
 #, c-format
 msgid "failed to write file: %s"
 msgstr "zapisanie pliku się nie powiodło: %s"
 
-#: properties/nm-openvpn-dialog.ui:73
-msgid "Asymmetric"
-msgstr "Asymetryczna"
-
-#: properties/nm-openvpn-dialog.ui:76
-msgid "Symmetric"
-msgstr "Symetryczna"
-
-#: properties/nm-openvpn-dialog.ui:87
-msgid "LZO"
-msgstr "LZO"
-
-#: properties/nm-openvpn-dialog.ui:90
-msgid "LZ4"
-msgstr "LZ4"
-
-#: properties/nm-openvpn-dialog.ui:93
-msgid "LZ4 v2"
-msgstr "LZ4 v2"
-
-#: properties/nm-openvpn-dialog.ui:96
-msgid "Automatic"
-msgstr "Automatycznie"
-
-#: properties/nm-openvpn-dialog.ui:99
-msgid "LZO disabled (legacy)"
-msgstr "Wyłączone LZO (przestarzałe)"
-
-#: properties/nm-openvpn-dialog.ui:102
-msgid "LZO adaptive (legacy)"
-msgstr "Adaptacyjne LZO (przestarzałe)"
-
-#: properties/nm-openvpn-dialog.ui:126 properties/nm-openvpn-editor.c:379
-#: properties/nm-openvpn-editor.c:1019 properties/nm-openvpn-editor.c:1824
+#: properties/nm-openvpn3-dialog.ui:80 properties/nm-openvpn3-editor.c:379
+#: properties/nm-openvpn3-editor.c:1018 properties/nm-openvpn3-editor.c:1746
 msgid "None"
 msgstr "Brak"
 
-#: properties/nm-openvpn-dialog.ui:129
+#: properties/nm-openvpn3-dialog.ui:83
 msgid "TLS-Auth"
 msgstr "Uwierzytelnianie TLS"
 
-#: properties/nm-openvpn-dialog.ui:132
+#: properties/nm-openvpn3-dialog.ui:86
 msgid "TLS-Crypt"
 msgstr "Szyfrowanie TLS"
 
-#: properties/nm-openvpn-dialog.ui:135
+#: properties/nm-openvpn3-dialog.ui:89
 msgid "TLS-Crypt v2"
 msgstr "Szyfrowanie TLS v2"
 
-#: properties/nm-openvpn-dialog.ui:146
+#: properties/nm-openvpn3-dialog.ui:100
 msgid "No"
 msgstr "Nie"
 
-#: properties/nm-openvpn-dialog.ui:149
+#: properties/nm-openvpn3-dialog.ui:103
 msgid "Maybe"
 msgstr "Może"
 
-#: properties/nm-openvpn-dialog.ui:152
+#: properties/nm-openvpn3-dialog.ui:106
 msgid "Yes"
 msgstr "Tak"
 
-#: properties/nm-openvpn-dialog.ui:182 properties/nm-openvpn-dialog.ui:1595
+#: properties/nm-openvpn3-dialog.ui:136 properties/nm-openvpn3-dialog.ui:1532
 msgid "General"
 msgstr "Ogólne"
 
-#: properties/nm-openvpn-dialog.ui:204
+#: properties/nm-openvpn3-dialog.ui:158
 msgid "_Gateway"
 msgstr "_Brama"
 
-#: properties/nm-openvpn-dialog.ui:217
+#: properties/nm-openvpn3-dialog.ui:171
 msgid ""
-"Remote gateway(s), with optional port and protocol (e.g. ovpn.corp.com:1234:"
-"tcp). You can specify multiple hosts for redundancy (use commas or spaces as "
-"delimiters).\n"
+"Remote gateway(s), with optional port and protocol (e.g. "
+"ovpn.corp.com:1234:tcp). You can specify multiple hosts for redundancy (use "
+"commas or spaces as delimiters).\n"
 "config: remote"
 msgstr ""
-"Zdalne bramy, z opcjonalnym portem i protokołem (np. ovpn.example.com:1234:"
-"tcp). Można podać wiele komputerów jako zapasowe (które można oddzielać "
-"przecinkami lub spacjami).\n"
+"Zdalne bramy, z opcjonalnym portem i protokołem (np. "
+"ovpn.example.com:1234:tcp). Można podać wiele komputerów jako zapasowe "
+"(które można oddzielać przecinkami lub spacjami).\n"
 "konfiguracja: remote"
 
-#: properties/nm-openvpn-dialog.ui:250
+#: properties/nm-openvpn3-dialog.ui:184
+msgid "_OVPN profile file"
+msgstr "Plik profilu _OVPN"
+
+#: properties/nm-openvpn3-dialog.ui:204
+msgid ""
+"Path to a verbatim .ovpn profile. When set, the openvpn3 client interprets "
+"the file directly; other UI fields then act as overrides.\n"
+"config: nm-openvpn3-profile"
+msgstr ""
+"Ścieżka do pliku .ovpn. Gdy ustawiona, klient openvpn3 interpretuje plik "
+"bezpośrednio; pozostałe pola UI działają jako nadpisania.\n"
+"config: nm-openvpn3-profile"
+
+#: properties/nm-openvpn3-dialog.ui:207
+msgid "(optional — leave empty to use UI fields)"
+msgstr "(opcjonalne — pozostaw puste, aby użyć pól UI)"
+
+#: properties/nm-openvpn3-dialog.ui:217
+msgid "_Browse…"
+msgstr "_Przeglądaj…"
+
+#: properties/nm-openvpn3-dialog.ui:259
 msgid "Authentication"
 msgstr "Uwierzytelnianie"
 
-#: properties/nm-openvpn-dialog.ui:285 properties/nm-openvpn-dialog.ui:396
-#: properties/nm-openvpn-dialog.ui:495
+#: properties/nm-openvpn3-dialog.ui:294 properties/nm-openvpn3-dialog.ui:405
+#: properties/nm-openvpn3-dialog.ui:504
 msgid "CA"
 msgstr "CA"
 
-#: properties/nm-openvpn-dialog.ui:298 properties/nm-openvpn-dialog.ui:508
+#: properties/nm-openvpn3-dialog.ui:307 properties/nm-openvpn3-dialog.ui:517
 msgid "User"
 msgstr "Użytkownik"
 
-#: properties/nm-openvpn-dialog.ui:348 properties/nm-openvpn-dialog.ui:447
+#: properties/nm-openvpn3-dialog.ui:357 properties/nm-openvpn3-dialog.ui:456
 msgid "User name"
 msgstr "Nazwa użytkownika"
 
-#: properties/nm-openvpn-dialog.ui:360 properties/nm-openvpn-dialog.ui:459
+#: properties/nm-openvpn3-dialog.ui:369 properties/nm-openvpn3-dialog.ui:468
 msgid ""
 "Password passed to OpenVPN when prompted for it.\n"
 "config: auth-user-pass"
@@ -460,7 +487,7 @@ msgstr ""
 "Hasło przekazywane do OpenVPN.\n"
 "konfiguracja: auth-user-pass"
 
-#: properties/nm-openvpn-dialog.ui:375 properties/nm-openvpn-dialog.ui:474
+#: properties/nm-openvpn3-dialog.ui:384 properties/nm-openvpn3-dialog.ui:483
 msgid ""
 "Username passed to OpenVPN when prompted for it. If omitted, use the name of "
 "the system user that activates the connection.\n"
@@ -471,23 +498,23 @@ msgstr ""
 "połączenie.\n"
 "konfiguracja: auth-user-pass"
 
-#: properties/nm-openvpn-dialog.ui:544
+#: properties/nm-openvpn3-dialog.ui:553
 msgid "Remote IP Address"
 msgstr "Zdalny adres IP"
 
-#: properties/nm-openvpn-dialog.ui:557
+#: properties/nm-openvpn3-dialog.ui:566
 msgid "Local IP Address"
 msgstr "Lokalny adres IP"
 
-#: properties/nm-openvpn-dialog.ui:570
+#: properties/nm-openvpn3-dialog.ui:579
 msgid "Key Direction"
 msgstr "Kierunek klucza"
 
-#: properties/nm-openvpn-dialog.ui:582 properties/nm-openvpn-editor.c:2764
+#: properties/nm-openvpn3-dialog.ui:591 properties/nm-openvpn3-editor.c:2729
 msgid "Static Key"
 msgstr "Klucz statyczny"
 
-#: properties/nm-openvpn-dialog.ui:594
+#: properties/nm-openvpn3-dialog.ui:603
 msgid ""
 "Pre-shared file for Static Key encryption mode (non-TLS).\n"
 "config: static <file>"
@@ -496,7 +523,7 @@ msgstr ""
 "TLS).\n"
 "konfiguracja: static <plik>"
 
-#: properties/nm-openvpn-dialog.ui:637
+#: properties/nm-openvpn3-dialog.ui:646
 msgid ""
 "IP address of the remote VPN endpoint.\n"
 "config: ifconfig <l> <rn>"
@@ -504,7 +531,7 @@ msgstr ""
 "Adres IP zdalnego punktu końcowego VPN.\n"
 "konfiguracja: ifconfig <l> <rn>"
 
-#: properties/nm-openvpn-dialog.ui:650
+#: properties/nm-openvpn3-dialog.ui:659
 msgid ""
 "IP address of the local VPN endpoint.\n"
 "config: ifconfig <l> <rn>"
@@ -512,7 +539,7 @@ msgstr ""
 "Adres IP lokalnego punktu końcowego VPN.\n"
 "konfiguracja: ifconfig <l> <rn>"
 
-#: properties/nm-openvpn-dialog.ui:663
+#: properties/nm-openvpn3-dialog.ui:672
 msgid ""
 "Direction for Static Key encryption mode (non-TLS).\n"
 "If key direction is used, it must be the opposite of that used on the VPN "
@@ -527,45 +554,46 @@ msgstr ""
 "skontaktować się z administratorem systemu.\n"
 "konfiguracja: static <plik> [kierunek]"
 
-#: properties/nm-openvpn-dialog.ui:709
+#: properties/nm-openvpn3-dialog.ui:718
 msgid "Type"
 msgstr "Typ"
 
-#: properties/nm-openvpn-dialog.ui:721
+#: properties/nm-openvpn3-dialog.ui:730
 msgid "Select an authentication mode."
 msgstr "Wybór trybu uwierzytelniania."
 
-#: properties/nm-openvpn-dialog.ui:778
+#: properties/nm-openvpn3-dialog.ui:787
 msgid "Ad_vanced…"
 msgstr "Zaa_wansowane…"
 
-#: properties/nm-openvpn-dialog.ui:852 properties/nm-openvpn-editor.c:1624
+#: properties/nm-openvpn3-dialog.ui:861 properties/nm-openvpn3-editor.c:1574
 msgid "Not required"
 msgstr "Niewymagane"
 
-#: properties/nm-openvpn-dialog.ui:892
+#: properties/nm-openvpn3-dialog.ui:901
 msgid "OpenVPN Advanced Options"
 msgstr "Zaawansowane opcje OpenVPN"
 
-#: properties/nm-openvpn-dialog.ui:911
+#: properties/nm-openvpn3-dialog.ui:920
 msgid "Advanced Properties"
 msgstr "Zaawansowane właściwości"
 
-#: properties/nm-openvpn-dialog.ui:919 properties/nm-openvpn-dialog.ui:2844
-#: properties/nm-openvpn-dialog.ui:2897 properties/nm-openvpn-dialog.ui:2951
-#: properties/nm-openvpn-dialog.ui:3004 properties/nm-openvpn-dialog.ui:3057
+#: properties/nm-openvpn3-dialog.ui:928 properties/nm-openvpn3-dialog.ui:2750
+#: properties/nm-openvpn3-dialog.ui:2803 properties/nm-openvpn3-dialog.ui:2857
+#: properties/nm-openvpn3-dialog.ui:2910 properties/nm-openvpn3-dialog.ui:2963
+#: properties/nm-openvpn3-editor.c:2597
 msgid "_Cancel"
 msgstr "_Anuluj"
 
-#: properties/nm-openvpn-dialog.ui:927
+#: properties/nm-openvpn3-dialog.ui:936
 msgid "_Apply"
 msgstr "_Zastosuj"
 
-#: properties/nm-openvpn-dialog.ui:989
+#: properties/nm-openvpn3-dialog.ui:998
 msgid "Use custom gateway p_ort"
 msgstr "Własny port bra_my"
 
-#: properties/nm-openvpn-dialog.ui:993 properties/nm-openvpn-dialog.ui:1008
+#: properties/nm-openvpn3-dialog.ui:1002 properties/nm-openvpn3-dialog.ui:1017
 msgid ""
 "TCP/UDP port number for peer. (Default value when there is no port for "
 "gateway).\n"
@@ -575,11 +603,11 @@ msgstr ""
 "bramy).\n"
 "konfiguracja: port"
 
-#: properties/nm-openvpn-dialog.ui:1034
+#: properties/nm-openvpn3-dialog.ui:1043
 msgid "Use custom _renegotiation interval"
 msgstr "Własny czas między ponownymi _negocjacjami"
 
-#: properties/nm-openvpn-dialog.ui:1038 properties/nm-openvpn-dialog.ui:1053
+#: properties/nm-openvpn3-dialog.ui:1047 properties/nm-openvpn3-dialog.ui:1062
 msgid ""
 "Renegotiate data channel key after the specified number of seconds.\n"
 "config: reneg-sec"
@@ -587,31 +615,11 @@ msgstr ""
 "Renegocjuje klucz kanał danych po podanej liczbie sekund.\n"
 "konfiguracja: reneg-sec"
 
-#: properties/nm-openvpn-dialog.ui:1079
-msgid "Data _compression"
-msgstr "_Kompresja danych"
-
-#: properties/nm-openvpn-dialog.ui:1083
-msgid ""
-"Use fast LZO compression.\n"
-"config: comp-lzo"
-msgstr ""
-"Używa szybkiej kompresji LZO.\n"
-"konfiguracja: comp-lzo"
-
-#: properties/nm-openvpn-dialog.ui:1098
-msgid ""
-"Enable or disable outgoing traffic compression\n"
-"config: allow-compression asym|yes"
-msgstr ""
-"Włącza lub wyłącza kompresję ruchu wychodzącego\n"
-"konfiguracja: allow-compression asym|yes"
-
-#: properties/nm-openvpn-dialog.ui:1146
+#: properties/nm-openvpn3-dialog.ui:1083
 msgid "Use a _TCP connection"
 msgstr "Połączenie _TCP"
 
-#: properties/nm-openvpn-dialog.ui:1150
+#: properties/nm-openvpn3-dialog.ui:1087
 msgid ""
 "Use TCP for communicating with remote host.\n"
 "(This is a default setting only used when no protocol is specified for the "
@@ -619,18 +627,20 @@ msgid ""
 "config: proto tcp-client | udp"
 msgstr ""
 "Używa TCP do komunikowania się ze zdalnym komputerem\n"
-"(domyślne ustawienie używane tylko, kiedy nie podano protokołu dla bramy)."
-"konfiguracja: proto tcp-client | udp"
+"(domyślne ustawienie używane tylko, kiedy nie podano protokołu dla "
+"bramy).konfiguracja: proto tcp-client | udp"
 
-#: properties/nm-openvpn-dialog.ui:1169
-msgid "Set virtual _device type"
+#: properties/nm-openvpn3-dialog.ui:1106
+#, fuzzy
+#| msgid "Set virtual _device type"
+msgid "Set _virtual device type"
 msgstr "Ustawienie typu urzą_dzenia wirtualnego"
 
-#: properties/nm-openvpn-dialog.ui:1173
+#: properties/nm-openvpn3-dialog.ui:1110
 msgid "Explicitly set virtual device type and name (TUN/TAP)."
 msgstr "Bezpośrednio ustawia typ i nazwę urządzenia wirtualnego (TUN/TAP)."
 
-#: properties/nm-openvpn-dialog.ui:1187
+#: properties/nm-openvpn3-dialog.ui:1124
 msgid ""
 "Explicitly set virtual device type (TUN/TAP).\n"
 "config: dev-type tun | tap"
@@ -638,11 +648,11 @@ msgstr ""
 "Bezpośrednio ustawia typ urządzenia wirtualnego (TUN/TAP).\n"
 "konfiguracja: dev-type tun | tap"
 
-#: properties/nm-openvpn-dialog.ui:1207
+#: properties/nm-openvpn3-dialog.ui:1144
 msgid " and _name"
 msgstr " i _nazwa"
 
-#: properties/nm-openvpn-dialog.ui:1222
+#: properties/nm-openvpn3-dialog.ui:1159
 msgid ""
 "Use custom name for TUN/TAP virtual device (instead of default “tun” or "
 "“tap”).\n"
@@ -652,11 +662,11 @@ msgstr ""
 "„tun” lub „tap”).\n"
 "konfiguracja: dev <nazwa>"
 
-#: properties/nm-openvpn-dialog.ui:1246
+#: properties/nm-openvpn3-dialog.ui:1183
 msgid "Use custom tunnel Maximum Transmission _Unit (MTU)"
 msgstr "Własne MT_U tunelu"
 
-#: properties/nm-openvpn-dialog.ui:1250 properties/nm-openvpn-dialog.ui:1265
+#: properties/nm-openvpn3-dialog.ui:1187 properties/nm-openvpn3-dialog.ui:1202
 msgid ""
 "Take the TUN device MTU to be the specified value and derive the link MTU "
 "from it.\n"
@@ -665,11 +675,11 @@ msgstr ""
 "Ustawia MTU urządzenia TUN na podaną wartość i oblicza z tego MTU łącza.\n"
 "konfiguracja: tun-mtu"
 
-#: properties/nm-openvpn-dialog.ui:1291
+#: properties/nm-openvpn3-dialog.ui:1228
 msgid "Use custom UDP _fragment size"
 msgstr "Własny rozmiar f_ragmentu UDP"
 
-#: properties/nm-openvpn-dialog.ui:1295 properties/nm-openvpn-dialog.ui:1310
+#: properties/nm-openvpn3-dialog.ui:1232 properties/nm-openvpn3-dialog.ui:1247
 msgid ""
 "Enable internal datagram fragmentation with this maximum size.\n"
 "config: fragment"
@@ -678,11 +688,11 @@ msgstr ""
 "maksymalnego.\n"
 "konfiguracja: fragment"
 
-#: properties/nm-openvpn-dialog.ui:1331
+#: properties/nm-openvpn3-dialog.ui:1268
 msgid "Restrict tunnel TCP Maximum _Segment Size (MSS)"
 msgstr "Ograniczenie maksymalnego rozmiaru _segmentu (MSS) tunelu TCP"
 
-#: properties/nm-openvpn-dialog.ui:1335
+#: properties/nm-openvpn3-dialog.ui:1272
 msgid ""
 "Restrict tunnel TCP MSS.\n"
 "config: mssfix"
@@ -690,11 +700,11 @@ msgstr ""
 "Ogranicza tunel TCP MSS.\n"
 "konfiguracja: mssfix"
 
-#: properties/nm-openvpn-dialog.ui:1348
+#: properties/nm-openvpn3-dialog.ui:1285
 msgid "Rando_mize remote hosts"
 msgstr "_Losowanie zdalnych komputerów"
 
-#: properties/nm-openvpn-dialog.ui:1352
+#: properties/nm-openvpn3-dialog.ui:1289
 msgid ""
 "Randomize the order of gateways list (remote) as a kind of basic load-"
 "balancing measure.\n"
@@ -704,11 +714,13 @@ msgstr ""
 "zasobów.\n"
 "konfiguracja: remote-random"
 
-#: properties/nm-openvpn-dialog.ui:1365
-msgid "Allow Pull FQDN"
+#: properties/nm-openvpn3-dialog.ui:1302
+#, fuzzy
+#| msgid "Allow Pull FQDN"
+msgid "Allo_w Pull FQDN"
 msgstr "Zezwolenie na pobieranie FQDN"
 
-#: properties/nm-openvpn-dialog.ui:1369
+#: properties/nm-openvpn3-dialog.ui:1306
 msgid ""
 "Allow client to pull DNS names from server\n"
 "config: allow-pull-fqdn"
@@ -716,11 +728,11 @@ msgstr ""
 "Zezwala klientowi na pobieranie nazw DNS z serwera\n"
 "konfiguracja: allow-pull-fqdn"
 
-#: properties/nm-openvpn-dialog.ui:1382
+#: properties/nm-openvpn3-dialog.ui:1319
 msgid "_Prefix remote DNS name with random string"
 msgstr "_Poprzedzenie nazwy zdalnego DNS losowym ciągiem"
 
-#: properties/nm-openvpn-dialog.ui:1386
+#: properties/nm-openvpn3-dialog.ui:1323
 msgid ""
 "Adds a random string to remote DNS name to avoid DNS caching.\n"
 "config: remote-random-hostname"
@@ -729,11 +741,13 @@ msgstr ""
 "DNS.\n"
 "konfiguracja: remote-random-hostname"
 
-#: properties/nm-openvpn-dialog.ui:1399
-msgid "IPv6 tun link"
+#: properties/nm-openvpn3-dialog.ui:1336
+#, fuzzy
+#| msgid "IPv6 tun link"
+msgid "_IPv6 tun link"
 msgstr "Łącze TUN IPv6"
 
-#: properties/nm-openvpn-dialog.ui:1403
+#: properties/nm-openvpn3-dialog.ui:1340
 msgid ""
 "Build a tun link capable of forwarding IPv6 traffic\n"
 "config: tun-ipv6"
@@ -741,11 +755,11 @@ msgstr ""
 "Buduje łącze TUN umiejące przekierowywać ruch IPv6\n"
 "konfiguracja: tun-ipv6"
 
-#: properties/nm-openvpn-dialog.ui:1421
+#: properties/nm-openvpn3-dialog.ui:1358
 msgid "Specify pin_g interval"
 msgstr "Czas między sygnałami pin_g"
 
-#: properties/nm-openvpn-dialog.ui:1425 properties/nm-openvpn-dialog.ui:1440
+#: properties/nm-openvpn3-dialog.ui:1362 properties/nm-openvpn3-dialog.ui:1377
 msgid ""
 "Ping remote over the TCP/UDP control channel if no packets have been sent "
 "for at least n seconds.\n"
@@ -756,12 +770,12 @@ msgstr ""
 "sekund.\n"
 "konfiguracja: ping <n>"
 
-#: properties/nm-openvpn-dialog.ui:1466
+#: properties/nm-openvpn3-dialog.ui:1403
 msgid "Specify _exit or restart ping"
 msgstr "Zakończ_enie i ponowne uruchomienie sygnału ping"
 
-#: properties/nm-openvpn-dialog.ui:1470 properties/nm-openvpn-dialog.ui:1485
-#: properties/nm-openvpn-dialog.ui:1505
+#: properties/nm-openvpn3-dialog.ui:1407 properties/nm-openvpn3-dialog.ui:1422
+#: properties/nm-openvpn3-dialog.ui:1442
 msgid ""
 "Exit or restart after n seconds pass without reception of a ping or other "
 "packet from remote.\n"
@@ -771,11 +785,11 @@ msgstr ""
 "ping lub innych pakietów ze zdalnego komputera.\n"
 "konfiguracja: ping-exit | ping-restart <n>"
 
-#: properties/nm-openvpn-dialog.ui:1526
+#: properties/nm-openvpn3-dialog.ui:1463
 msgid "Accept authenticated packets from any address (F_loat)"
 msgstr "Przyjmowanie uwierzytelnionych pakietów z każdego adresu (f_loat)"
 
-#: properties/nm-openvpn-dialog.ui:1530
+#: properties/nm-openvpn3-dialog.ui:1467
 msgid ""
 "Allow remote peer to change its IP address and/or port number, such as due "
 "to DHCP (this is the default if --remote is not used). --float when "
@@ -804,11 +818,13 @@ msgstr ""
 "\n"
 "konfiguracja: float"
 
-#: properties/nm-openvpn-dialog.ui:1551
-msgid "Specify max routes"
+#: properties/nm-openvpn3-dialog.ui:1488
+#, fuzzy
+#| msgid "Specify max routes"
+msgid "Specify ma_x routes"
 msgstr "Maksymalna liczba tras"
 
-#: properties/nm-openvpn-dialog.ui:1555 properties/nm-openvpn-dialog.ui:1570
+#: properties/nm-openvpn3-dialog.ui:1492 properties/nm-openvpn3-dialog.ui:1507
 msgid ""
 "Specify the maximum number of routes the server is allowed to specify.\n"
 "config: max-routes <n>"
@@ -816,7 +832,7 @@ msgstr ""
 "Określa maksymalną liczbę tras dla serwera.\n"
 "konfiguracja: max-routes <n>"
 
-#: properties/nm-openvpn-dialog.ui:1615
+#: properties/nm-openvpn3-dialog.ui:1552
 msgid ""
 "Encrypt packets with cipher algorithm. The default is BF-CBC (Blowfish in "
 "Cipher Block Chaining mode).\n"
@@ -826,21 +842,7 @@ msgstr ""
 "(Blowfish w trybie Cipher Block Chaining).\n"
 "konfiguracja: cipher"
 
-#: properties/nm-openvpn-dialog.ui:1632
-msgid "Use custom _size of cipher key"
-msgstr "Własny _rozmiar klucza szyfrowania"
-
-#: properties/nm-openvpn-dialog.ui:1636 properties/nm-openvpn-dialog.ui:1650
-msgid ""
-"Set cipher key size to a custom value. If unspecified, it defaults to cipher-"
-"specific size.\n"
-"config: keysize <n>"
-msgstr ""
-"Ustawia rozmiar klucza szyfrowania na podaną wartość. Jeśli wartość nie "
-"zostanie podana, to używa rozmiaru domyślnego dla szyfru.\n"
-"konfiguracja: keysize <n>"
-
-#: properties/nm-openvpn-dialog.ui:1665
+#: properties/nm-openvpn3-dialog.ui:1571
 msgid ""
 "Authenticate packets with HMAC using message digest algorithm. The default "
 "is SHA1.\n"
@@ -850,31 +852,35 @@ msgstr ""
 "komunikatów. Domyślnie wynosi SHA1.\n"
 "konfiguracja: auth"
 
-#: properties/nm-openvpn-dialog.ui:1684
+#: properties/nm-openvpn3-dialog.ui:1590
 msgid "Ci_pher"
 msgstr "_Szyfr"
 
-#: properties/nm-openvpn-dialog.ui:1699
+#: properties/nm-openvpn3-dialog.ui:1605
+#, fuzzy
+#| msgid "Data _compression"
+msgid "D_ata ciphers"
+msgstr "_Kompresja danych"
+
+#: properties/nm-openvpn3-dialog.ui:1620
+msgid ""
+"Restrict the allowed ciphers to be negotiated to the ciphers in cipher-list. "
+"cipher-list is a colon-separated list of ciphers like AES-256-GCM:AES-128-"
+"GCM.\n"
+"config: data-ciphers"
+msgstr ""
+
+#: properties/nm-openvpn3-dialog.ui:1632
 msgid "_HMAC Authentication"
 msgstr "Uwierzytelnianie _HMAC"
 
-#: properties/nm-openvpn-dialog.ui:1712
-msgid "Disable cipher _negotiation"
-msgstr "Wyłączenie _negocjacji szyfru"
-
-#: properties/nm-openvpn-dialog.ui:1716
-msgid ""
-"Disable cipher negotiation between client and server.\n"
-"config: ncp-disable"
-msgstr ""
-"Wyłącza negocjację szyfru między klientem a serwerem.\n"
-"konfiguracja: ncp-disable"
-
-#: properties/nm-openvpn-dialog.ui:1728
-msgid "Verify CRL from file"
+#: properties/nm-openvpn3-dialog.ui:1645
+#, fuzzy
+#| msgid "Verify CRL from file"
+msgid "Verify CRL from _file"
 msgstr "Sprawdzanie poprawności CRL z pliku"
 
-#: properties/nm-openvpn-dialog.ui:1732 properties/nm-openvpn-dialog.ui:1758
+#: properties/nm-openvpn3-dialog.ui:1650 properties/nm-openvpn3-dialog.ui:1677
 msgid ""
 "Check peer certificate against the specified file in PEM format. A CRL "
 "(certificate revocation list) is used when a particular key is compromised "
@@ -884,11 +890,13 @@ msgstr ""
 "w formacie PEM. Lista CRL (lista unieważnień certyfikatów) jest używana, "
 "kiedy dany klucz został złamany, ale PKI jako takie jest nadal nienaruszone."
 
-#: properties/nm-openvpn-dialog.ui:1742
-msgid "Verify CRL from directory"
+#: properties/nm-openvpn3-dialog.ui:1660
+#, fuzzy
+#| msgid "Verify CRL from directory"
+msgid "Verify CRL from _directory"
 msgstr "Sprawdzanie poprawności CRL z katalogu"
 
-#: properties/nm-openvpn-dialog.ui:1746 properties/nm-openvpn-dialog.ui:1801
+#: properties/nm-openvpn3-dialog.ui:1665 properties/nm-openvpn3-dialog.ui:1720
 msgid ""
 "Check peer certificate by looking at files in the specified directory. The "
 "directory must contain files named as revoked serial numbers (the files may "
@@ -898,19 +906,19 @@ msgstr ""
 "katalogu. Katalog musi zawierać pliki o nazwach jako unieważnione numery "
 "seryjne (pliki mogą być puste, ich zawartość nie jest odczytywana)."
 
-#: properties/nm-openvpn-dialog.ui:1767 properties/nm-openvpn-editor.c:103
+#: properties/nm-openvpn3-dialog.ui:1686 properties/nm-openvpn3-editor.c:103
 msgid "(None)"
 msgstr "(Brak)"
 
-#: properties/nm-openvpn-dialog.ui:1860
+#: properties/nm-openvpn3-dialog.ui:1779
 msgid "Security"
 msgstr "Zabezpieczenia"
 
-#: properties/nm-openvpn-dialog.ui:1889
+#: properties/nm-openvpn3-dialog.ui:1808
 msgid "_Subject Match"
 msgstr "Temat _dopasowania"
 
-#: properties/nm-openvpn-dialog.ui:1903
+#: properties/nm-openvpn3-dialog.ui:1822
 msgid ""
 "Subject or Common Name to verify server certificate information against.\n"
 "\n"
@@ -923,11 +931,13 @@ msgstr ""
 "konfiguracja: verify-x509-name temat-lub-nazwa [tryb]\n"
 "konfiguracja (tryb przestarzały): tls-remote temat-lub-nazwa"
 
-#: properties/nm-openvpn-dialog.ui:1918
-msgid "Server _Certificate Check"
+#: properties/nm-openvpn3-dialog.ui:1837
+#, fuzzy
+#| msgid "Server _Certificate Check"
+msgid "Server Cert_ificate Check"
 msgstr "Sprawdzanie _certyfikatu serwera"
 
-#: properties/nm-openvpn-dialog.ui:1932
+#: properties/nm-openvpn3-dialog.ui:1851
 msgid ""
 "Verify server certificate identification.\n"
 "\n"
@@ -957,11 +967,13 @@ msgstr ""
 "konfiguracja: verify-x509-name temat-lub-nazwa [tryb]\n"
 "konfiguracja (tryb przestarzały): tls-remote temat-lub-nazwa"
 
-#: properties/nm-openvpn-dialog.ui:1972
-msgid "_Verify peer (server) certificate usage signature"
+#: properties/nm-openvpn3-dialog.ui:1891
+#, fuzzy
+#| msgid "_Verify peer (server) certificate usage signature"
+msgid "Verify peer (server) certificate _usage signature"
 msgstr "_Sprawdzanie poprawności podpisu użycia certyfikatu partnera (serwera)"
 
-#: properties/nm-openvpn-dialog.ui:1976
+#: properties/nm-openvpn3-dialog.ui:1895
 msgid ""
 "Require that peer certificate was signed with an explicit key usage and "
 "extended key usage based on RFC3280 TLS rules."
@@ -970,11 +982,13 @@ msgstr ""
 "klucza i użycie rozszerzonego klucza na podstawie reguł TLS dokumentu "
 "RFC3280."
 
-#: properties/nm-openvpn-dialog.ui:1990
-msgid "_Remote peer certificate TLS type"
+#: properties/nm-openvpn3-dialog.ui:1909
+#, fuzzy
+#| msgid "_Remote peer certificate TLS type"
+msgid "Remote peer certificate _TLS type"
 msgstr "Typ TLS certyfikatu _zdalnego partnera"
 
-#: properties/nm-openvpn-dialog.ui:2004
+#: properties/nm-openvpn3-dialog.ui:1923
 msgid ""
 "Require that peer certificate was signed with an explicit key usage and "
 "extended key usage based on RFC3280 TLS rules.\n"
@@ -985,38 +999,11 @@ msgstr ""
 "RFC3280.\n"
 "konfiguracja: remote-cert-tls client|server"
 
-#: properties/nm-openvpn-dialog.ui:2036
-msgid "_Verify peer (server) certificate nsCertType designation"
-msgstr ""
-"_Sprawdzanie poprawności określenia nsCertType certyfikatu partnera (serwera)"
-
-#: properties/nm-openvpn-dialog.ui:2040
-msgid ""
-"Require that peer certificate was signed with an explicit nsCertType "
-"designation."
-msgstr ""
-"Wymaga podpisania certyfikatu partnera za pomocą bezpośredniego określenia "
-"nsCertType."
-
-#: properties/nm-openvpn-dialog.ui:2056
-msgid "_Remote peer certificate nsCert designation"
-msgstr "Określenie nsCertType certyfikatu _zdalnego partnera"
-
-#: properties/nm-openvpn-dialog.ui:2070
-msgid ""
-"Require that peer certificate was signed with an explicit nsCertType "
-"designation.\n"
-"config: ns-cert-type client|server"
-msgstr ""
-"Wymaga podpisania certyfikatu partnera za pomocą bezpośredniego określenia "
-"nsCertType.\n"
-"konfiguracja: ns-cert-type client|server"
-
-#: properties/nm-openvpn-dialog.ui:2112
+#: properties/nm-openvpn3-dialog.ui:1965
 msgid "Key _Direction"
 msgstr "_Kierunek klucza"
 
-#: properties/nm-openvpn-dialog.ui:2126
+#: properties/nm-openvpn3-dialog.ui:1979
 msgid ""
 "Add an additional layer of HMAC authentication on top of the TLS control "
 "channel to protect against DoS attacks. In case of TLS-Crypt mode, the "
@@ -1028,7 +1015,7 @@ msgstr ""
 "także jest zaszyfrowany.\n"
 "konfiguracja: tls-auth <plik> [kierunek] | tls-crypt <plik>"
 
-#: properties/nm-openvpn-dialog.ui:2170
+#: properties/nm-openvpn3-dialog.ui:2023
 msgid ""
 "Direction parameter for static key mode.\n"
 "If key direction is used, it must be the opposite of that used on the VPN "
@@ -1043,23 +1030,27 @@ msgstr ""
 "skontaktować się z administratorem systemu.\n"
 "konfiguracja: tls-auth <plik> [kierunek]"
 
-#: properties/nm-openvpn-dialog.ui:2190
+#: properties/nm-openvpn3-dialog.ui:2043
 msgid "Key _File"
 msgstr "_Plik klucza"
 
-#: properties/nm-openvpn-dialog.ui:2204
-msgid "Mode"
+#: properties/nm-openvpn3-dialog.ui:2057
+#, fuzzy
+#| msgid "Mode"
+msgid "_Mode"
 msgstr "Tryb"
 
-#: properties/nm-openvpn-dialog.ui:2216 properties/nm-openvpn-dialog.ui:2323
+#: properties/nm-openvpn3-dialog.ui:2070 properties/nm-openvpn3-dialog.ui:2152
 msgid "Add an additional layer of encryption or HMAC authentication."
 msgstr "Dodaje dodatkową warstwę szyfrowania lub uwierzytelniania HMAC."
 
-#: properties/nm-openvpn-dialog.ui:2236
-msgid "Extra Certificates"
+#: properties/nm-openvpn3-dialog.ui:2090
+#, fuzzy
+#| msgid "Extra Certificates"
+msgid "_Extra Certificates"
 msgstr "Dodatkowe certyfikaty"
 
-#: properties/nm-openvpn-dialog.ui:2249
+#: properties/nm-openvpn3-dialog.ui:2103
 msgid ""
 "Specify a file containing one or more PEM certs (concatenated together) that "
 "complete the local certificate chain.\n"
@@ -1069,35 +1060,25 @@ msgstr ""
 "sobą), które uzupełniają lokalny łańcuch certyfikatów.\n"
 "konfiguracja: extra-certs <plik>"
 
-#: properties/nm-openvpn-dialog.ui:2292
-msgid "TLS cipher string"
-msgstr "Ciąg szyfru TLS"
-
-#: properties/nm-openvpn-dialog.ui:2305
-msgid ""
-"Set a value for the --tls-cipher parameter. This can be useful for working "
-"with VPNs using deprecated hashing schemes."
-msgstr ""
-"Ustawia wartość parametru --tls-cipher. Może to być przydatne do działania "
-"z sieciami VPN używającymi przestarzałych schematów funkcji mieszania."
-
-#: properties/nm-openvpn-dialog.ui:2326
+#: properties/nm-openvpn3-dialog.ui:2155
 msgid "Additional TLS authentication or encryption"
 msgstr "Dodatkowe uwierzytelnianie lub szyfrowanie TLS"
 
-#: properties/nm-openvpn-dialog.ui:2353
+#: properties/nm-openvpn3-dialog.ui:2182
 msgid "Controls min and max version allowed for TLS."
 msgstr "Kontroluje minimalną i maksymalną dozwoloną wersję TLS."
 
-#: properties/nm-openvpn-dialog.ui:2356
+#: properties/nm-openvpn3-dialog.ui:2185
 msgid "TLS version control"
 msgstr "Kontrola wersji TLS"
 
-#: properties/nm-openvpn-dialog.ui:2381
-msgid "TLS _min version"
+#: properties/nm-openvpn3-dialog.ui:2210
+#, fuzzy
+#| msgid "TLS _min version"
+msgid "TLS mi_n version"
 msgstr "_Minimalna wersja TLS"
 
-#: properties/nm-openvpn-dialog.ui:2394
+#: properties/nm-openvpn3-dialog.ui:2223
 msgid ""
 " Sets the minimum TLS version we will accept from the peer (default is "
 "\"1.0\").  Examples for version include \"1.0\", \"1.1\", or \"1.2\"."
@@ -1105,11 +1086,11 @@ msgstr ""
 "Ustawia minimalną wersję TLS, jaka zostanie przyjęta od partnera (domyślnie "
 "to „1.0”). Przykłady wersji: „1.0”, „1.1” lub „1.2”."
 
-#: properties/nm-openvpn-dialog.ui:2406
+#: properties/nm-openvpn3-dialog.ui:2235
 msgid "TLS ma_x version"
 msgstr "Ma_ksymalna wersja TLS"
 
-#: properties/nm-openvpn-dialog.ui:2419
+#: properties/nm-openvpn3-dialog.ui:2248
 msgid ""
 "Set the maximum TLS version we will use (default is the highest version "
 "supported).  Examples for version include \"1.0\", \"1.1\", or \"1.2\"."
@@ -1117,11 +1098,11 @@ msgstr ""
 "Ustawia maksymalną wersję TLS do użycia (domyślnie to najwyższa obsługiwana "
 "wersja). Przykłady wersji: „1.0”, „1.1” lub „1.2”."
 
-#: properties/nm-openvpn-dialog.ui:2429
+#: properties/nm-openvpn3-dialog.ui:2258
 msgid "_or highest"
 msgstr "lub _najwyższa"
 
-#: properties/nm-openvpn-dialog.ui:2432
+#: properties/nm-openvpn3-dialog.ui:2261
 msgid ""
 "If set and version is not recognized, we will only accept the highest TLS "
 "version supported by the local SSL implementation."
@@ -1130,11 +1111,11 @@ msgstr ""
 "zostanie tylko najwyższa wersja TLS obsługiwana przez lokalną implementację "
 "SSL."
 
-#: properties/nm-openvpn-dialog.ui:2461
+#: properties/nm-openvpn3-dialog.ui:2290
 msgid "TLS Authentication"
 msgstr "Uwierzytelnianie TLS"
 
-#: properties/nm-openvpn-dialog.ui:2482
+#: properties/nm-openvpn3-dialog.ui:2311
 msgid ""
 "Proxy type: HTTP or Socks.\n"
 "config: http-proxy or socks-proxy"
@@ -1142,11 +1123,11 @@ msgstr ""
 "Typ pośrednika: HTTP lub SOCKS.\n"
 "konfiguracja: http-proxy lub socks-proxy"
 
-#: properties/nm-openvpn-dialog.ui:2502
+#: properties/nm-openvpn3-dialog.ui:2331
 msgid "Proxy _Type"
 msgstr "_Typ pośrednika"
 
-#: properties/nm-openvpn-dialog.ui:2518
+#: properties/nm-openvpn3-dialog.ui:2347
 msgid ""
 "<i>Select this option if your organization requires the use of a proxy "
 "server to access the Internet.</i>"
@@ -1154,11 +1135,13 @@ msgstr ""
 "<i>Należy wybrać tę opcję, jeśli organizacja wymaga użycia serwera "
 "pośrednika do dostępu do Internetu.</i>"
 
-#: properties/nm-openvpn-dialog.ui:2533
-msgid "Server _Address"
+#: properties/nm-openvpn3-dialog.ui:2362
+#, fuzzy
+#| msgid "Server _Address"
+msgid "S_erver Address"
 msgstr "_Adres serwera"
 
-#: properties/nm-openvpn-dialog.ui:2551
+#: properties/nm-openvpn3-dialog.ui:2380
 msgid ""
 "Connect to remote host through a proxy with this address.\n"
 "config: http-proxy or socks-proxy"
@@ -1166,11 +1149,11 @@ msgstr ""
 "Łączy ze zdalnym komputerem przez pośrednika za pomocą tego adresu.\n"
 "konfiguracja: http-proxy lub socks-proxy"
 
-#: properties/nm-openvpn-dialog.ui:2564
+#: properties/nm-openvpn3-dialog.ui:2393
 msgid "_Port"
 msgstr "_Port"
 
-#: properties/nm-openvpn-dialog.ui:2581
+#: properties/nm-openvpn3-dialog.ui:2410
 msgid ""
 "Connect to remote host through a proxy with this port.\n"
 "config: http-proxy or socks-proxy"
@@ -1178,11 +1161,11 @@ msgstr ""
 "Łączy ze zdalnym komputerem przez pośrednika za pomocą tego portu.\n"
 "konfiguracja: http-proxy lub socks-proxy"
 
-#: properties/nm-openvpn-dialog.ui:2602
+#: properties/nm-openvpn3-dialog.ui:2431
 msgid "_Retry indefinitely when errors occur"
 msgstr "_Powtarzanie w nieskończoność, kiedy wystąpi błąd"
 
-#: properties/nm-openvpn-dialog.ui:2606
+#: properties/nm-openvpn3-dialog.ui:2435
 msgid ""
 "Retry indefinitely on proxy errors. It simulates a SIGUSR1 reset.\n"
 "config: http-proxy-retry or socks-proxy-retry"
@@ -1191,39 +1174,43 @@ msgstr ""
 "przywrócenie SIGUSR1.\n"
 "konfiguracja: http-proxy-retry lub socks-proxy-retry"
 
-#: properties/nm-openvpn-dialog.ui:2620
+#: properties/nm-openvpn3-dialog.ui:2449
 msgid "Proxy _Username"
 msgstr "Nazwa _użytkownika pośrednika"
 
-#: properties/nm-openvpn-dialog.ui:2635
+#: properties/nm-openvpn3-dialog.ui:2464
 msgid "Proxy Passwor_d"
 msgstr "_Hasło pośrednika"
 
-#: properties/nm-openvpn-dialog.ui:2650
+#: properties/nm-openvpn3-dialog.ui:2479
 msgid "HTTP/Socks proxy username passed to OpenVPN when prompted for it."
 msgstr "Nazwa użytkownika pośrednika HTTP/SOCKS przekazywana do OpenVPN."
 
-#: properties/nm-openvpn-dialog.ui:2661
+#: properties/nm-openvpn3-dialog.ui:2490
 msgid "HTTP/Socks proxy password passed to OpenVPN when prompted for it."
 msgstr "Hasło pośrednika HTTP/SOCKS przekazywane do OpenVPN."
 
-#: properties/nm-openvpn-dialog.ui:2671
+#: properties/nm-openvpn3-dialog.ui:2500
 msgid "_Show password"
 msgstr "_Wyświetlanie hasła"
 
-#: properties/nm-openvpn-dialog.ui:2698
+#: properties/nm-openvpn3-dialog.ui:2527
 msgid "Proxies"
 msgstr "Pośredniki"
 
-#: properties/nm-openvpn-dialog.ui:2719
-msgid "Path mtu discovery"
+#: properties/nm-openvpn3-dialog.ui:2548
+#, fuzzy
+#| msgid "Path mtu discovery"
+msgid "Path mtu _discovery"
 msgstr "Wykrywanie MTU ścieżki"
 
-#: properties/nm-openvpn-dialog.ui:2752
-msgid "Connect timeout"
+#: properties/nm-openvpn3-dialog.ui:2582
+#, fuzzy
+#| msgid "Connect timeout"
+msgid "Connect _timeout"
 msgstr "Czas oczekiwania połączenia"
 
-#: properties/nm-openvpn-dialog.ui:2756 properties/nm-openvpn-dialog.ui:2769
+#: properties/nm-openvpn3-dialog.ui:2587 properties/nm-openvpn3-dialog.ui:2600
 msgid ""
 "The timeout in seconds before trying the next server. This timeout includes "
 "proxy and TCP connect timeouts.\n"
@@ -1233,168 +1220,236 @@ msgstr ""
 "czas oczekiwania obejmuje czasy oczekiwania połączenia pośrednika i TCP.\n"
 "konfiguracja: connect-timeout <n> | server-poll-timeout <n>"
 
-#: properties/nm-openvpn-dialog.ui:2772
+#: properties/nm-openvpn3-dialog.ui:2603
 msgid "0"
 msgstr "0"
 
-#: properties/nm-openvpn-dialog.ui:2782
-msgid "Push peer info"
-msgstr "Wysyłanie informacji o partnerze"
+#: properties/nm-openvpn3-dialog.ui:2615
+msgid "openvpn3 overrides"
+msgstr "Nadpisania openvpn3"
 
-#: properties/nm-openvpn-dialog.ui:2786
+#: properties/nm-openvpn3-dialog.ui:2630
+msgid "Ignore server-pushed routes (split-tunnel)"
+msgstr "Ignoruj trasy wypchnięte przez serwer (tunel cząstkowy)"
+
+#: properties/nm-openvpn3-dialog.ui:2634
 msgid ""
-"Push additional information about the client to server.\n"
-"config: push-peer-info"
+"Override: route-nopull. Discard routes the server pushes; only the tunnel "
+"endpoint route stays."
 msgstr ""
-"Wysyła dodatkowe informacje o kliencie do serwera.\n"
-"konfiguracja: push-peer-info"
+"Nadpisanie: route-nopull. Odrzuca trasy wypchnięte przez serwer; pozostaje "
+"tylko trasa do końcówki tunelu."
 
-#: properties/nm-openvpn-dialog.ui:2803
+#: properties/nm-openvpn3-dialog.ui:2645
+msgid "Force default gateway through VPN (full-tunnel)"
+msgstr "Wymuś bramę domyślną przez VPN (pełny tunel)"
+
+#: properties/nm-openvpn3-dialog.ui:2649
+msgid ""
+"Override: force-default-gateway. Route all traffic through the tunnel, "
+"ignoring server policy."
+msgstr ""
+"Nadpisanie: force-default-gateway. Kieruje cały ruch przez tunel ignorując "
+"politykę serwera."
+
+#: properties/nm-openvpn3-dialog.ui:2660
+msgid "Block IPv6 traffic in tunnel"
+msgstr "Blokuj ruch IPv6 w tunelu"
+
+#: properties/nm-openvpn3-dialog.ui:2664
+msgid ""
+"Override: block-ipv6. Drop IPv6 packets inside the tunnel; useful for IPv4-"
+"only servers leaking IPv6."
+msgstr ""
+"Nadpisanie: block-ipv6. Odrzuca pakiety IPv6 w tunelu; przydatne dla "
+"serwerów IPv4-only wyciekających IPv6."
+
+#: properties/nm-openvpn3-dialog.ui:2675
+msgid "Do not modify system DNS"
+msgstr "Nie modyfikuj systemowego DNS"
+
+#: properties/nm-openvpn3-dialog.ui:2679
+msgid ""
+"Override: dns-setup-disabled. Skip openvpn3 DNS configuration; let "
+"NetworkManager / systemd-resolved keep control."
+msgstr ""
+"Nadpisanie: dns-setup-disabled. Pomija konfigurację DNS przez openvpn3; "
+"pozostawia kontrolę NetworkManagerowi / systemd-resolved."
+
+#: properties/nm-openvpn3-dialog.ui:2690
+msgid "Enable Data Channel Offload (DCO)"
+msgstr "Włącz Data Channel Offload (DCO)"
+
+#: properties/nm-openvpn3-dialog.ui:2694
+msgid ""
+"Override: dco. Use the in-kernel Data Channel Offload module for higher "
+"throughput when the kernel and server both support it."
+msgstr ""
+"Nadpisanie: dco. Wykorzystuje modułowy Data Channel Offload w jądrze dla "
+"wyższej przepustowości, gdy jądro i serwer to wspierają."
+
+#: properties/nm-openvpn3-dialog.ui:2709
 msgid "Misc"
 msgstr "Różne"
 
-#: properties/nm-openvpn-dialog.ui:2836
+#: properties/nm-openvpn3-dialog.ui:2742
 msgid "Choose an OpenVPN static key…"
 msgstr "Wybierz klucz statyczny OpenVPN…"
 
-#: properties/nm-openvpn-dialog.ui:2853 properties/nm-openvpn-dialog.ui:2906
-#: properties/nm-openvpn-dialog.ui:2960 properties/nm-openvpn-dialog.ui:3013
-#: properties/nm-openvpn-dialog.ui:3066
+#: properties/nm-openvpn3-dialog.ui:2759 properties/nm-openvpn3-dialog.ui:2812
+#: properties/nm-openvpn3-dialog.ui:2866 properties/nm-openvpn3-dialog.ui:2919
+#: properties/nm-openvpn3-dialog.ui:2972 properties/nm-openvpn3-editor.c:2596
 msgid "_Select"
 msgstr "_Wybierz"
 
-#: properties/nm-openvpn-dialog.ui:2889
+#: properties/nm-openvpn3-dialog.ui:2795
 msgid "Choose CRL file"
 msgstr "Wybór pliku CRL"
 
-#: properties/nm-openvpn-dialog.ui:2943
+#: properties/nm-openvpn3-dialog.ui:2849
 msgid "Choose CRL directory"
 msgstr "Wybór katalogu CRL"
 
-#: properties/nm-openvpn-dialog.ui:2996
+#: properties/nm-openvpn3-dialog.ui:2902
 msgid "Choose a key file"
 msgstr "Wybór pliku klucza"
 
-#: properties/nm-openvpn-dialog.ui:3049
+#: properties/nm-openvpn3-dialog.ui:2955
 msgid "Choose extra certificate file"
 msgstr "Wybór dodatkowego pliku certyfikatu"
 
-#: properties/nm-openvpn-editor.c:785
+#: properties/nm-openvpn3-editor.c:785
 msgid "OpenVPN Static Keys (*.key)"
 msgstr "Klucze statyczne OpenVPN (*.key)"
 
-#: properties/nm-openvpn-editor.c:942 properties/nm-openvpn-editor.c:1036
+#: properties/nm-openvpn3-editor.c:941 properties/nm-openvpn3-editor.c:1035
 msgid "Default"
 msgstr "Domyślny"
 
-#: properties/nm-openvpn-editor.c:1020
+#: properties/nm-openvpn3-editor.c:1019
 msgid "RSA MD-4"
 msgstr "RSA MD-4"
 
-#: properties/nm-openvpn-editor.c:1021
+#: properties/nm-openvpn3-editor.c:1020
 msgid "MD-5"
 msgstr "MD-5"
 
-#: properties/nm-openvpn-editor.c:1022
+#: properties/nm-openvpn3-editor.c:1021
 msgid "SHA-1"
 msgstr "SHA-1"
 
-#: properties/nm-openvpn-editor.c:1023
+#: properties/nm-openvpn3-editor.c:1022
 msgid "SHA-224"
 msgstr "SHA-224"
 
-#: properties/nm-openvpn-editor.c:1024
+#: properties/nm-openvpn3-editor.c:1023
 msgid "SHA-256"
 msgstr "SHA-256"
 
-#: properties/nm-openvpn-editor.c:1025
+#: properties/nm-openvpn3-editor.c:1024
 msgid "SHA-384"
 msgstr "SHA-384"
 
-#: properties/nm-openvpn-editor.c:1026
+#: properties/nm-openvpn3-editor.c:1025
 msgid "SHA-512"
 msgstr "SHA-512"
 
-#: properties/nm-openvpn-editor.c:1027
+#: properties/nm-openvpn3-editor.c:1026
 msgid "RIPEMD-160"
 msgstr "RIPEMD-160"
 
-#: properties/nm-openvpn-editor.c:1085
+#: properties/nm-openvpn3-editor.c:1084
 msgid "Don’t verify certificate identification"
 msgstr "Bez sprawdzania poprawności identyfikacji certyfikatu"
 
-#: properties/nm-openvpn-editor.c:1091
+#: properties/nm-openvpn3-editor.c:1090
 msgid "Verify whole subject exactly"
 msgstr "Dokładne sprawdzanie poprawności całego tematu"
 
-#: properties/nm-openvpn-editor.c:1097
+#: properties/nm-openvpn3-editor.c:1096
 msgid "Verify name exactly"
 msgstr "Dokładne sprawdzanie poprawności nazwy"
 
-#: properties/nm-openvpn-editor.c:1103
+#: properties/nm-openvpn3-editor.c:1102
 msgid "Verify name by prefix"
 msgstr "Sprawdzanie poprawności nazwy według przedrostka"
 
-#: properties/nm-openvpn-editor.c:1109
+#: properties/nm-openvpn3-editor.c:1108
 msgid "Verify subject partially (legacy mode, strongly discouraged)"
 msgstr ""
 "Częściowe sprawdzanie poprawności tematu (tryb przestarzały, niezalecane)"
 
-#: properties/nm-openvpn-editor.c:1222 properties/nm-openvpn-editor.c:1294
+#: properties/nm-openvpn3-editor.c:1221
 msgid "Server"
 msgstr "Serwer"
 
-#: properties/nm-openvpn-editor.c:1227 properties/nm-openvpn-editor.c:1299
+#: properties/nm-openvpn3-editor.c:1226
 msgid "Client"
 msgstr "Klient"
 
-#: properties/nm-openvpn-editor.c:1626
+#: properties/nm-openvpn3-editor.c:1576
 msgid "HTTP"
 msgstr "HTTP"
 
-#: properties/nm-openvpn-editor.c:1628
+#: properties/nm-openvpn3-editor.c:1578
 msgid "SOCKS"
 msgstr "SOCKS"
 
-#: properties/nm-openvpn-editor.c:1743
+#: properties/nm-openvpn3-editor.c:1676
 msgid "TUN"
 msgstr "TUN"
 
-#: properties/nm-openvpn-editor.c:1745
+#: properties/nm-openvpn3-editor.c:1678
 msgid "TAP"
 msgstr "TAP"
 
 #. interface name is max 15 chars
-#: properties/nm-openvpn-editor.c:1752
+#: properties/nm-openvpn3-editor.c:1685
 msgid "(automatic)"
 msgstr "(automatycznie)"
 
-#: properties/nm-openvpn-editor.c:1915
+#: properties/nm-openvpn3-editor.c:1830
 msgid "ping-exit"
 msgstr "ping-exit"
 
-#: properties/nm-openvpn-editor.c:1917
+#: properties/nm-openvpn3-editor.c:1832
 msgid "ping-restart"
 msgstr "ping-restart"
 
-#: properties/nm-openvpn-editor.c:2726
+#: properties/nm-openvpn3-editor.c:2593
+msgid "Choose an OpenVPN profile (.ovpn)"
+msgstr "Wybierz plik profilu OpenVPN (.ovpn)"
+
+#: properties/nm-openvpn3-editor.c:2600
+msgid "OpenVPN profile (*.ovpn, *.conf)"
+msgstr "Profil OpenVPN (*.ovpn, *.conf)"
+
+#: properties/nm-openvpn3-editor.c:2606
+msgid "All files"
+msgstr ""
+
+#: properties/nm-openvpn3-editor.c:2691
 msgid "Certificates (TLS)"
 msgstr "Certyfikaty (TLS)"
 
-#: properties/nm-openvpn-editor.c:2751
+#: properties/nm-openvpn3-editor.c:2716
 msgid "Password with Certificates (TLS)"
 msgstr "Hasło z certyfikatami (TLS)"
 
-#: properties/nm-openvpn-editor.c:2907
+#: properties/nm-openvpn3-editor.c:2877
 msgid "could not load UI widget"
 msgstr "nie można wczytać widżetu interfejsu użytkownika"
 
-#: properties/nm-openvpn-editor-plugin.c:38
-msgid "OpenVPN"
+#: properties/nm-openvpn3-editor-plugin.c:38
+#, fuzzy
+#| msgid "OpenVPN"
+msgid "OpenVPN 3"
 msgstr "OpenVPN"
 
-#: properties/nm-openvpn-editor-plugin.c:39
-msgid "Compatible with the OpenVPN server."
+#: properties/nm-openvpn3-editor-plugin.c:39
+#, fuzzy
+#| msgid "Compatible with the OpenVPN server."
+msgid "Compatible with the OpenVPN 3 Linux client (net.openvpn.v3.*)."
 msgstr "Zgodny z serwerem OpenVPN."
 
 #: shared/nm-utils/nm-shared-utils.c:946
@@ -1481,69 +1536,69 @@ msgstr "nieprawidłowy port"
 msgid "invalid protocol"
 msgstr "nieprawidłowy protokół"
 
-#: src/nm-openvpn-service.c:429
+#: src/nm-openvpn3-service.c:550
 #, c-format
 msgid "invalid address “%s”"
 msgstr "nieprawidłowy adres „%s”"
 
-#: src/nm-openvpn-service.c:441
+#: src/nm-openvpn3-service.c:562
 #, c-format
 msgid "invalid integer property “%s” or out of range [%d -> %d]"
 msgstr ""
-"nieprawidłowa właściwość liczby całkowitej „%s” lub jest poza zakresem [%d -"
-"> %d]"
+"nieprawidłowa właściwość liczby całkowitej „%s” lub jest poza zakresem [%d "
+"-> %d]"
 
 #. Translators: keep "yes" and "no" untranslated!
-#: src/nm-openvpn-service.c:452
+#: src/nm-openvpn3-service.c:573
 #, c-format
 msgid "invalid boolean property “%s” (not yes or no)"
 msgstr ""
 "nieprawidłowa właściwość zmiennej logicznej „%s” (nie wynosi „yes” lub „no”)"
 
-#: src/nm-openvpn-service.c:459
+#: src/nm-openvpn3-service.c:580
 #, c-format
 msgid "unhandled property “%s” type %s"
 msgstr "nieobsługiwana właściwość „%s” typu „%s”"
 
-#: src/nm-openvpn-service.c:470
+#: src/nm-openvpn3-service.c:591
 #, c-format
 msgid "property “%s” invalid or not supported"
 msgstr "właściwość „%s” jest nieprawidłowa lub nieobsługiwana"
 
-#: src/nm-openvpn-service.c:486
+#: src/nm-openvpn3-service.c:607
 msgid "No VPN configuration options."
 msgstr "Brak opcji konfiguracji VPN."
 
-#: src/nm-openvpn-service.c:921
+#: src/nm-openvpn3-service.c:1051
 msgid "A username is required."
 msgstr "Wymagana jest nazwa użytkownika."
 
-#: src/nm-openvpn-service.c:934
+#: src/nm-openvpn3-service.c:1064
 msgid "A password is required."
 msgstr "Wymagane jest hasło."
 
-#: src/nm-openvpn-service.c:936
+#: src/nm-openvpn3-service.c:1066
 msgid "A username and password are required."
 msgstr "Wymagana jest nazwa użytkownika i hasło."
 
-#: src/nm-openvpn-service.c:957
+#: src/nm-openvpn3-service.c:1087
 msgid "A private key password is required."
 msgstr "Wymagane jest hasło klucza prywatnego."
 
-#: src/nm-openvpn-service.c:970
+#: src/nm-openvpn3-service.c:1100
 msgid "An HTTP Proxy username is required."
 msgstr "Wymagana jest nazwa użytkownika pośrednika HTTP."
 
-#: src/nm-openvpn-service.c:974
+#: src/nm-openvpn3-service.c:1104
 msgid "An HTTP Proxy password is required."
 msgstr "Wymagane jest hasło pośrednika HTTP."
 
-#: src/nm-openvpn-service.c:977
+#: src/nm-openvpn3-service.c:1107
 msgid "An HTTP Proxy username and password are required."
 msgstr "Wymagana jest nazwa użytkownika i hasło pośrednika HTTP."
 
-#: src/nm-openvpn-service.c:1355 src/nm-openvpn-service.c:2189
-#: src/nm-openvpn-service.c:2224
+#: src/nm-openvpn3-service.c:1514 src/nm-openvpn3-service.c:2815
+#: src/nm-openvpn3-service.c:2850
 msgid ""
 "Could not process the request because the VPN connection settings were "
 "invalid."
@@ -1551,192 +1606,237 @@ msgstr ""
 "Nie można przetworzyć żądania, ponieważ ustawienia połączenia VPN są "
 "nieprawidłowe."
 
-#: src/nm-openvpn-service.c:1364 src/nm-openvpn-service.c:2198
+#: src/nm-openvpn3-service.c:1525 src/nm-openvpn3-service.c:2824
 msgid "Invalid connection type."
 msgstr "Nieprawidłowy typ połączenia."
 
-#: src/nm-openvpn-service.c:1382
+#: src/nm-openvpn3-service.c:1543
 msgid "Could not find the openvpn binary."
 msgstr "Nie można odnaleźć pliku binarnego openvpn."
 
-#: src/nm-openvpn-service.c:1430
+#: src/nm-openvpn3-service.c:1591
 #, c-format
 msgid "Invalid port number “%s”."
 msgstr "Nieprawidłowy numer portu „%s”."
 
-#: src/nm-openvpn-service.c:1450
+#: src/nm-openvpn3-service.c:1611
 #, c-format
 msgid "Invalid proto “%s”."
 msgstr "Nieprawidłowy protokół „%s”."
 
-#: src/nm-openvpn-service.c:1499
+#: src/nm-openvpn3-service.c:1660
 #, c-format
 msgid "Invalid proxy type “%s”."
 msgstr "Nieprawidłowy typ pośrednika „%s”."
 
-#: src/nm-openvpn-service.c:1597
+#: src/nm-openvpn3-service.c:1758
 #, c-format
 msgid "Invalid ping duration “%s”."
 msgstr "Nieprawidłowy czas trwania ping „%s”."
 
-#: src/nm-openvpn-service.c:1610
+#: src/nm-openvpn3-service.c:1771
 #, c-format
 msgid "Invalid ping-exit duration “%s”."
 msgstr "Nieprawidłowy czas trwania ping-exit „%s”."
 
-#: src/nm-openvpn-service.c:1623
+#: src/nm-openvpn3-service.c:1784
 #, c-format
 msgid "Invalid ping-restart duration “%s”."
 msgstr "Nieprawidłowy czas trwania ping-restart „%s”."
 
-#: src/nm-openvpn-service.c:1636
+#: src/nm-openvpn3-service.c:1797
 #, c-format
 msgid "Invalid connect timeout “%s”."
 msgstr "Nieprawidłowy czas oczekiwania połączenia „%s”."
 
-#: src/nm-openvpn-service.c:1661
+#: src/nm-openvpn3-service.c:1822
 #, c-format
 msgid "Invalid max-routes argument “%s”."
 msgstr "nieprawidłowy parametr max-routes „%s”."
 
-#: src/nm-openvpn-service.c:1707
+#: src/nm-openvpn3-service.c:1870
 #, c-format
 msgid "Invalid keysize “%s”."
 msgstr "Nieprawidłowy rozmiar klucza „%s”."
 
-#: src/nm-openvpn-service.c:1779
+#: src/nm-openvpn3-service.c:1943
 msgid "Invalid configuration with tls-remote and verify-x509-name."
 msgstr "Nieprawidłowa konfiguracja z „tls-remote” i „verify-x509-name”."
 
-#: src/nm-openvpn-service.c:1792
+#: src/nm-openvpn3-service.c:1956
 msgid "Invalid verify-x509-name."
 msgstr "Nieprawidłowe „verify-x509-name”."
 
-#: src/nm-openvpn-service.c:1815
+#: src/nm-openvpn3-service.c:1979
 #, c-format
 msgid "Invalid reneg seconds “%s”."
 msgstr "Nieprawidłowe sekundy renegocjacji „%s”."
 
-#: src/nm-openvpn-service.c:1845
+#: src/nm-openvpn3-service.c:2009
 #, c-format
 msgid "Invalid TUN MTU size “%s”."
 msgstr "Nieprawidłowy rozmiar MTU TUN „%s”."
 
-#: src/nm-openvpn-service.c:1858
+#: src/nm-openvpn3-service.c:2022
 #, c-format
 msgid "Invalid fragment size “%s”."
 msgstr "Nieprawidłowy rozmiar fragmentu „%s”."
 
-#: src/nm-openvpn-service.c:1968
+#: src/nm-openvpn3-service.c:2053
+msgid ""
+"A CRL directory can only be specified for connections available to all users"
+msgstr ""
+
+#: src/nm-openvpn3-service.c:2145
 #, c-format
 msgid "Unknown connection type “%s”."
 msgstr "Nieznany typ połączenia „%s”."
 
-#: src/nm-openvpn-service.c:1986
-#, c-format
-msgid "User “%s” not found, check NM_OPENVPN_USER."
+#: src/nm-openvpn3-service.c:2163
+#, fuzzy, c-format
+#| msgid "User “%s” not found, check NM_OPENVPN_USER."
+msgid "User “%s” not found, check NM_OPENVPN3_USER."
 msgstr ""
 "Nie odnaleziono użytkownika „%s”. Proszę sprawdzić zmienną NM_OPENVPN_USER."
 
-#: src/nm-openvpn-service.c:1998
-#, c-format
-msgid "Group “%s” not found, check NM_OPENVPN_GROUP."
+#: src/nm-openvpn3-service.c:2175
+#, fuzzy, c-format
+#| msgid "Group “%s” not found, check NM_OPENVPN_GROUP."
+msgid "Group “%s” not found, check NM_OPENVPN3_GROUP."
 msgstr "Nie odnaleziono grupy „%s”. Proszę sprawdzić zmienną NM_OPENVPN_GROUP."
 
-#: src/nm-openvpn-service.c:2237
+#: src/nm-openvpn3-service.c:2863
 msgid "Unhandled pending authentication."
 msgstr "Nieobsłużone oczekujące uwierzytelnienie."
 
-#: src/nm-openvpn-service.c:2355
+#: src/nm-openvpn3-service.c:3007
 msgid "Don’t quit when VPN connection terminates"
 msgstr "Nie kończy działania, kiedy połączenie VPN jest kończone"
 
-#: src/nm-openvpn-service.c:2356
+#: src/nm-openvpn3-service.c:3008
 msgid "Enable verbose debug logging (may expose passwords)"
 msgstr "Włącza więcej komunikatów debugowania (może wyjawić hasła)"
 
-#: src/nm-openvpn-service.c:2357
+#: src/nm-openvpn3-service.c:3009
 msgid "D-Bus name to use for this instance"
 msgstr "Nazwa D-Bus dla tego wystąpienia"
 
-#: src/nm-openvpn-service.c:2383
+#: src/nm-openvpn3-service.c:3037
+#, fuzzy
+#| msgid ""
+#| "nm-openvpn-service provides integrated OpenVPN capability to "
+#| "NetworkManager."
 msgid ""
-"nm-openvpn-service provides integrated OpenVPN capability to NetworkManager."
+"nm-openvpn3-service provides integrated OpenVPN capability to NetworkManager."
 msgstr ""
 "nm-openvpn-service dostarcza zintegrowaną możliwość nawiązywania połączeń "
 "OpenVPN dla usługi NetworkManager."
 
-#: properties/nm-openvpn3-dialog.ui
-msgid "_OVPN profile file"
-msgstr "Plik profilu _OVPN"
+#~ msgid "OpenVPN is a popular and flexible free-software VPN solution."
+#~ msgstr ""
+#~ "OpenVPN to popularne i elastyczne oprogramowanie VPN na wolnej licencji."
 
-#: properties/nm-openvpn3-dialog.ui
-msgid ""
-"Path to a verbatim .ovpn profile. When set, the openvpn3 client interprets "
-"the file directly; other UI fields then act as overrides.\n"
-"config: nm-openvpn3-profile"
-msgstr ""
-"Ścieżka do pliku .ovpn. Gdy ustawiona, klient openvpn3 interpretuje plik "
-"bezpośrednio; pozostałe pola UI działają jako nadpisania.\n"
-"config: nm-openvpn3-profile"
+#~ msgid "Asymmetric"
+#~ msgstr "Asymetryczna"
 
-#: properties/nm-openvpn3-dialog.ui
-msgid "(optional — leave empty to use UI fields)"
-msgstr "(opcjonalne — pozostaw puste, aby użyć pól UI)"
+#~ msgid "Symmetric"
+#~ msgstr "Symetryczna"
 
-#: properties/nm-openvpn3-dialog.ui
-msgid "_Browse…"
-msgstr "_Przeglądaj…"
+#~ msgid "LZO"
+#~ msgstr "LZO"
 
-#: properties/nm-openvpn3-editor.c
-msgid "Choose an OpenVPN profile (.ovpn)"
-msgstr "Wybierz plik profilu OpenVPN (.ovpn)"
+#~ msgid "LZ4"
+#~ msgstr "LZ4"
 
-#: properties/nm-openvpn3-editor.c
-msgid "OpenVPN profile (*.ovpn, *.conf)"
-msgstr "Profil OpenVPN (*.ovpn, *.conf)"
+#~ msgid "LZ4 v2"
+#~ msgstr "LZ4 v2"
 
-#: properties/nm-openvpn3-dialog.ui
-msgid "openvpn3 overrides"
-msgstr "Nadpisania openvpn3"
+#~ msgid "Automatic"
+#~ msgstr "Automatycznie"
 
-#: properties/nm-openvpn3-dialog.ui
-msgid "Ignore server-pushed routes (split-tunnel)"
-msgstr "Ignoruj trasy wypchnięte przez serwer (tunel cząstkowy)"
+#~ msgid "LZO disabled (legacy)"
+#~ msgstr "Wyłączone LZO (przestarzałe)"
 
-#: properties/nm-openvpn3-dialog.ui
-msgid "Override: route-nopull. Discard routes the server pushes; only the tunnel endpoint route stays."
-msgstr "Nadpisanie: route-nopull. Odrzuca trasy wypchnięte przez serwer; pozostaje tylko trasa do końcówki tunelu."
+#~ msgid "LZO adaptive (legacy)"
+#~ msgstr "Adaptacyjne LZO (przestarzałe)"
 
-#: properties/nm-openvpn3-dialog.ui
-msgid "Force default gateway through VPN (full-tunnel)"
-msgstr "Wymuś bramę domyślną przez VPN (pełny tunel)"
+#~ msgid ""
+#~ "Use fast LZO compression.\n"
+#~ "config: comp-lzo"
+#~ msgstr ""
+#~ "Używa szybkiej kompresji LZO.\n"
+#~ "konfiguracja: comp-lzo"
 
-#: properties/nm-openvpn3-dialog.ui
-msgid "Override: force-default-gateway. Route all traffic through the tunnel, ignoring server policy."
-msgstr "Nadpisanie: force-default-gateway. Kieruje cały ruch przez tunel ignorując politykę serwera."
+#~ msgid ""
+#~ "Enable or disable outgoing traffic compression\n"
+#~ "config: allow-compression asym|yes"
+#~ msgstr ""
+#~ "Włącza lub wyłącza kompresję ruchu wychodzącego\n"
+#~ "konfiguracja: allow-compression asym|yes"
 
-#: properties/nm-openvpn3-dialog.ui
-msgid "Block IPv6 traffic in tunnel"
-msgstr "Blokuj ruch IPv6 w tunelu"
+#~ msgid "Use custom _size of cipher key"
+#~ msgstr "Własny _rozmiar klucza szyfrowania"
 
-#: properties/nm-openvpn3-dialog.ui
-msgid "Override: block-ipv6. Drop IPv6 packets inside the tunnel; useful for IPv4-only servers leaking IPv6."
-msgstr "Nadpisanie: block-ipv6. Odrzuca pakiety IPv6 w tunelu; przydatne dla serwerów IPv4-only wyciekających IPv6."
+#~ msgid ""
+#~ "Set cipher key size to a custom value. If unspecified, it defaults to "
+#~ "cipher-specific size.\n"
+#~ "config: keysize <n>"
+#~ msgstr ""
+#~ "Ustawia rozmiar klucza szyfrowania na podaną wartość. Jeśli wartość nie "
+#~ "zostanie podana, to używa rozmiaru domyślnego dla szyfru.\n"
+#~ "konfiguracja: keysize <n>"
 
-#: properties/nm-openvpn3-dialog.ui
-msgid "Do not modify system DNS"
-msgstr "Nie modyfikuj systemowego DNS"
+#~ msgid "Disable cipher _negotiation"
+#~ msgstr "Wyłączenie _negocjacji szyfru"
 
-#: properties/nm-openvpn3-dialog.ui
-msgid "Override: dns-setup-disabled. Skip openvpn3 DNS configuration; let NetworkManager / systemd-resolved keep control."
-msgstr "Nadpisanie: dns-setup-disabled. Pomija konfigurację DNS przez openvpn3; pozostawia kontrolę NetworkManagerowi / systemd-resolved."
+#~ msgid ""
+#~ "Disable cipher negotiation between client and server.\n"
+#~ "config: ncp-disable"
+#~ msgstr ""
+#~ "Wyłącza negocjację szyfru między klientem a serwerem.\n"
+#~ "konfiguracja: ncp-disable"
 
-#: properties/nm-openvpn3-dialog.ui
-msgid "Enable Data Channel Offload (DCO)"
-msgstr "Włącz Data Channel Offload (DCO)"
+#~ msgid "_Verify peer (server) certificate nsCertType designation"
+#~ msgstr ""
+#~ "_Sprawdzanie poprawności określenia nsCertType certyfikatu partnera "
+#~ "(serwera)"
 
-#: properties/nm-openvpn3-dialog.ui
-msgid "Override: dco. Use the in-kernel Data Channel Offload module for higher throughput when the kernel and server both support it."
-msgstr "Nadpisanie: dco. Wykorzystuje modułowy Data Channel Offload w jądrze dla wyższej przepustowości, gdy jądro i serwer to wspierają."
+#~ msgid ""
+#~ "Require that peer certificate was signed with an explicit nsCertType "
+#~ "designation."
+#~ msgstr ""
+#~ "Wymaga podpisania certyfikatu partnera za pomocą bezpośredniego "
+#~ "określenia nsCertType."
 
+#~ msgid "_Remote peer certificate nsCert designation"
+#~ msgstr "Określenie nsCertType certyfikatu _zdalnego partnera"
+
+#~ msgid ""
+#~ "Require that peer certificate was signed with an explicit nsCertType "
+#~ "designation.\n"
+#~ "config: ns-cert-type client|server"
+#~ msgstr ""
+#~ "Wymaga podpisania certyfikatu partnera za pomocą bezpośredniego "
+#~ "określenia nsCertType.\n"
+#~ "konfiguracja: ns-cert-type client|server"
+
+#~ msgid "TLS cipher string"
+#~ msgstr "Ciąg szyfru TLS"
+
+#~ msgid ""
+#~ "Set a value for the --tls-cipher parameter. This can be useful for "
+#~ "working with VPNs using deprecated hashing schemes."
+#~ msgstr ""
+#~ "Ustawia wartość parametru --tls-cipher. Może to być przydatne do "
+#~ "działania z sieciami VPN używającymi przestarzałych schematów funkcji "
+#~ "mieszania."
+
+#~ msgid "Push peer info"
+#~ msgstr "Wysyłanie informacji o partnerze"
+
+#~ msgid ""
+#~ "Push additional information about the client to server.\n"
+#~ "config: push-peer-info"
+#~ msgstr ""
+#~ "Wysyła dodatkowe informacje o kliencie do serwera.\n"
+#~ "konfiguracja: push-peer-info"
