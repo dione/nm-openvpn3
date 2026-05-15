@@ -1,5 +1,10 @@
 #include "ovpn3-status.h"
 
+/* NMVpnConnectionStateReason is deprecated upstream, but the libnm
+ * VPN-plugin API still expects this typedef.  Wrap the implementation
+ * in the suppression macros for as long as that contract holds. */
+G_GNUC_BEGIN_IGNORE_DEPRECATIONS
+
 int
 ovpn3_status_to_nm_state (guint32                     code_major,
                           guint32                     code_minor,
@@ -36,3 +41,5 @@ ovpn3_status_to_nm_state (guint32                     code_major,
 	}
 	return -1;
 }
+
+G_GNUC_END_IGNORE_DEPRECATIONS

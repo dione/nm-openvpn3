@@ -98,18 +98,25 @@ AM_GNU_GETTEXT([external])
 AM_GNU_GETTEXT_VERSION([0.19])
 AM_GNU_GETTEXT_REQUIRE_VERSION([0.19])
 
-PKG_CHECK_MODULES(GLIB, gmodule-2.0 glib-2.0 >= 2.34)
-GLIB_CFLAGS="$GLIB_CFLAGS -DGLIB_VERSION_MIN_REQUIRED=GLIB_VERSION_2_34"
-GLIB_CFLAGS="$GLIB_CFLAGS -DGLIB_VERSION_MAX_ALLOWED=GLIB_VERSION_2_34"
+PKG_CHECK_MODULES(GLIB, gmodule-2.0 glib-2.0 >= 2.50)
+dnl Bumped past upstream's 2.34 pin so g_steal_pointer (added 2.44),
+dnl g_autoptr (2.44), and other GLib 2.36+ helpers stop surfacing
+dnl "Not available before X" pseudo-deprecation noise.  2.50 is
+dnl satisfied on every distro this fork is expected to build on.
+GLIB_CFLAGS="$GLIB_CFLAGS -DGLIB_VERSION_MIN_REQUIRED=GLIB_VERSION_2_50"
+GLIB_CFLAGS="$GLIB_CFLAGS -DGLIB_VERSION_MAX_ALLOWED=GLIB_VERSION_2_50"
 
 if test x"$with_gnome" != xno || test x"$with_gtk4" != xno; then
 	PKG_CHECK_MODULES(LIBSECRET, libsecret-1 >= 0.18)
 fi
 
 if test x"$with_gnome" != xno; then
-	PKG_CHECK_MODULES(GTK, gtk+-3.0 >= 3.4)
-	GTK_CFLAGS="$GTK_CFLAGS -DGDK_VERSION_MIN_REQUIRED=GDK_VERSION_3_4"
-	GTK_CFLAGS="$GTK_CFLAGS -DGDK_VERSION_MAX_ALLOWED=GDK_VERSION_3_4"
+	PKG_CHECK_MODULES(GTK, gtk+-3.0 >= 3.22)
+	dnl Bumped past upstream's 3.4 pin so gtk_native_dialog_* (added 3.20)
+	dnl and gtk_window_set_hide_on_close (3.10) stop showing as
+	dnl "Not available before X" pseudo-deprecations.
+	GTK_CFLAGS="$GTK_CFLAGS -DGDK_VERSION_MIN_REQUIRED=GDK_VERSION_3_22"
+	GTK_CFLAGS="$GTK_CFLAGS -DGDK_VERSION_MAX_ALLOWED=GDK_VERSION_3_22"
 	PKG_CHECK_MODULES(LIBNMA, libnma >= 1.8.0)
 fi
 

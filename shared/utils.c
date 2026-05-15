@@ -238,9 +238,12 @@ nmovpn_remote_parse (const char *str,
 	}
 	g_return_val_if_fail (!error || !*error, 0);
 
-	t = strchr (str, ' ');
+	/* GCC's overloaded strchr() returns const char * when @str is
+	 * const-qualified; we only ever scan for byte positions on the
+	 * read-only input here, so cast back to the local `char *` t. */
+	t = (char *) strchr (str, ' ');
 	if (!t)
-		t = strchr (str, ',');
+		t = (char *) strchr (str, ',');
 	if (t) {
 		g_set_error (error, NM_UTILS_ERROR, NM_UTILS_ERROR_UNKNOWN,
 		             _("invalid delimiter character '%c'"), t[0]);

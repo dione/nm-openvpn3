@@ -47,15 +47,11 @@ jobs:
         run: autoreconf -fis
 
       - name: configure
-        # TODO: 95 pre-existing warnings (mostly ISO C90 mixed-declarations
-        # and shadow warnings inherited from upstream).  Switch to
-        # --enable-more-warnings=error once those are cleaned up so any new
-        # warning aborts the CI build.
         run: |
           ./configure \
             --with-gnome \
             --with-gtk4 \
-            --enable-more-warnings=yes \
+            --enable-more-warnings=error \
             --disable-silent-rules
 
       - name: make

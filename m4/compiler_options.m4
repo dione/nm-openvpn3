@@ -63,7 +63,6 @@ if test "$GCC" = "yes" -a "$set_more_warnings" != "no"; then
 
 	for option in \
 		      -Wextra \
-		      -Wdeclaration-after-statement \
 		      -Wfloat-equal \
 		      -Wformat-nonliteral \
 		      -Wformat-security \

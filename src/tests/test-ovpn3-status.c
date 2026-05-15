@@ -3,6 +3,10 @@
 
 #include "ovpn3-status.h"
 
+/* NMVpnConnectionStateReason is deprecated upstream; tests still need
+ * the typedef to verify the mapping function. */
+G_GNUC_BEGIN_IGNORE_DEPRECATIONS
+
 static void
 test_connection_connected_maps_to_nm_activated (void)
 {
@@ -67,3 +71,5 @@ main (int argc, char **argv)
 	g_test_add_func ("/ovpn3/status/reconnecting", test_connection_reconnecting_maps_to_starting);
 	return g_test_run ();
 }
+
+G_GNUC_END_IGNORE_DEPRECATIONS
