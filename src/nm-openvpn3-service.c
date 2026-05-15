@@ -247,67 +247,25 @@ real_disconnect (NMVpnServicePlugin *plugin, GError **error)
 #define POLL_INTERVAL_MS 500
 #define POLL_MAX_TICKS   120  /* 120 * 500 ms = 60 s */
 
-static gboolean
-poll_status_cb (gpointer user_data)
+static gboolean poll_status_cb (gpointer user_data);
+
+/* Emit the SetConfig + SetIp4Config bundle that flips NM from "activating"
+ * to "activated".  Pre: priv->session_path is live and we have seen a
+ * STARTED state from openvpn3.  Idempotent via the priv->ip4_emitted gate. */
+static void
+emit_started_ip4_config (NMOpenvpn3Plugin *self)
 {
-	NMOpenvpn3Plugin *self = NM_OPENVPN3_PLUGIN (user_data);
 	NMOpenvpn3PluginPrivate *priv = NM_OPENVPN3_PLUGIN_GET_PRIVATE (self);
 	NMVpnServicePlugin *plugin = (NMVpnServicePlugin *) self;
 
-	priv->poll_ticks++;
+	if (priv->ip4_emitted || !priv->session_path)
+		return;
 
-	if (!priv->session_path) {
-		priv->poll_timer_id = 0;
-		return G_SOURCE_REMOVE;
-	}
-
-	guint32 maj = 0, min = 0;
-	g_autofree gchar *msg = NULL;
-	g_autoptr (GError) e = NULL;
-	if (!ovpn3_session_get_status (priv->ovpn3, priv->session_path,
-	                               &maj, &min, &msg, &e)) {
-		_LOGW ("status poll failed: %s",
-		       e ? e->message : "unknown");
-		if (priv->ip4_emitted) {
-			/* Session vanished externally (e.g. user ran `openvpn3
-			 * session-manage --disconnect` behind NM's back).  Tell
-			 * NM the tunnel is gone so it tears the connection down
-			 * instead of showing ACTIVATED with a dead tun.  libnm's
-			 * failure enum is small (LOGIN_FAILED / CONNECT_FAILED /
-			 * BAD_IP_CONFIG) — no NETWORK_LOST option, so reuse
-			 * CONNECT_FAILED. */
-			ovpn3_trace ("session disappeared post-connect; failing to NM");
-			nm_vpn_service_plugin_failure (plugin,
-			                               NM_VPN_PLUGIN_FAILURE_CONNECT_FAILED);
-			priv->poll_timer_id = 0;
-			return G_SOURCE_REMOVE;
-		}
-		if (priv->poll_ticks >= POLL_MAX_TICKS) {
-			nm_vpn_service_plugin_failure (plugin,
-			                               NM_VPN_PLUGIN_FAILURE_CONNECT_FAILED);
-			priv->poll_timer_id = 0;
-			return G_SOURCE_REMOVE;
-		}
-		return G_SOURCE_CONTINUE;
-	}
-
-	NMVpnConnectionStateReason reason = NM_VPN_CONNECTION_STATE_REASON_NONE;
-	int state = ovpn3_status_to_nm_state (maj, min, &reason);
-
-	ovpn3_trace ("poll #%u: status (maj=%u, min=%u, msg=%s) -> nm_state=%d",
-	             priv->poll_ticks, maj, min, msg ?: "", state);
-
-	if (state == NM_VPN_SERVICE_STATE_STARTED) {
-		/* Already emitted Ip4Config — this is the watchdog loop, just
-		 * confirm the session is still up and keep polling slowly. */
-		if (priv->ip4_emitted)
-			return G_SOURCE_CONTINUE;
-
-		g_autoptr (GError) ge = NULL;
-		g_autofree gchar *dev = ovpn3_session_get_device_name (
-			priv->ovpn3, priv->session_path, &ge);
-		const gchar *tundev = (dev && *dev) ? dev : "tun0";
-		ovpn3_trace ("STARTED branch: device_name='%s'", tundev);
+	g_autoptr (GError) ge = NULL;
+	g_autofree gchar *dev = ovpn3_session_get_device_name (
+		priv->ovpn3, priv->session_path, &ge);
+	const gchar *tundev = (dev && *dev) ? dev : "tun0";
+	ovpn3_trace ("STARTED branch: device_name='%s'", tundev);
 
 		/* Pull the IPv4 address openvpn3 already programmed on the tun
 		 * device.  NM requires ADDRESS + PREFIX + INT_GATEWAY to mark
@@ -501,26 +459,103 @@ poll_status_cb (gpointer user_data)
 			                       g_variant_builder_end (&rb));
 		}
 
-		nm_vpn_service_plugin_set_ip4_config (plugin,
-		                                      g_variant_builder_end (&b));
+	nm_vpn_service_plugin_set_ip4_config (plugin,
+	                                      g_variant_builder_end (&b));
 
-		/* Drop the 500 ms fast-poll, re-arm a 5 s watchdog that keeps
-		 * checking the session is alive.  When openvpn3 disconnects
-		 * (either via 'session-manage --disconnect' from outside NM,
-		 * or because of network loss), the status read fails and we
-		 * propagate failure to NM. */
-		priv->ip4_emitted = TRUE;
-		priv->poll_ticks  = 0;
-		priv->poll_timer_id = g_timeout_add_seconds (5, poll_status_cb, self);
-		return G_SOURCE_REMOVE;
+	/* Drop the fast-poll cadence, re-arm a 5 s watchdog that checks the
+	 * session is still alive.  When openvpn3 disconnects (either via
+	 * 'session-manage --disconnect' from outside NM, or because of network
+	 * loss), the status read fails and we propagate failure to NM. */
+	priv->ip4_emitted = TRUE;
+	priv->poll_ticks  = 0;
+	nm_clear_g_source (&priv->poll_timer_id);
+	priv->poll_timer_id = g_timeout_add_seconds (5, poll_status_cb, self);
+}
+
+/* Dispatch a (maj, min, msg) status triple to the right post-state action.
+ * Invoked from BOTH the StatusChange D-Bus signal callback (fires within
+ * milliseconds of the openvpn3 backend updating its state) and the polling
+ * timer (slower but resilient if the signal subscription drops).  Idempotent
+ * on the STARTED branch via priv->ip4_emitted; STOPPED triggers failure once. */
+static void
+status_handle_state (NMOpenvpn3Plugin *self,
+                     guint32 maj,
+                     guint32 min,
+                     const gchar *msg)
+{
+	NMOpenvpn3PluginPrivate *priv = NM_OPENVPN3_PLUGIN_GET_PRIVATE (self);
+	NMVpnServicePlugin *plugin = (NMVpnServicePlugin *) self;
+
+	NMVpnConnectionStateReason reason = NM_VPN_CONNECTION_STATE_REASON_NONE;
+	int state = ovpn3_status_to_nm_state (maj, min, &reason);
+
+	ovpn3_trace ("status: maj=%u min=%u msg=%s -> nm_state=%d",
+	             maj, min, msg ?: "", state);
+
+	if (state == NM_VPN_SERVICE_STATE_STARTED) {
+		emit_started_ip4_config (self);
+		return;
 	}
 
 	if (state == NM_VPN_SERVICE_STATE_STOPPED) {
 		nm_vpn_service_plugin_failure (plugin,
 		                               NM_VPN_PLUGIN_FAILURE_CONNECT_FAILED);
+		nm_clear_g_source (&priv->poll_timer_id);
+	}
+}
+
+static void
+status_change_signal_cb (guint32 maj, guint32 min, const gchar *msg, gpointer user_data)
+{
+	status_handle_state (NM_OPENVPN3_PLUGIN (user_data), maj, min, msg);
+}
+
+static gboolean
+poll_status_cb (gpointer user_data)
+{
+	NMOpenvpn3Plugin *self = NM_OPENVPN3_PLUGIN (user_data);
+	NMOpenvpn3PluginPrivate *priv = NM_OPENVPN3_PLUGIN_GET_PRIVATE (self);
+	NMVpnServicePlugin *plugin = (NMVpnServicePlugin *) self;
+
+	priv->poll_ticks++;
+
+	if (!priv->session_path) {
 		priv->poll_timer_id = 0;
 		return G_SOURCE_REMOVE;
 	}
+
+	guint32 maj = 0, min = 0;
+	g_autofree gchar *msg = NULL;
+	g_autoptr (GError) e = NULL;
+	if (!ovpn3_session_get_status (priv->ovpn3, priv->session_path,
+	                               &maj, &min, &msg, &e)) {
+		_LOGW ("status poll failed: %s", e ? e->message : "unknown");
+		if (priv->ip4_emitted) {
+			/* Session vanished externally (e.g. user ran `openvpn3
+			 * session-manage --disconnect` behind NM's back).  Tell
+			 * NM the tunnel is gone so it tears the connection down
+			 * instead of showing ACTIVATED with a dead tun. */
+			ovpn3_trace ("session disappeared post-connect; failing to NM");
+			nm_vpn_service_plugin_failure (plugin,
+			                               NM_VPN_PLUGIN_FAILURE_CONNECT_FAILED);
+			priv->poll_timer_id = 0;
+			return G_SOURCE_REMOVE;
+		}
+		if (priv->poll_ticks >= POLL_MAX_TICKS) {
+			nm_vpn_service_plugin_failure (plugin,
+			                               NM_VPN_PLUGIN_FAILURE_CONNECT_FAILED);
+			priv->poll_timer_id = 0;
+			return G_SOURCE_REMOVE;
+		}
+		return G_SOURCE_CONTINUE;
+	}
+
+	status_handle_state (self, maj, min, msg);
+
+	/* After STARTED the helper re-arms a 5 s watchdog and replaces
+	 * poll_timer_id; this firing must drop out. */
+	if (priv->ip4_emitted)
+		return G_SOURCE_REMOVE;
 
 	if (priv->poll_ticks >= POLL_MAX_TICKS) {
 		_LOGW ("status poll timed out after %u ticks (last status %u/%u)",
@@ -599,6 +634,24 @@ real_connect (NMVpnServicePlugin *plugin,
 
 	if (!ovpn3_session_wait_ready (priv->ovpn3, priv->session_path, 5000, error))
 		return FALSE;
+
+	/* Subscribe to the session's StatusChange signal so we react to state
+	 * transitions (in particular CONNECTED → STARTED) within milliseconds
+	 * instead of having to wait up to one poll interval.  The polling timer
+	 * armed below stays as a fallback for the case where the signal
+	 * subscription drops or never delivers. */
+	{
+		g_autoptr (GError) sub_err = NULL;
+		priv->status_sub_id = ovpn3_session_subscribe_status (
+			priv->ovpn3, priv->session_path,
+			status_change_signal_cb, self, &sub_err);
+		if (!priv->status_sub_id) {
+			ovpn3_trace ("StatusChange subscribe failed: %s",
+			             sub_err ? sub_err->message : "(unknown)");
+		} else {
+			ovpn3_trace ("StatusChange subscribed sub_id=%u", priv->status_sub_id);
+		}
+	}
 
 	/* Our service runs as root; without explicit ACL entries, every other
 	 * UID (incl. the user who triggered the NM activation) gets a blank
