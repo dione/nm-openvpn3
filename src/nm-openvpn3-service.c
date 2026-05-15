@@ -527,13 +527,13 @@ stats_timer_cb (gpointer user_data)
 		gdouble rate_out = (d_out * G_GINT64_CONSTANT (1000000)) / (gdouble) dt_us;
 		g_autofree gchar *fri = fmt_bytes ((gint64) rate_in);
 		g_autofree gchar *fro = fmt_bytes ((gint64) rate_out);
-		_LOGI ("stats: rx=%s tx=%s pkt_in=%" G_GINT64_FORMAT
-		       " pkt_out=%" G_GINT64_FORMAT " rate_rx=%s/s rate_tx=%s/s",
-		       fin, fout, pkt_in, pkt_out, fri, fro);
+		ovpn3_trace ("stats: rx=%s tx=%s pkt_in=%" G_GINT64_FORMAT
+		             " pkt_out=%" G_GINT64_FORMAT " rate_rx=%s/s rate_tx=%s/s",
+		             fin, fout, pkt_in, pkt_out, fri, fro);
 	} else {
-		_LOGI ("stats: rx=%s tx=%s pkt_in=%" G_GINT64_FORMAT
-		       " pkt_out=%" G_GINT64_FORMAT,
-		       fin, fout, pkt_in, pkt_out);
+		ovpn3_trace ("stats: rx=%s tx=%s pkt_in=%" G_GINT64_FORMAT
+		             " pkt_out=%" G_GINT64_FORMAT,
+		             fin, fout, pkt_in, pkt_out);
 	}
 
 	priv->stats_last_bytes_in     = in;
