@@ -173,6 +173,31 @@ ovpn3_new_tunnel (Ovpn3Client *self,
 	return g_strdup (path);
 }
 
+gboolean
+ovpn3_config_set_override_bool (Ovpn3Client *self,
+                                const gchar *config_path,
+                                const gchar *name,
+                                gboolean     value,
+                                GError     **error)
+{
+	g_return_val_if_fail (self != NULL, FALSE);
+	g_return_val_if_fail (config_path != NULL, FALSE);
+	g_return_val_if_fail (name != NULL, FALSE);
+
+	GVariant *params = g_variant_new ("(sv)", name, g_variant_new_boolean (value));
+	g_autoptr (GVariant) result = g_dbus_connection_call_sync (
+		self->bus,
+		OVPN3_BUS_CONFIG,
+		config_path,
+		OVPN3_IFACE_CONFIG,
+		"SetOverride",
+		params,
+		NULL,
+		G_DBUS_CALL_FLAGS_NONE,
+		-1, NULL, error);
+	return result != NULL;
+}
+
 static GDBusProxy *
 session_proxy (Ovpn3Client *self, const gchar *session_path, GError **error)
 {

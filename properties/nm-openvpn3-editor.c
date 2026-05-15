@@ -803,6 +803,11 @@ static const char *const advanced_keys[] = {
 	NM_OPENVPN3_KEY_MAX_ROUTES,
 	NM_OPENVPN3_KEY_MSSFIX,
 	NM_OPENVPN3_KEY_MTU_DISC,
+	NM_OPENVPN3_KEY_OVERRIDE_BLOCK_IPV6,
+	NM_OPENVPN3_KEY_OVERRIDE_DCO,
+	NM_OPENVPN3_KEY_OVERRIDE_DNS_SETUP_DISABLED,
+	NM_OPENVPN3_KEY_OVERRIDE_FORCE_DEFAULT_GATEWAY,
+	NM_OPENVPN3_KEY_OVERRIDE_ROUTE_NOPULL,
 	NM_OPENVPN3_KEY_PING,
 	NM_OPENVPN3_KEY_PING_EXIT,
 	NM_OPENVPN3_KEY_PING_RESTART,
@@ -1919,6 +1924,17 @@ advanced_dialog_new (GHashTable *hash, const char *contype)
 	                  "clicked", G_CALLBACK (gtk_widget_show),
 	                  gtk_builder_get_object (builder, "sk_key_chooser"));
 
+	_builder_init_toggle_button (builder, "override_route_nopull",
+	                             _hash_get_boolean (hash, NM_OPENVPN3_KEY_OVERRIDE_ROUTE_NOPULL));
+	_builder_init_toggle_button (builder, "override_force_default_gateway",
+	                             _hash_get_boolean (hash, NM_OPENVPN3_KEY_OVERRIDE_FORCE_DEFAULT_GATEWAY));
+	_builder_init_toggle_button (builder, "override_block_ipv6",
+	                             _hash_get_boolean (hash, NM_OPENVPN3_KEY_OVERRIDE_BLOCK_IPV6));
+	_builder_init_toggle_button (builder, "override_dns_setup_disabled",
+	                             _hash_get_boolean (hash, NM_OPENVPN3_KEY_OVERRIDE_DNS_SETUP_DISABLED));
+	_builder_init_toggle_button (builder, "override_dco",
+	                             _hash_get_boolean (hash, NM_OPENVPN3_KEY_OVERRIDE_DCO));
+
 	return dialog;
 }
 
@@ -2327,6 +2343,24 @@ advanced_dialog_new_hash_from_dialog (GtkWidget *dialog)
 				filename = g_file_get_path (file);
 			if (filename && filename[0])
 				g_hash_table_insert (hash, NM_OPENVPN3_KEY_CRL_VERIFY_DIR, g_steal_pointer (&filename));
+		}
+	}
+
+	{
+		static const struct {
+			const char *widget_id;
+			const char *key;
+		} override_widgets[] = {
+			{ "override_route_nopull",          NM_OPENVPN3_KEY_OVERRIDE_ROUTE_NOPULL },
+			{ "override_force_default_gateway", NM_OPENVPN3_KEY_OVERRIDE_FORCE_DEFAULT_GATEWAY },
+			{ "override_block_ipv6",            NM_OPENVPN3_KEY_OVERRIDE_BLOCK_IPV6 },
+			{ "override_dns_setup_disabled",    NM_OPENVPN3_KEY_OVERRIDE_DNS_SETUP_DISABLED },
+			{ "override_dco",                   NM_OPENVPN3_KEY_OVERRIDE_DCO },
+		};
+		for (gsize i = 0; i < G_N_ELEMENTS (override_widgets); i++) {
+			widget = GTK_WIDGET (gtk_builder_get_object (builder, override_widgets[i].widget_id));
+			if (widget && gtk_check_button_get_active (GTK_CHECK_BUTTON (widget)))
+				g_hash_table_insert (hash, (gpointer) override_widgets[i].key, g_strdup ("yes"));
 		}
 	}
 

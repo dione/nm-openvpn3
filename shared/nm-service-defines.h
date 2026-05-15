@@ -67,6 +67,15 @@
 #define NM_OPENVPN3_KEY_PROXY_SERVER              "proxy-server"
 #define NM_OPENVPN3_KEY_PROXY_TYPE                "proxy-type"
 #define NM_OPENVPN3_KEY_PROFILE                   "nm-openvpn3-profile"
+
+/* openvpn3 SetOverride flags surfaced through the UI.  Each maps to a
+ * net.openvpn.v3.configuration.SetOverride(name, bool) call issued by
+ * the service after Import. */
+#define NM_OPENVPN3_KEY_OVERRIDE_ROUTE_NOPULL            "override-route-nopull"
+#define NM_OPENVPN3_KEY_OVERRIDE_FORCE_DEFAULT_GATEWAY   "override-force-default-gateway"
+#define NM_OPENVPN3_KEY_OVERRIDE_BLOCK_IPV6              "override-block-ipv6"
+#define NM_OPENVPN3_KEY_OVERRIDE_DNS_SETUP_DISABLED      "override-dns-setup-disabled"
+#define NM_OPENVPN3_KEY_OVERRIDE_DCO                     "override-dco"
 #define NM_OPENVPN3_KEY_PUSH_PEER_INFO            "push-peer-info"
 #define NM_OPENVPN3_KEY_REMOTE                    "remote"
 #define NM_OPENVPN3_KEY_REMOTE_CERT_TLS           "remote-cert-tls"

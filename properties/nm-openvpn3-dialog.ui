@@ -2608,6 +2608,98 @@ config: connect-timeout &lt;n&gt; | server-poll-timeout &lt;n&gt;</property>
                     <property name="top_attach">1</property>
                   </packing>
                 </child>
+                <child>
+                  <object class="GtkLabel" id="overrides_header">
+                    <property name="visible">True</property>
+                    <property name="can_focus">False</property>
+                    <property name="label" translatable="yes">openvpn3 overrides</property>
+                    <property name="xalign">0</property>
+                    <property name="margin-top">12</property>
+                    <attributes>
+                      <attribute name="weight" value="bold"/>
+                    </attributes>
+                  </object>
+                  <packing>
+                    <property name="left_attach">0</property>
+                    <property name="top_attach">2</property>
+                    <property name="width">2</property>
+                  </packing>
+                </child>
+                <child>
+                  <object class="GtkCheckButton" id="override_route_nopull">
+                    <property name="label" translatable="yes">Ignore server-pushed routes (split-tunnel)</property>
+                    <property name="visible">True</property>
+                    <property name="can_focus">True</property>
+                    <property name="receives_default">False</property>
+                    <property name="tooltip_text" translatable="yes">Override: route-nopull. Discard routes the server pushes; only the tunnel endpoint route stays.</property>
+                    <property name="draw_indicator">True</property>
+                  </object>
+                  <packing>
+                    <property name="left_attach">0</property>
+                    <property name="top_attach">3</property>
+                    <property name="width">2</property>
+                  </packing>
+                </child>
+                <child>
+                  <object class="GtkCheckButton" id="override_force_default_gateway">
+                    <property name="label" translatable="yes">Force default gateway through VPN (full-tunnel)</property>
+                    <property name="visible">True</property>
+                    <property name="can_focus">True</property>
+                    <property name="receives_default">False</property>
+                    <property name="tooltip_text" translatable="yes">Override: force-default-gateway. Route all traffic through the tunnel, ignoring server policy.</property>
+                    <property name="draw_indicator">True</property>
+                  </object>
+                  <packing>
+                    <property name="left_attach">0</property>
+                    <property name="top_attach">4</property>
+                    <property name="width">2</property>
+                  </packing>
+                </child>
+                <child>
+                  <object class="GtkCheckButton" id="override_block_ipv6">
+                    <property name="label" translatable="yes">Block IPv6 traffic in tunnel</property>
+                    <property name="visible">True</property>
+                    <property name="can_focus">True</property>
+                    <property name="receives_default">False</property>
+                    <property name="tooltip_text" translatable="yes">Override: block-ipv6. Drop IPv6 packets inside the tunnel; useful for IPv4-only servers leaking IPv6.</property>
+                    <property name="draw_indicator">True</property>
+                  </object>
+                  <packing>
+                    <property name="left_attach">0</property>
+                    <property name="top_attach">5</property>
+                    <property name="width">2</property>
+                  </packing>
+                </child>
+                <child>
+                  <object class="GtkCheckButton" id="override_dns_setup_disabled">
+                    <property name="label" translatable="yes">Do not modify system DNS</property>
+                    <property name="visible">True</property>
+                    <property name="can_focus">True</property>
+                    <property name="receives_default">False</property>
+                    <property name="tooltip_text" translatable="yes">Override: dns-setup-disabled. Skip openvpn3 DNS configuration; let NetworkManager / systemd-resolved keep control.</property>
+                    <property name="draw_indicator">True</property>
+                  </object>
+                  <packing>
+                    <property name="left_attach">0</property>
+                    <property name="top_attach">6</property>
+                    <property name="width">2</property>
+                  </packing>
+                </child>
+                <child>
+                  <object class="GtkCheckButton" id="override_dco">
+                    <property name="label" translatable="yes">Enable Data Channel Offload (DCO)</property>
+                    <property name="visible">True</property>
+                    <property name="can_focus">True</property>
+                    <property name="receives_default">False</property>
+                    <property name="tooltip_text" translatable="yes">Override: dco. Use the in-kernel Data Channel Offload module for higher throughput when the kernel and server both support it.</property>
+                    <property name="draw_indicator">True</property>
+                  </object>
+                  <packing>
+                    <property name="left_attach">0</property>
+                    <property name="top_attach">7</property>
+                    <property name="width">2</property>
+                  </packing>
+                </child>
               </object>
             </child>
             <child type="tab">

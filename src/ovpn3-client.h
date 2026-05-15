@@ -36,6 +36,17 @@ gchar *ovpn3_new_tunnel (Ovpn3Client *self,
                          const gchar *config_path,
                          GError     **error);
 
+/* Set a boolean override on @config_path via
+ * net.openvpn.v3.configuration.SetOverride(s name, v value).  Used to push
+ * UI-driven flags (route-nopull, force-default-gateway, block-ipv6,
+ * dns-setup-disabled, dco, …) into the imported configuration before the
+ * tunnel is started.  Returns FALSE and propagates @error on failure. */
+gboolean ovpn3_config_set_override_bool (Ovpn3Client *self,
+                                         const gchar *config_path,
+                                         const gchar *name,
+                                         gboolean     value,
+                                         GError     **error);
+
 typedef void (*Ovpn3StatusChangeCb) (guint32      code_major,
                                      guint32      code_minor,
                                      const gchar *message,

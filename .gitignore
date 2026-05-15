@@ -84,3 +84,6 @@ properties/resources.[ch]
 
 # coderabbit local review file (contains workingDirectory PII)
 /coderabbit-review.jsonl
+src/tests/test-build-profile
+src/tests/test-ovpn3-routes
+src/tests/test-ovpn3-status

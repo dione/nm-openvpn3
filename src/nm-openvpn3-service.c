@@ -2647,6 +2647,40 @@ real_connect (NMVpnServicePlugin *plugin,
 	if (!priv->config_path)
 		return FALSE;
 
+	/* Push UI-toggled SetOverride flags to the freshly imported config.
+	 * Each table entry maps a vpn.data key to an openvpn3 override name;
+	 * the override is sent only when the vpn.data key is present and
+	 * equals "yes" (matches the rest of the plugin's boolean convention). */
+	{
+		NMSettingVpn *s_vpn_for_overrides = nm_connection_get_setting_vpn (connection);
+		static const struct {
+			const char *vpn_key;
+			const char *ovpn3_name;
+		} override_map[] = {
+			{ NM_OPENVPN3_KEY_OVERRIDE_ROUTE_NOPULL,          "route-nopull" },
+			{ NM_OPENVPN3_KEY_OVERRIDE_FORCE_DEFAULT_GATEWAY, "force-default-gateway" },
+			{ NM_OPENVPN3_KEY_OVERRIDE_BLOCK_IPV6,            "block-ipv6" },
+			{ NM_OPENVPN3_KEY_OVERRIDE_DNS_SETUP_DISABLED,    "dns-setup-disabled" },
+			{ NM_OPENVPN3_KEY_OVERRIDE_DCO,                   "dco" },
+		};
+		for (gsize i = 0; s_vpn_for_overrides && i < G_N_ELEMENTS (override_map); i++) {
+			const char *val = nm_setting_vpn_get_data_item (s_vpn_for_overrides,
+			                                                override_map[i].vpn_key);
+			if (!nm_streq0 (val, "yes"))
+				continue;
+			g_autoptr (GError) ov_err = NULL;
+			if (!ovpn3_config_set_override_bool (priv->ovpn3, priv->config_path,
+			                                     override_map[i].ovpn3_name,
+			                                     TRUE, &ov_err)) {
+				_LOGW ("SetOverride(%s) failed: %s",
+				       override_map[i].ovpn3_name,
+				       ov_err ? ov_err->message : "(unknown)");
+			} else {
+				ovpn3_trace ("SetOverride(%s)=TRUE", override_map[i].ovpn3_name);
+			}
+		}
+	}
+
 	priv->session_path = ovpn3_new_tunnel (priv->ovpn3, priv->config_path, error);
 	if (!priv->session_path)
 		return FALSE;
