@@ -37,13 +37,6 @@
     <property name="step_increment">1</property>
     <property name="page_increment">10</property>
   </object>
-  <object class="GtkAdjustment" id="adjustment6">
-    <property name="lower">1</property>
-    <property name="upper">65535</property>
-    <property name="value">128</property>
-    <property name="step_increment">1</property>
-    <property name="page_increment">10</property>
-  </object>
   <object class="GtkAdjustment" id="adjustment7">
     <property name="lower">1</property>
     <property name="upper">65535</property>
@@ -63,45 +56,6 @@
     <property name="value">100</property>
     <property name="step_increment">1</property>
     <property name="page_increment">10</property>
-  </object>
-  <object class="GtkListStore" id="compression-direction">
-    <columns>
-      <column type="gchararray"/>
-    </columns>
-    <data>
-      <row>
-        <col id="0" translatable="yes">Asymmetric</col>
-      </row>
-      <row>
-        <col id="0" translatable="yes">Symmetric</col>
-      </row>
-    </data>
-  </object>
-  <object class="GtkListStore" id="compression">
-    <columns>
-      <!-- column-name gchararray -->
-      <column type="gchararray"/>
-    </columns>
-    <data>
-      <row>
-        <col id="0" translatable="yes">LZO</col>
-      </row>
-      <row>
-        <col id="0" translatable="yes">LZ4</col>
-      </row>
-      <row>
-        <col id="0" translatable="yes">LZ4 v2</col>
-      </row>
-      <row>
-        <col id="0" translatable="yes">Automatic</col>
-      </row>
-      <row>
-        <col id="0" translatable="yes">LZO disabled (legacy)</col>
-      </row>
-      <row>
-        <col id="0" translatable="yes">LZO adaptive (legacy)</col>
-      </row>
-    </data>
   </object>
   <object class="GtkListStore" id="liststore1"/>
   <object class="GtkListStore" id="liststore2"/>
@@ -1070,78 +1024,6 @@ config: reneg-sec</property>
                   </packing>
                 </child>
                 <child>
-                  <object class="GtkBox" id="hbox11">
-                    <property name="visible">True</property>
-                    <property name="can_focus">False</property>
-                    <property name="spacing">6</property>
-                    <child>
-                      <object class="GtkCheckButton" id="compress_checkbutton">
-                        <property name="label" translatable="yes">_Data compression</property>
-                        <property name="visible">True</property>
-                        <property name="can_focus">True</property>
-                        <property name="receives_default">False</property>
-                        <property name="tooltip_text" translatable="yes">Use fast LZO compression.
-config: comp-lzo</property>
-                        <property name="use_underline">True</property>
-                        <property name="draw_indicator">True</property>
-                      </object>
-                      <packing>
-                        <property name="expand">False</property>
-                        <property name="fill">True</property>
-                        <property name="position">0</property>
-                      </packing>
-                    </child>
-                    <child>
-                      <object class="GtkComboBox" id="compression-direction-combo">
-                        <property name="visible">True</property>
-                        <property name="can_focus">False</property>
-                        <property name="tooltip-text" translatable="yes">Enable or disable outgoing traffic compression
-config: allow-compression asym|yes</property>
-                        <property name="model">compression-direction</property>
-                        <property name="active">0</property>
-                        <property name="id_column">0</property>
-                        <property name="sensitive" bind-source="compress_checkbutton" bind-property="active" bind-flags="sync-create">false</property>
-                        <child>
-                          <object class="GtkCellRendererText"/>
-                          <attributes>
-                            <attribute name="text">0</attribute>
-                          </attributes>
-                        </child>
-                      </object>
-                      <packing>
-                        <property name="expand">False</property>
-                        <property name="fill">True</property>
-                        <property name="position">1</property>
-                      </packing>
-                    </child>
-                    <child>
-                      <object class="GtkComboBox" id="compress_combo">
-                        <property name="visible">True</property>
-                        <property name="can_focus">False</property>
-                        <property name="model">compression</property>
-                        <property name="active">0</property>
-                        <property name="id_column">0</property>
-                        <child>
-                          <object class="GtkCellRendererText" id="renderer8"/>
-                          <attributes>
-                            <attribute name="text">0</attribute>
-                          </attributes>
-                        </child>
-                      </object>
-                      <packing>
-                        <property name="expand">False</property>
-                        <property name="fill">True</property>
-                        <property name="position">2</property>
-                      </packing>
-                    </child>
-                  </object>
-                  <packing>
-                    <property name="expand">False</property>
-                    <property name="fill">True</property>
-                    <property name="position">2</property>
-                  </packing>
-                </child>
-                <child>
                   <object class="GtkCheckButton" id="tcp_checkbutton">
                     <property name="label" translatable="yes">Use a _TCP connection</property>
                     <property name="visible">True</property>
@@ -1628,37 +1510,6 @@ config: cipher</property>
                   </packing>
                 </child>
                 <child>
-                  <object class="GtkCheckButton" id="keysize_checkbutton">
-                    <property name="label" translatable="yes">Use custom _size of cipher key</property>
-                    <property name="visible">True</property>
-                    <property name="can_focus">True</property>
-                    <property name="receives_default">False</property>
-                    <property name="tooltip_text" translatable="yes">Set cipher key size to a custom value. If unspecified, it defaults to cipher-specific size.
-config: keysize &lt;n&gt;</property>
-                    <property name="use_underline">True</property>
-                    <property name="draw_indicator">True</property>
-                  </object>
-                  <packing>
-                    <property name="left_attach">0</property>
-                    <property name="top_attach">1</property>
-                  </packing>
-                </child>
-                <child>
-                  <object class="GtkSpinButton" id="keysize_spinbutton">
-                    <property name="visible">True</property>
-                    <property name="can_focus">True</property>
-                    <property name="tooltip_text" translatable="yes">Set cipher key size to a custom value. If unspecified, it defaults to cipher-specific size.
-config: keysize &lt;n&gt;</property>
-                    <property name="adjustment">adjustment6</property>
-                    <property name="climb_rate">1</property>
-                    <property name="numeric">True</property>
-                  </object>
-                  <packing>
-                    <property name="left_attach">1</property>
-                    <property name="top_attach">1</property>
-                  </packing>
-                </child>
-                <child>
                   <object class="GtkComboBox" id="hmacauth_combo">
                     <property name="visible">True</property>
                     <property name="can_focus">False</property>
@@ -1708,40 +1559,6 @@ config: auth</property>
                   </packing>
                 </child>
                 <child>
-                  <object class="GtkLabel" id="label_data_ciphers_fallback">
-                    <property name="visible">True</property>
-                    <property name="can-focus">False</property>
-                    <property name="label" translatable="yes">Da_ta ciphers fallback</property>
-                    <property name="use-underline">True</property>
-                    <property name="justify">right</property>
-                    <property name="mnemonic-widget">data_ciphers_fallback_combo</property>
-                    <property name="xalign">1</property>
-                  </object>
-                  <packing>
-                    <property name="left-attach">0</property>
-                    <property name="top-attach">3</property>
-                  </packing>
-                </child>
-                <child>
-                  <object class="GtkComboBox" id="data_ciphers_fallback_combo">
-                    <property name="visible">True</property>
-                    <property name="can-focus">False</property>
-                    <property name="tooltip-text" translatable="yes">Configure a cipher that is used to fall back to if we could not determine which cipher the peer is willing to use.
-config: data-ciphers-fallback</property>
-                    <property name="model">model3</property>
-                    <child>
-                      <object class="GtkCellRendererText" id="renderer13"/>
-                      <attributes>
-                        <attribute name="text">0</attribute>
-                      </attributes>
-                    </child>
-                  </object>
-                  <packing>
-                    <property name="left-attach">1</property>
-                    <property name="top-attach">3</property>
-                  </packing>
-                </child>
-                <child>
                   <object class="GtkEntry" id="data_ciphers_entry">
                     <property name="visible">True</property>
                     <property name="can-focus">True</property>
@@ -1766,22 +1583,6 @@ config: data-ciphers</property>
                   <packing>
                     <property name="left_attach">0</property>
                     <property name="top_attach">4</property>
-                  </packing>
-                </child>
-                <child>
-                  <object class="GtkCheckButton" id="ncp_disable_checkbutton">
-                    <property name="label" translatable="yes">Disable cipher _negotiation</property>
-                    <property name="visible">True</property>
-                    <property name="can_focus">True</property>
-                    <property name="receives_default">False</property>
-                    <property name="tooltip_text" translatable="yes">Disable cipher negotiation between client and server.
-config: ncp-disable</property>
-                    <property name="use_underline">True</property>
-                    <property name="draw_indicator">True</property>
-                  </object>
-                  <packing>
-                    <property name="left_attach">0</property>
-                    <property name="top_attach">7</property>
                   </packing>
                 </child>
                 <child>
@@ -2088,72 +1889,6 @@ config: remote-cert-tls client|server</property>
                   </packing>
                 </child>
                 <child>
-                  <object class="GtkGrid" id="table13">
-                    <property name="visible">True</property>
-                    <property name="can_focus">False</property>
-                    <property name="valign">start</property>
-                    <property name="row_spacing">3</property>
-                    <property name="column_spacing">6</property>
-                    <child>
-                      <object class="GtkCheckButton" id="ns_cert_type_checkbutton">
-                        <property name="label" translatable="yes">_Verify peer (server) certificate nsCertType designation</property>
-                        <property name="visible">True</property>
-                        <property name="can_focus">True</property>
-                        <property name="receives_default">False</property>
-                        <property name="tooltip_text" translatable="yes">Require that peer certificate was signed with an explicit nsCertType designation.</property>
-                        <property name="halign">baseline</property>
-                        <property name="valign">start</property>
-                        <property name="use_underline">True</property>
-                        <property name="draw_indicator">True</property>
-                      </object>
-                      <packing>
-                        <property name="left_attach">0</property>
-                        <property name="top_attach">0</property>
-                        <property name="width">2</property>
-                      </packing>
-                    </child>
-                    <child>
-                      <object class="GtkLabel" id="ns_cert_type_label">
-                        <property name="visible">True</property>
-                        <property name="can_focus">False</property>
-                        <property name="label" translatable="yes">_Remote peer certificate nsCert designation</property>
-                        <property name="use_underline">True</property>
-                        <property name="mnemonic_widget">remote_cert_tls_combo</property>
-                        <property name="xalign">0</property>
-                      </object>
-                      <packing>
-                        <property name="left_attach">0</property>
-                        <property name="top_attach">1</property>
-                      </packing>
-                    </child>
-                    <child>
-                      <object class="GtkComboBox" id="ns_cert_type_combo">
-                        <property name="visible">True</property>
-                        <property name="can_focus">False</property>
-                        <property name="tooltip_text" translatable="yes">Require that peer certificate was signed with an explicit nsCertType designation.
-config: ns-cert-type client|server</property>
-                        <property name="model">model7</property>
-                        <child>
-                          <object class="GtkCellRendererText" id="renderer7"/>
-                          <attributes>
-                            <attribute name="text">0</attribute>
-                          </attributes>
-                        </child>
-                      </object>
-                      <packing>
-                        <property name="left_attach">1</property>
-                        <property name="top_attach">1</property>
-                      </packing>
-                    </child>
-                  </object>
-                  <packing>
-                    <property name="expand">True</property>
-                    <property name="fill">True</property>
-                    <property name="padding">6</property>
-                    <property name="position">2</property>
-                  </packing>
-                </child>
-                <child>
                   <object class="GtkGrid" id="table7">
                     <property name="visible">True</property>
                     <property name="can_focus">False</property>
@@ -2347,31 +2082,6 @@ config: extra-certs &lt;file&gt;</property>
                           <packing>
                             <property name="left_attach">1</property>
                             <property name="top_attach">3</property>
-                          </packing>
-                        </child>
-                        <child>
-                          <object class="GtkLabel" id="tls_cipher_lbl">
-                            <property name="visible">True</property>
-                            <property name="can_focus">False</property>
-                            <property name="label" translatable="yes">TLS ci_pher string</property>
-                            <property name="use_underline">True</property>
-                            <property name="xalign">1</property>
-                          </object>
-                          <packing>
-                            <property name="left_attach">0</property>
-                            <property name="top_attach">4</property>
-                          </packing>
-                        </child>
-                        <child>
-                          <object class="GtkEntry" id="tls_cipher">
-                            <property name="visible">True</property>
-                            <property name="can_focus">True</property>
-                            <property name="tooltip_text" translatable="yes">Set a value for the --tls-cipher parameter. This can be useful for working with VPNs using deprecated hashing schemes.</property>
-                            <property name="hexpand">True</property>
-                          </object>
-                          <packing>
-                            <property name="left_attach">1</property>
-                            <property name="top_attach">4</property>
                           </packing>
                         </child>
                       </object>
@@ -2841,23 +2551,6 @@ config: connect-timeout &lt;n&gt; | server-poll-timeout &lt;n&gt;</property>
                   <packing>
                     <property name="left_attach">1</property>
                     <property name="top_attach">1</property>
-                  </packing>
-                </child>
-                <child>
-                  <object class="GtkCheckButton" id="push_peer_info_checkbutton">
-                    <property name="label" translatable="yes">_Push peer info</property>
-                    <property name="visible">True</property>
-                    <property name="can_focus">True</property>
-                    <property name="receives_default">False</property>
-                    <property name="tooltip_text" translatable="yes">Push additional information about the client to server.
-config: push-peer-info</property>
-                    <property name="use_underline">True</property>
-                    <property name="draw_indicator">True</property>
-                  </object>
-                  <packing>
-                    <property name="left_attach">0</property>
-                    <property name="top_attach">2</property>
-                    <property name="width">2</property>
                   </packing>
                 </child>
               </object>

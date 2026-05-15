@@ -791,9 +791,6 @@ static const char *const advanced_keys[] = {
 	NM_OPENVPN3_KEY_AUTH,
 	NM_OPENVPN3_KEY_CIPHER,
 	NM_OPENVPN3_KEY_DATA_CIPHERS,
-	NM_OPENVPN3_KEY_DATA_CIPHERS_FALLBACK,
-	NM_OPENVPN3_KEY_COMPRESS,
-	NM_OPENVPN3_KEY_COMP_LZO,
 	NM_OPENVPN3_KEY_CONNECT_TIMEOUT,
 	NM_OPENVPN3_KEY_CRL_VERIFY_DIR,
 	NM_OPENVPN3_KEY_CRL_VERIFY_FILE,
@@ -803,12 +800,9 @@ static const char *const advanced_keys[] = {
 	NM_OPENVPN3_KEY_FLOAT,
 	NM_OPENVPN3_KEY_FRAGMENT_SIZE,
 	NM_OPENVPN3_KEY_HTTP_PROXY_USERNAME,
-	NM_OPENVPN3_KEY_KEYSIZE,
 	NM_OPENVPN3_KEY_MAX_ROUTES,
 	NM_OPENVPN3_KEY_MSSFIX,
 	NM_OPENVPN3_KEY_MTU_DISC,
-	NM_OPENVPN3_KEY_NCP_DISABLE,
-	NM_OPENVPN3_KEY_NS_CERT_TYPE,
 	NM_OPENVPN3_KEY_PING,
 	NM_OPENVPN3_KEY_PING_EXIT,
 	NM_OPENVPN3_KEY_PING_RESTART,
@@ -818,7 +812,6 @@ static const char *const advanced_keys[] = {
 	NM_OPENVPN3_KEY_PROXY_RETRY,
 	NM_OPENVPN3_KEY_PROXY_SERVER,
 	NM_OPENVPN3_KEY_PROXY_TYPE,
-	NM_OPENVPN3_KEY_PUSH_PEER_INFO,
 	NM_OPENVPN3_KEY_REMOTE_CERT_TLS,
 	NM_OPENVPN3_KEY_REMOTE_RANDOM,
 	NM_OPENVPN3_KEY_REMOTE_RANDOM_HOSTNAME,
@@ -826,7 +819,6 @@ static const char *const advanced_keys[] = {
 	NM_OPENVPN3_KEY_TA,
 	NM_OPENVPN3_KEY_TAP_DEV,
 	NM_OPENVPN3_KEY_TA_DIR,
-	NM_OPENVPN3_KEY_TLS_CIPHER,
 	NM_OPENVPN3_KEY_TLS_CRYPT,
 	NM_OPENVPN3_KEY_TLS_CRYPT_V2,
 	NM_OPENVPN3_KEY_TLS_REMOTE,
@@ -1264,53 +1256,6 @@ tls_auth_toggled_cb (GtkWidget *widget, gpointer user_data)
 }
 
 static void
-ns_cert_type_toggled_cb (GtkWidget *widget, gpointer user_data)
-{
-	GtkBuilder *builder = (GtkBuilder *) user_data;
-	gboolean use_ns_cert_type = FALSE;
-
-	widget = GTK_WIDGET (gtk_builder_get_object (builder, "ns_cert_type_checkbutton"));
-	use_ns_cert_type = gtk_check_button_get_active (GTK_CHECK_BUTTON (widget));
-
-	widget = GTK_WIDGET (gtk_builder_get_object (builder, "ns_cert_type_label"));
-	gtk_widget_set_sensitive (widget, use_ns_cert_type);
-
-	widget = GTK_WIDGET (gtk_builder_get_object (builder, "ns_cert_type_combo"));
-	gtk_widget_set_sensitive (widget, use_ns_cert_type);
-}
-
-#define NS_CERT_TYPE_COL_NAME 0
-#define NS_CERT_TYPE_COL_VALUE 1
-
-static void
-populate_ns_cert_type_combo (GtkComboBox *box, const char *type)
-{
-	GtkListStore *store;
-	GtkTreeIter iter;
-
-	store = gtk_list_store_new (2, G_TYPE_STRING, G_TYPE_STRING);
-	gtk_combo_box_set_model (box, GTK_TREE_MODEL (store));
-
-	gtk_list_store_append (store, &iter);
-	gtk_list_store_set (store, &iter,
-	                    NS_CERT_TYPE_COL_NAME, _("Server"),
-	                    NS_CERT_TYPE_COL_VALUE, NM_OPENVPN3_NS_CERT_TYPE_SERVER,
-	                    -1);
-	gtk_list_store_append (store, &iter);
-	gtk_list_store_set (store, &iter,
-	                    NS_CERT_TYPE_COL_NAME, _("Client"),
-	                    NS_CERT_TYPE_COL_VALUE, NM_OPENVPN3_NS_CERT_TYPE_CLIENT,
-	                    -1);
-
-	if (g_strcmp0 (type, NM_OPENVPN3_NS_CERT_TYPE_CLIENT) == 0)
-		gtk_combo_box_set_active (box, 1);
-	else
-		gtk_combo_box_set_active (box, 0);
-
-	g_object_unref (store);
-}
-
-static void
 mtu_disc_toggled_cb (GtkWidget *widget, gpointer user_data)
 {
 	GtkBuilder *builder = (GtkBuilder *) user_data;
@@ -1584,8 +1529,6 @@ advanced_dialog_new (GHashTable *hash, const char *contype)
 	guint32 active;
 	NMSettingSecretFlags pw_flags;
 	GError *error = NULL;
-	NMOvpnComp comp;
-	NMOvpnAllowCompression allow_compression;
 
 	g_return_val_if_fail (hash != NULL, NULL);
 
@@ -1703,26 +1646,9 @@ advanced_dialog_new (GHashTable *hash, const char *contype)
 	_builder_init_optional_spinbutton (builder, "fragment_checkbutton", "fragment_spinbutton", !!value,
 	                                   _nm_utils_ascii_str_to_int64 (value, 10, 0, 65535, 1300));
 
-	allow_compression = nmovpn_allow_compression_from_options (g_hash_table_lookup (hash, NM_OPENVPN3_KEY_ALLOW_COMPRESSION));
-	combo = GTK_WIDGET (gtk_builder_get_object (builder, "compression-direction-combo"));
-
-	if (allow_compression != NMOVPN_ALLOW_COMPRESSION_NO)
-		gtk_combo_box_set_active (GTK_COMBO_BOX (combo), allow_compression - 1);
-
-	comp = nmovpn_compression_from_options (g_hash_table_lookup (hash, NM_OPENVPN3_KEY_COMP_LZO),
-	                                        g_hash_table_lookup (hash, NM_OPENVPN3_KEY_COMPRESS));
-
-	combo = GTK_WIDGET (gtk_builder_get_object (builder, "compress_combo"));
-	widget = _builder_init_toggle_button (builder, "compress_checkbutton",
-	                                      (allow_compression != NMOVPN_ALLOW_COMPRESSION_NO && comp != NMOVPN_COMP_DISABLED));
-	g_object_bind_property (widget, "active", combo, "sensitive", G_BINDING_SYNC_CREATE);
-	if (comp != NMOVPN_COMP_DISABLED)
-		gtk_combo_box_set_active (GTK_COMBO_BOX (combo), comp - 1);
-
 	_builder_init_toggle_button (builder, "mssfix_checkbutton", _hash_get_boolean (hash, NM_OPENVPN3_KEY_MSSFIX));
 	_builder_init_toggle_button (builder, "float_checkbutton", _hash_get_boolean (hash, NM_OPENVPN3_KEY_FLOAT));
 	_builder_init_toggle_button (builder, "tcp_checkbutton", _hash_get_boolean (hash, NM_OPENVPN3_KEY_PROTO_TCP));
-	_builder_init_toggle_button (builder, "ncp_disable_checkbutton", _hash_get_boolean (hash, NM_OPENVPN3_KEY_NCP_DISABLE));
 
 	/* Populate device-related widgets */
 	dev =      g_hash_table_lookup (hash, NM_OPENVPN3_KEY_DEV);
@@ -1772,15 +1698,6 @@ advanced_dialog_new (GHashTable *hash, const char *contype)
 		gtk_editable_set_text (GTK_EDITABLE (widget), value);
 	}
 
-	widget = GTK_WIDGET (gtk_builder_get_object (builder, "data_ciphers_fallback_combo"));
-	value = g_hash_table_lookup (hash, NM_OPENVPN3_KEY_DATA_CIPHERS_FALLBACK);
-	populate_cipher_combo (GTK_COMBO_BOX (widget), value);
-
-	value = g_hash_table_lookup (hash, NM_OPENVPN3_KEY_KEYSIZE);
-	_builder_init_optional_spinbutton (builder, "keysize_checkbutton", "keysize_spinbutton", !!value,
-	                                   _nm_utils_ascii_str_to_int64 (value, 10, 1, 65535, 128));
-
-
 	widget = GTK_WIDGET (gtk_builder_get_object (builder, "hmacauth_combo"));
 	value = g_hash_table_lookup (hash, NM_OPENVPN3_KEY_AUTH);
 	populate_hmacauth_combo (GTK_COMBO_BOX (widget), value);
@@ -1804,17 +1721,6 @@ advanced_dialog_new (GHashTable *hash, const char *contype)
 	widget = GTK_WIDGET (gtk_builder_get_object (builder, "remote_cert_tls_combo"));
 	value = g_hash_table_lookup (hash, NM_OPENVPN3_KEY_REMOTE_CERT_TLS);
 	populate_remote_cert_tls_combo (GTK_COMBO_BOX (widget), value);
-
-	widget = GTK_WIDGET (gtk_builder_get_object (builder, "ns_cert_type_checkbutton"));
-	value = g_hash_table_lookup (hash, NM_OPENVPN3_KEY_NS_CERT_TYPE);
-	if (value && *value)
-		gtk_check_button_set_active (GTK_CHECK_BUTTON (widget), TRUE);
-	g_signal_connect (G_OBJECT (widget), "toggled", G_CALLBACK (ns_cert_type_toggled_cb), builder);
-	ns_cert_type_toggled_cb (widget, builder);
-
-	widget = GTK_WIDGET (gtk_builder_get_object (builder, "ns_cert_type_combo"));
-	value = g_hash_table_lookup (hash, NM_OPENVPN3_KEY_NS_CERT_TYPE);
-	populate_ns_cert_type_combo (GTK_COMBO_BOX (widget), value);
 
 	/* TLS auth chooser */
 	chooser = GTK_WIDGET(gtk_builder_get_object (builder, "tls_auth_chooser"));
@@ -1893,13 +1799,6 @@ advanced_dialog_new (GHashTable *hash, const char *contype)
 	}
 	chooser_button_update_file (label, file);
 	g_clear_object (&file);
-
-	/* TLS cipher string */
-	value = g_hash_table_lookup (hash, NM_OPENVPN3_KEY_TLS_CIPHER);
-	if (value && *value) {
-		widget = GTK_WIDGET (gtk_builder_get_object (builder, "tls_cipher"));
-		gtk_editable_set_text (GTK_EDITABLE (widget), value);
-	}
 
 	/* ping check */
 	value = g_hash_table_lookup (hash, NM_OPENVPN3_KEY_PING);
@@ -2016,42 +1915,9 @@ advanced_dialog_new (GHashTable *hash, const char *contype)
 		gtk_editable_set_text (GTK_EDITABLE (widget), value);
 	}
 
-	_builder_init_toggle_button (builder, "push_peer_info_checkbutton",
-	                             _hash_get_boolean (hash, NM_OPENVPN3_KEY_PUSH_PEER_INFO));
-
 	g_signal_connect_swapped (G_OBJECT (gtk_builder_get_object (builder, "sk_key_chooser_button")),
 	                  "clicked", G_CALLBACK (gtk_widget_show),
 	                  gtk_builder_get_object (builder, "sk_key_chooser"));
-
-	/* Hide widgets for openvpn2-only options the v3 client either dropped
-	 * (LZO compression, legacy keysize, cipher-fallback / no-cipher-nego,
-	 * ns-cert-type, TLS cipher string) or always handles itself
-	 * (push-peer-info).  The backing vpn.data keys still round-trip via
-	 * raw profile import; the UX hides the noise. */
-	{
-		static const char * const openvpn2_only_widget_ids[] = {
-			"compress_checkbutton",
-			"compression-direction-combo",
-			"compress_combo",
-			"keysize_checkbutton",
-			"keysize_spinbutton",
-			"data_ciphers_fallback_combo",
-			"label_data_ciphers_fallback",
-			"ncp_disable_checkbutton",
-			"ns_cert_type_checkbutton",
-			"ns_cert_type_label",
-			"ns_cert_type_combo",
-			"tls_cipher_lbl",
-			"tls_cipher",
-			"push_peer_info_checkbutton",
-			NULL,
-		};
-		for (const char * const *id = openvpn2_only_widget_ids; *id; id++) {
-			GtkWidget *w = GTK_WIDGET (gtk_builder_get_object (builder, *id));
-			if (w)
-				gtk_widget_set_visible (w, FALSE);
-		}
-	}
 
 	return dialog;
 }
@@ -2170,31 +2036,6 @@ advanced_dialog_new_hash_from_dialog (GtkWidget *dialog)
 		}
 	}
 
-	widget = GTK_WIDGET (gtk_builder_get_object (builder, "compress_checkbutton"));
-	if (gtk_check_button_get_active (GTK_CHECK_BUTTON (widget))) {
-		const char *opt_allow_compression;
-		const char *opt_compress;
-		const char *opt_comp_lzo;
-		NMOvpnComp comp;
-		NMOvpnAllowCompression allow_compression;
-
-		combo = GTK_WIDGET (gtk_builder_get_object (builder, "compression-direction-combo"));
-		allow_compression = gtk_combo_box_get_active (GTK_COMBO_BOX (combo)) + 1;
-		nmovpn_allow_compression_to_options (allow_compression, &opt_allow_compression);
-		if (opt_allow_compression)
-			g_hash_table_insert (hash, NM_OPENVPN3_KEY_ALLOW_COMPRESSION, g_strdup (opt_allow_compression));
-
-		combo = GTK_WIDGET (gtk_builder_get_object (builder, "compress_combo"));
-		comp = gtk_combo_box_get_active (GTK_COMBO_BOX (combo)) + 1;
-		nmovpn_compression_to_options (comp, &opt_comp_lzo, &opt_compress);
-		if (opt_compress)
-			g_hash_table_insert (hash, NM_OPENVPN3_KEY_COMPRESS, g_strdup (opt_compress));
-		if (opt_comp_lzo)
-			g_hash_table_insert (hash, NM_OPENVPN3_KEY_COMP_LZO, g_strdup (opt_comp_lzo));
-	} else {
-		g_hash_table_insert (hash, NM_OPENVPN3_KEY_ALLOW_COMPRESSION, g_strdup ("no"));
-	}
-
 	widget = GTK_WIDGET (gtk_builder_get_object (builder, "mssfix_checkbutton"));
 	if (gtk_check_button_get_active (GTK_CHECK_BUTTON (widget)))
 		g_hash_table_insert (hash, NM_OPENVPN3_KEY_MSSFIX, g_strdup ("yes"));
@@ -2206,10 +2047,6 @@ advanced_dialog_new_hash_from_dialog (GtkWidget *dialog)
 	widget = GTK_WIDGET (gtk_builder_get_object (builder, "tcp_checkbutton"));
 	if (gtk_check_button_get_active (GTK_CHECK_BUTTON (widget)))
 		g_hash_table_insert (hash, NM_OPENVPN3_KEY_PROTO_TCP, g_strdup ("yes"));
-
-	widget = GTK_WIDGET (gtk_builder_get_object (builder, "ncp_disable_checkbutton"));
-	if (gtk_check_button_get_active (GTK_CHECK_BUTTON (widget)))
-		g_hash_table_insert (hash, NM_OPENVPN3_KEY_NCP_DISABLE, g_strdup ("yes"));
 
 	widget = GTK_WIDGET (gtk_builder_get_object (builder, "dev_checkbutton"));
 	if (gtk_check_button_get_active (GTK_CHECK_BUTTON (widget))) {
@@ -2262,30 +2099,6 @@ advanced_dialog_new_hash_from_dialog (GtkWidget *dialog)
 	value = gtk_editable_get_text (GTK_EDITABLE (widget));
 	if (value && value[0] != '\0')
 		g_hash_table_insert (hash, NM_OPENVPN3_KEY_DATA_CIPHERS, g_strdup (value));
-
-	widget = GTK_WIDGET (gtk_builder_get_object (builder, "data_ciphers_fallback_combo"));
-	model = gtk_combo_box_get_model (GTK_COMBO_BOX (widget));
-	if (gtk_combo_box_get_active_iter (GTK_COMBO_BOX (widget), &iter)) {
-		gs_free char *cipher = NULL;
-		gboolean is_default;
-
-		gtk_tree_model_get (model, &iter,
-		                    TLS_CIPHER_COL_NAME, &cipher,
-		                    TLS_CIPHER_COL_DEFAULT, &is_default, -1);
-		if (!is_default && cipher) {
-			g_hash_table_insert (hash, NM_OPENVPN3_KEY_DATA_CIPHERS_FALLBACK,
-			                     g_steal_pointer (&cipher));
-		}
-	}
-
-	widget = GTK_WIDGET (gtk_builder_get_object (builder, "keysize_checkbutton"));
-	if (gtk_check_button_get_active (GTK_CHECK_BUTTON (widget))) {
-		int keysize_val;
-
-		widget = GTK_WIDGET (gtk_builder_get_object (builder, "keysize_spinbutton"));
-		keysize_val = gtk_spin_button_get_value_as_int (GTK_SPIN_BUTTON (widget));
-		g_hash_table_insert (hash, NM_OPENVPN3_KEY_KEYSIZE, g_strdup_printf ("%d", keysize_val));
-	}
 
 	widget = GTK_WIDGET (gtk_builder_get_object (builder, "hmacauth_combo"));
 	model = gtk_combo_box_get_model (GTK_COMBO_BOX (widget));
@@ -2360,22 +2173,6 @@ advanced_dialog_new_hash_from_dialog (GtkWidget *dialog)
 			}
 		}
 
-		widget = GTK_WIDGET (gtk_builder_get_object (builder, "ns_cert_type_checkbutton"));
-		if (gtk_check_button_get_active (GTK_CHECK_BUTTON (widget))) {
-			widget = GTK_WIDGET (gtk_builder_get_object (builder, "ns_cert_type_combo"));
-			model = gtk_combo_box_get_model (GTK_COMBO_BOX (widget));
-			if (gtk_combo_box_get_active_iter (GTK_COMBO_BOX (widget), &iter)) {
-				char *type;
-
-				gtk_tree_model_get (model, &iter, NS_CERT_TYPE_COL_VALUE, &type, -1);
-				if (type) {
-					g_hash_table_insert (hash,
-					                     NM_OPENVPN3_KEY_NS_CERT_TYPE,
-					                     type);
-				}
-			}
-		}
-
 		combo = GTK_WIDGET (gtk_builder_get_object (builder, "tls_auth_mode"));
 		switch (gtk_combo_box_get_active (GTK_COMBO_BOX (combo))) {
 		case TLS_AUTH_MODE_AUTH:
@@ -2442,11 +2239,6 @@ advanced_dialog_new_hash_from_dialog (GtkWidget *dialog)
 		g_free (filename);
 		g_clear_object (&file);
 	}
-
-	entry = GTK_WIDGET (gtk_builder_get_object (builder, "tls_cipher"));
-	value = gtk_editable_get_text (GTK_EDITABLE (entry));
-	if (value && *value)
-		g_hash_table_insert (hash, NM_OPENVPN3_KEY_TLS_CIPHER, g_strdup (value));
 
 	widget = GTK_WIDGET (gtk_builder_get_object (builder, "ping_checkbutton"));
 	if (gtk_check_button_get_active (GTK_CHECK_BUTTON (widget))) {
@@ -2537,10 +2329,6 @@ advanced_dialog_new_hash_from_dialog (GtkWidget *dialog)
 				g_hash_table_insert (hash, NM_OPENVPN3_KEY_CRL_VERIFY_DIR, g_steal_pointer (&filename));
 		}
 	}
-
-	widget = GTK_WIDGET (gtk_builder_get_object (builder, "push_peer_info_checkbutton"));
-	if (gtk_check_button_get_active (GTK_CHECK_BUTTON (widget)))
-		g_hash_table_insert (hash, NM_OPENVPN3_KEY_PUSH_PEER_INFO, g_strdup ("yes"));
 
 	return hash;
 }
