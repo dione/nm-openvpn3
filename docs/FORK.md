@@ -35,5 +35,6 @@ the openvpn3 prefix is applied uniformly.
 - Plan 3b (done, v0.4.1) — UI plugin: hide openvpn2-only advanced-dialog widgets (LZO compress, legacy keysize, cipher-fallback / no-cipher-nego, ns-cert-type, TLS cipher string, push-peer-info)
 - Plan 3c (done, v0.4.2) — UI plugin: excise openvpn2-only widget code paths + .ui defs (read/write paths in advanced_dialog_new(), 13 widget defs from nm-openvpn3-dialog.ui, dead helpers); vpn.data keys + service args + import-export round-trip retained for raw .ovpn compat
 - Plan 3d (done, v0.5.0) — UI plugin: OVPN profile file chooser on main VPN tab (entry + Browse… → GtkFileChooserNative) wired to vpn.data nm-openvpn3-profile, which build_profile_string() passes verbatim to net.openvpn.v3.configuration.Import; validator relaxes gateway/CA/auth requirements when profile path is set
+- Plan 3e (done, v0.5.1) — UI plugin: five SetOverride toggles in Misc tab (route-nopull, force-default-gateway, block-ipv6, dns-setup-disabled, dco); editor stores them as override-* vpn.data keys; service dispatches each via net.openvpn.v3.configuration.SetOverride after Import. New ovpn3_config_set_override_bool() in ovpn3-client
 - Plan 2 — auth-dialog around AttentionRequired / UserInputQueue
-- Plan 3e — UI plugin: surface openvpn3 SetOverride keys (allow-compression, dco, etc.); drop dead service args builders if confirmed unreachable
+- Plan 3f — service hygiene: drop dead args_add_vpn_data builders, nm_openvpn3_start_openvpn_binary, _connect_common, valid_data validators left over from upstream openvpn2 fork+exec path
