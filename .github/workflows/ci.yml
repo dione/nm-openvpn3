@@ -1,0 +1,125 @@
+name: CI
+
+on:
+  push:
+    branches: [ "**" ]
+  pull_request:
+    branches: [ "**" ]
+
+jobs:
+  build-and-test:
+    name: Build + make check (Ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            autoconf \
+            automake \
+            autopoint \
+            gettext \
+            intltool \
+            libtool \
+            pkg-config \
+            gcc \
+            make \
+            libglib2.0-dev \
+            libgtk-3-dev \
+            libgtk-4-dev \
+            libsecret-1-dev \
+            libnm-dev \
+            libnma-dev \
+            libnma-gtk4-dev \
+            libxml2-utils
+
+      - name: autoreconf
+        run: autoreconf -fis
+
+      - name: configure
+        # TODO: 95 pre-existing warnings (mostly ISO C90 mixed-declarations
+        # and shadow warnings inherited from upstream).  Switch to
+        # --enable-more-warnings=error once those are cleaned up so any new
+        # warning aborts the CI build.
+        run: |
+          ./configure \
+            --with-gnome \
+            --with-gtk4 \
+            --enable-more-warnings=yes \
+            --disable-silent-rules
+
+      - name: make
+        run: make -j"$(nproc)"
+
+      - name: make check
+        run: make check
+
+      - name: Show test logs on failure
+        if: failure()
+        run: |
+          find . -name 'test-suite.log' -print -exec cat {} \;
+          find . -name '*.log' -path '*/tests/*' -print -exec cat {} \;
+
+  asan:
+    name: Build + tests under AddressSanitizer
+    runs-on: ubuntu-latest
+    env:
+      CFLAGS: "-fsanitize=address -fsanitize=undefined -fno-omit-frame-pointer -fno-sanitize-recover=undefined -g -O1"
+      LDFLAGS: "-fsanitize=address -fsanitize=undefined"
+      # detect_leaks: report any unfreed allocation at exit.
+      # abort_on_error: turn issues into non-zero exit so CI fails loudly.
+      # halt_on_error: stop the offending test immediately, do not race forward.
+      ASAN_OPTIONS: "detect_leaks=1:abort_on_error=1:halt_on_error=1:strict_string_checks=1:detect_stack_use_after_return=1"
+      UBSAN_OPTIONS: "print_stacktrace=1:halt_on_error=1"
+      # GLib's slice allocator hides leaks from ASan; route everything
+      # through plain malloc so leak reports are accurate.
+      G_SLICE: "always-malloc"
+      G_DEBUG: "gc-friendly"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            autoconf \
+            automake \
+            autopoint \
+            gettext \
+            intltool \
+            libtool \
+            pkg-config \
+            gcc \
+            make \
+            libglib2.0-dev \
+            libgtk-3-dev \
+            libgtk-4-dev \
+            libsecret-1-dev \
+            libnm-dev \
+            libnma-dev \
+            libnma-gtk4-dev \
+            libxml2-utils
+
+      - name: autoreconf
+        run: autoreconf -fis
+
+      - name: configure (asan)
+        run: |
+          ./configure \
+            --with-gnome \
+            --with-gtk4 \
+            --disable-silent-rules
+
+      - name: make
+        run: make -j"$(nproc)"
+
+      - name: make check (asan)
+        run: make check
+
+      - name: Show test logs on failure
+        if: failure()
+        run: |
+          find . -name 'test-suite.log' -print -exec cat {} \;
+          find . -name '*.log' -path '*/tests/*' -print -exec cat {} \;
