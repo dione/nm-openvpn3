@@ -8,32 +8,40 @@ on:
 
 jobs:
   build-and-test:
-    name: Build + make check (Ubuntu)
+    name: Build + make check (Fedora)
     runs-on: ubuntu-latest
+    container:
+      image: fedora:latest
     steps:
-      - uses: actions/checkout@v4
-
       - name: Install build dependencies
+        # Mirrors the dependency set used by the upstream GitLab pipeline
+        # so the Fedora-based build matches what GNOME's own CI exercises.
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
+          dnf -y install \
             autoconf \
             automake \
-            autopoint \
-            gettext \
-            intltool \
-            libtool \
-            pkg-config \
+            /usr/bin/autopoint \
             gcc \
+            gettext-devel \
+            glib2-devel \
+            gtk3-devel \
+            gtk4-devel \
+            libnma-devel \
+            libnma-gtk4-devel \
+            libsecret-devel \
+            libtool \
+            libxml2 \
             make \
-            libglib2.0-dev \
-            libgtk-3-dev \
-            libgtk-4-dev \
-            libsecret-1-dev \
-            libnm-dev \
-            libnma-dev \
-            libnma-gtk4-dev \
-            libxml2-utils
+            NetworkManager-libnm-devel \
+            pkgconfig \
+            findutils \
+            file \
+            git
+
+      - uses: actions/checkout@v4
+
+      - name: Mark workspace as safe for git
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: autoreconf
         run: autoreconf -fis
@@ -63,8 +71,10 @@ jobs:
           find . -name '*.log' -path '*/tests/*' -print -exec cat {} \;
 
   asan:
-    name: Build + tests under AddressSanitizer
+    name: Build + tests under AddressSanitizer (Fedora)
     runs-on: ubuntu-latest
+    container:
+      image: fedora:latest
     env:
       CFLAGS: "-fsanitize=address -fsanitize=undefined -fno-omit-frame-pointer -fno-sanitize-recover=undefined -g -O1"
       LDFLAGS: "-fsanitize=address -fsanitize=undefined"
@@ -78,29 +88,35 @@ jobs:
       G_SLICE: "always-malloc"
       G_DEBUG: "gc-friendly"
     steps:
-      - uses: actions/checkout@v4
-
       - name: Install build dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
+          dnf -y install \
             autoconf \
             automake \
-            autopoint \
-            gettext \
-            intltool \
-            libtool \
-            pkg-config \
+            /usr/bin/autopoint \
             gcc \
+            gettext-devel \
+            glib2-devel \
+            gtk3-devel \
+            gtk4-devel \
+            libasan \
+            libubsan \
+            libnma-devel \
+            libnma-gtk4-devel \
+            libsecret-devel \
+            libtool \
+            libxml2 \
             make \
-            libglib2.0-dev \
-            libgtk-3-dev \
-            libgtk-4-dev \
-            libsecret-1-dev \
-            libnm-dev \
-            libnma-dev \
-            libnma-gtk4-dev \
-            libxml2-utils
+            NetworkManager-libnm-devel \
+            pkgconfig \
+            findutils \
+            file \
+            git
+
+      - uses: actions/checkout@v4
+
+      - name: Mark workspace as safe for git
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: autoreconf
         run: autoreconf -fis
