@@ -26,13 +26,12 @@
 
 #include "../properties/import-export.h"
 
-/* vpn.data key carrying the path to a verbatim .ovpn file.  When present,
- * build_profile_string reads it directly instead of round-tripping the
- * NMConnection through do_export().  This is the workaround used by the
- * ovpn-to-nmcli helper to preserve options that the upstream NM-openvpn
- * 1.12.5 exporter does not understand (notably tls-crypt-v2, peer-fingerprint,
- * recent cipher/data-cipher syntax, etc.). */
-#define NM_OPENVPN3_PROFILE_PATH_KEY "nm-openvpn3-profile"
+/* NM_OPENVPN3_KEY_PROFILE carries the path to a verbatim .ovpn file.  When
+ * present, build_profile_string reads it directly instead of round-tripping
+ * the NMConnection through do_export(); this preserves modern openvpn3
+ * syntax (tls-crypt-v2, peer-fingerprint, data-ciphers, etc.) that the
+ * upstream 1.12.5 token exporter cannot reproduce.  The UI surfaces this
+ * key through the "OVPN profile file" entry on the main VPN tab. */
 
 /**
  * build_profile_string:
@@ -57,7 +56,7 @@ build_profile_string (NMConnection *connection, GError **error)
 	gsize  len = 0;
 
 	if (s_vpn)
-		raw_path = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_PROFILE_PATH_KEY);
+		raw_path = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_PROFILE);
 
 	if (raw_path && *raw_path) {
 		if (!g_file_get_contents (raw_path, &buf, &len, error))

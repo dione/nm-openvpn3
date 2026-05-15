@@ -177,6 +177,61 @@ config: remote</property>
                 <property name="top_attach">0</property>
               </packing>
             </child>
+            <child>
+              <object class="GtkLabel" id="profile_label">
+                <property name="visible">True</property>
+                <property name="can_focus">False</property>
+                <property name="label" translatable="yes">_OVPN profile file</property>
+                <property name="use_underline">True</property>
+                <property name="mnemonic_widget">profile_entry</property>
+                <property name="xalign">1</property>
+              </object>
+              <packing>
+                <property name="left_attach">0</property>
+                <property name="top_attach">1</property>
+              </packing>
+            </child>
+            <child>
+              <object class="GtkBox" id="profile_box">
+                <property name="visible">True</property>
+                <property name="can_focus">False</property>
+                <property name="orientation">horizontal</property>
+                <property name="spacing">6</property>
+                <child>
+                  <object class="GtkEntry" id="profile_entry">
+                    <property name="visible">True</property>
+                    <property name="can_focus">True</property>
+                    <property name="tooltip_text" translatable="yes">Path to a verbatim .ovpn profile. When set, the openvpn3 client interprets the file directly; other UI fields then act as overrides.
+config: nm-openvpn3-profile</property>
+                    <property name="hexpand">True</property>
+                    <property name="placeholder_text" translatable="yes">(optional — leave empty to use UI fields)</property>
+                  </object>
+                  <packing>
+                    <property name="expand">True</property>
+                    <property name="fill">True</property>
+                    <property name="position">0</property>
+                  </packing>
+                </child>
+                <child>
+                  <object class="GtkButton" id="profile_browse_button">
+                    <property name="label" translatable="yes">_Browse…</property>
+                    <property name="visible">True</property>
+                    <property name="can_focus">True</property>
+                    <property name="receives_default">True</property>
+                    <property name="use_underline">True</property>
+                  </object>
+                  <packing>
+                    <property name="expand">False</property>
+                    <property name="fill">True</property>
+                    <property name="position">1</property>
+                  </packing>
+                </child>
+              </object>
+              <packing>
+                <property name="left_attach">1</property>
+                <property name="top_attach">1</property>
+              </packing>
+            </child>
           </object>
           <packing>
             <property name="expand">True</property>

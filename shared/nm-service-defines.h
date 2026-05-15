@@ -66,6 +66,7 @@
 #define NM_OPENVPN3_KEY_PROXY_RETRY               "proxy-retry"
 #define NM_OPENVPN3_KEY_PROXY_SERVER              "proxy-server"
 #define NM_OPENVPN3_KEY_PROXY_TYPE                "proxy-type"
+#define NM_OPENVPN3_KEY_PROFILE                   "nm-openvpn3-profile"
 #define NM_OPENVPN3_KEY_PUSH_PEER_INFO            "push-peer-info"
 #define NM_OPENVPN3_KEY_REMOTE                    "remote"
 #define NM_OPENVPN3_KEY_REMOTE_CERT_TLS           "remote-cert-tls"

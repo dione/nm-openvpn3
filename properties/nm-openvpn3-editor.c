@@ -2397,10 +2397,15 @@ check_validity (Openvpn3Editor *self, GError **error)
 	GtkTreeIter iter;
 	gs_free char *contype = NULL;
 	gboolean success;
+	gboolean have_profile;
+
+	widget = GTK_WIDGET (gtk_builder_get_object (priv->builder, "profile_entry"));
+	str = gtk_editable_get_text (GTK_EDITABLE (widget));
+	have_profile = (str && str[0]);
 
 	widget = GTK_WIDGET (gtk_builder_get_object (priv->builder, "gateway_entry"));
 	str = gtk_editable_get_text (GTK_EDITABLE (widget));
-	if (str && check_gateway_entry (str))
+	if (have_profile || (str && check_gateway_entry (str)))
 		gtk_style_context_remove_class (gtk_widget_get_style_context (widget), "error");
 	else {
 		gtk_style_context_add_class (gtk_widget_get_style_context (widget), "error");
@@ -2410,6 +2415,9 @@ check_validity (Openvpn3Editor *self, GError **error)
 		             NM_OPENVPN3_KEY_REMOTE);
 		return FALSE;
 	}
+
+	if (have_profile)
+		return TRUE;
 
 	widget = GTK_WIDGET (gtk_builder_get_object (priv->builder, "auth_combo"));
 	model = gtk_combo_box_get_model (GTK_COMBO_BOX (widget));
@@ -2516,6 +2524,67 @@ advanced_button_clicked_cb (GtkWidget *button, gpointer user_data)
 }
 
 static void
+profile_chooser_response (GtkNativeDialog *chooser, gint response_id, gpointer user_data)
+{
+	GtkBuilder *builder = GTK_BUILDER (user_data);
+	GtkWidget *entry;
+	gs_unref_object GFile *file = NULL;
+	gs_free char *path = NULL;
+
+	if (response_id == GTK_RESPONSE_ACCEPT) {
+		file = gtk_file_chooser_get_file (GTK_FILE_CHOOSER (chooser));
+		if (file)
+			path = g_file_get_path (file);
+		if (path) {
+			entry = GTK_WIDGET (gtk_builder_get_object (builder, "profile_entry"));
+			gtk_editable_set_text (GTK_EDITABLE (entry), path);
+		}
+	}
+	gtk_native_dialog_destroy (chooser);
+	g_object_unref (chooser);
+}
+
+static void
+profile_browse_clicked_cb (GtkButton *button, gpointer user_data)
+{
+	GtkBuilder *builder = GTK_BUILDER (user_data);
+	GtkFileChooserNative *chooser;
+	GtkFileFilter *filter;
+	GtkWidget *entry;
+	GtkWidget *toplevel;
+	const char *current;
+
+	toplevel = GTK_WIDGET (gtk_widget_get_root (GTK_WIDGET (button)));
+
+	chooser = gtk_file_chooser_native_new (_("Choose an OpenVPN profile (.ovpn)"),
+	                                       GTK_IS_WINDOW (toplevel) ? GTK_WINDOW (toplevel) : NULL,
+	                                       GTK_FILE_CHOOSER_ACTION_OPEN,
+	                                       _("_Select"),
+	                                       _("_Cancel"));
+
+	filter = gtk_file_filter_new ();
+	gtk_file_filter_set_name (filter, _("OpenVPN profile (*.ovpn, *.conf)"));
+	gtk_file_filter_add_pattern (filter, "*.ovpn");
+	gtk_file_filter_add_pattern (filter, "*.conf");
+	gtk_file_chooser_add_filter (GTK_FILE_CHOOSER (chooser), filter);
+
+	filter = gtk_file_filter_new ();
+	gtk_file_filter_set_name (filter, _("All files"));
+	gtk_file_filter_add_pattern (filter, "*");
+	gtk_file_chooser_add_filter (GTK_FILE_CHOOSER (chooser), filter);
+
+	entry = GTK_WIDGET (gtk_builder_get_object (builder, "profile_entry"));
+	current = gtk_editable_get_text (GTK_EDITABLE (entry));
+	if (current && *current) {
+		gs_unref_object GFile *cur_file = g_file_new_for_path (current);
+		gtk_file_chooser_set_file (GTK_FILE_CHOOSER (chooser), cur_file, NULL);
+	}
+
+	g_signal_connect (chooser, "response", G_CALLBACK (profile_chooser_response), builder);
+	gtk_native_dialog_show (GTK_NATIVE_DIALOG (chooser));
+}
+
+static void
 sk_key_chooser_response (GtkDialog *chooser, gint response_id, gpointer user_data)
 {
 	Openvpn3EditorPrivate *priv = OPENVPN3_EDITOR_GET_PRIVATE (user_data);
@@ -2551,6 +2620,19 @@ init_editor_plugin (Openvpn3Editor *self, NMConnection *connection)
 			gtk_editable_set_text (GTK_EDITABLE (widget), value);
 	}
 	g_signal_connect (G_OBJECT (widget), "changed", G_CALLBACK (stuff_changed_cb), self);
+
+	widget = GTK_WIDGET (gtk_builder_get_object (priv->builder, "profile_entry"));
+	g_return_val_if_fail (widget != NULL, FALSE);
+	if (s_vpn) {
+		value = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN3_KEY_PROFILE);
+		if (value)
+			gtk_editable_set_text (GTK_EDITABLE (widget), value);
+	}
+	g_signal_connect (G_OBJECT (widget), "changed", G_CALLBACK (stuff_changed_cb), self);
+
+	widget = GTK_WIDGET (gtk_builder_get_object (priv->builder, "profile_browse_button"));
+	g_return_val_if_fail (widget != NULL, FALSE);
+	g_signal_connect (G_OBJECT (widget), "clicked", G_CALLBACK (profile_browse_clicked_cb), priv->builder);
 
 	widget = GTK_WIDGET (gtk_builder_get_object (priv->builder, "auth_combo"));
 	g_return_val_if_fail (widget != NULL, FALSE);
@@ -2697,6 +2779,11 @@ update_connection (NMVpnEditor *iface,
 	str = gtk_editable_get_text (GTK_EDITABLE (widget));
 	if (str && str[0])
 		nm_setting_vpn_add_data_item (s_vpn, NM_OPENVPN3_KEY_REMOTE, str);
+
+	widget = GTK_WIDGET (gtk_builder_get_object (priv->builder, "profile_entry"));
+	str = gtk_editable_get_text (GTK_EDITABLE (widget));
+	if (str && str[0])
+		nm_setting_vpn_add_data_item (s_vpn, NM_OPENVPN3_KEY_PROFILE, str);
 
 	auth_type = get_auth_type (priv->builder);
 	if (auth_type) {
