@@ -210,14 +210,15 @@ ovpn3_config_set_override_bool (Ovpn3Client *self,
 }
 
 gboolean
-ovpn3_config_set_override_int (Ovpn3Client *self,
-                               const gchar *config_path,
-                               const gchar *name,
-                               gint64       value,
-                               GError     **error)
+ovpn3_config_set_override_string (Ovpn3Client *self,
+                                  const gchar *config_path,
+                                  const gchar *name,
+                                  const gchar *value,
+                                  GError     **error)
 {
+	g_return_val_if_fail (value != NULL, FALSE);
 	return config_set_override (self, config_path, name,
-	                            g_variant_new_int64 (value), error);
+	                            g_variant_new_string (value), error);
 }
 
 static GDBusProxy *

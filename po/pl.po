@@ -1840,3 +1840,34 @@ msgstr ""
 #~ msgstr ""
 #~ "Wysyła dodatkowe informacje o kliencie do serwera.\n"
 #~ "konfiguracja: push-peer-info"
+
+#: properties/nm-openvpn3-dialog.ui
+msgid "openvpn3 log verbosity"
+msgstr "Poziom logowania openvpn3"
+
+#: properties/nm-openvpn3-dialog.ui
+msgid "Override: log-level.  Controls the verbosity the openvpn3 backend writes to the journal.  0 silent, 3 default, 6 debug (very chatty)."
+msgstr "Nadpisanie: log-level. Określa szczegółowość logów openvpn3 zapisywanych do journala. 1 — cicho, 3 — domyślny, 6 — debug (bardzo dużo)."
+
+#: properties/nm-openvpn3-dialog.ui
+msgid "1 — quiet"
+msgstr "1 — cicho"
+
+#: properties/nm-openvpn3-dialog.ui
+msgid "3 — info (default)"
+msgstr "3 — info (domyślne)"
+
+#: properties/nm-openvpn3-dialog.ui
+msgid "6 — debug"
+msgstr "6 — debug"
+
+#: properties/nm-openvpn3-dialog.ui
+msgid "host[:port[:proto]], host2[:port[:proto]], …"
+msgstr "host[:port[:proto]], host2[:port[:proto]], …"
+
+#: properties/nm-openvpn3-editor.c
+msgid "%u gateway (failover)"
+msgid_plural "%u gateways (failover)"
+msgstr[0] "%u brama (failover)"
+msgstr[1] "%u bramy (failover)"
+msgstr[2] "%u bram (failover)"

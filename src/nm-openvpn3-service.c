@@ -952,26 +952,32 @@ apply_config_overrides (Ovpn3Client *ovpn3,
 		}
 	}
 
-	/* Numeric override: log-level.  Stored as decimal string in vpn.data;
-	 * absent / "default" means leave the backend at its built-in default
-	 * (currently 3 INFO). */
+	/* String override: log-level.  openvpn3 stores log-level as a string
+	 * variant in the configuration manager's `overrides` property (matches
+	 * `openvpn3 config-manage --log-level N`), so the wire type is "s"
+	 * even though the value is numeric.  Range is 1..6 per openvpn3 CLI;
+	 * empty / "default" means leave the backend on its built-in default
+	 * (currently 3 INFO).  Validate before dispatching to avoid stuffing
+	 * arbitrary strings through. */
 	{
 		const char *log_str = nm_setting_vpn_get_data_item (
 			s_vpn, NM_OPENVPN3_KEY_OVERRIDE_LOG_LEVEL);
 		if (log_str && *log_str) {
-			gint64 v = _nm_utils_ascii_str_to_int64 (log_str, 10, 0, 6, -1);
-			if (v >= 0) {
+			gint64 v = _nm_utils_ascii_str_to_int64 (log_str, 10, 1, 6, -1);
+			if (v >= 1) {
 				g_autoptr (GError) ov_err = NULL;
-				if (!ovpn3_config_set_override_int (ovpn3, config_path,
-				                                    "log-level",
-				                                    v, &ov_err)) {
-					_LOGW ("SetOverride(log-level=%" G_GINT64_FORMAT ") failed: %s",
-					       v, ov_err ? ov_err->message : "(unknown)");
+				if (!ovpn3_config_set_override_string (ovpn3, config_path,
+				                                       "log-level",
+				                                       log_str, &ov_err)) {
+					ovpn3_trace ("SetOverride(log-level=%s) failed: %s",
+					             log_str,
+					             ov_err ? ov_err->message : "(unknown)");
 				} else {
-					ovpn3_trace ("SetOverride(log-level=%" G_GINT64_FORMAT ")", v);
+					ovpn3_trace ("SetOverride(log-level=%s) ok", log_str);
 				}
 			} else {
-				_LOGW ("invalid log-level override '%s' (must be 0..6)", log_str);
+				ovpn3_trace ("invalid log-level override '%s' (must be 1..6)",
+				             log_str);
 			}
 		}
 	}

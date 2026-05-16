@@ -2754,8 +2754,7 @@ config: connect-timeout &lt;n&gt; | server-poll-timeout &lt;n&gt;</property>
                     <property name="tooltip_text" translatable="yes">Override: log-level.  Controls the verbosity the openvpn3 backend writes to the journal.  0 silent, 3 default, 6 debug (very chatty).</property>
                     <items>
                       <item id="default" translatable="yes">Default</item>
-                      <item id="0">0 — silent</item>
-                      <item id="1">1</item>
+                      <item id="1" translatable="yes">1 — quiet</item>
                       <item id="2">2</item>
                       <item id="3" translatable="yes">3 — info (default)</item>
                       <item id="4">4</item>

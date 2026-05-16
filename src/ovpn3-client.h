@@ -102,14 +102,15 @@ gboolean ovpn3_config_set_override_bool (Ovpn3Client *self,
                                          gboolean     value,
                                          GError     **error);
 
-/* Set an integer override on @config_path.  Used for openvpn3 overrides
- * whose value is numeric rather than boolean — currently log-level
- * (0 silent … 6 debug). */
-gboolean ovpn3_config_set_override_int (Ovpn3Client *self,
-                                        const gchar *config_path,
-                                        const gchar *name,
-                                        gint64       value,
-                                        GError     **error);
+/* Set a string-typed override on @config_path.  openvpn3 represents the
+ * numeric log-level override as a string variant ("1".."6"), so the
+ * integer-typed wrapper would be rejected by the backend; the CLI
+ * `openvpn3 config-manage --log-level N` likewise sends a string. */
+gboolean ovpn3_config_set_override_string (Ovpn3Client *self,
+                                           const gchar *config_path,
+                                           const gchar *name,
+                                           const gchar *value,
+                                           GError     **error);
 
 typedef void (*Ovpn3StatusChangeCb) (guint32      code_major,
                                      guint32      code_minor,
