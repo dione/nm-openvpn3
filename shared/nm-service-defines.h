@@ -76,6 +76,7 @@
 #define NM_OPENVPN3_KEY_OVERRIDE_BLOCK_IPV6              "override-block-ipv6"
 #define NM_OPENVPN3_KEY_OVERRIDE_DNS_SETUP_DISABLED      "override-dns-setup-disabled"
 #define NM_OPENVPN3_KEY_OVERRIDE_DCO                     "override-dco"
+#define NM_OPENVPN3_KEY_OVERRIDE_LOG_LEVEL               "override-log-level"
 #define NM_OPENVPN3_KEY_PUSH_PEER_INFO            "push-peer-info"
 #define NM_OPENVPN3_KEY_REMOTE                    "remote"
 #define NM_OPENVPN3_KEY_REMOTE_CERT_TLS           "remote-cert-tls"

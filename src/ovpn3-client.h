@@ -102,6 +102,15 @@ gboolean ovpn3_config_set_override_bool (Ovpn3Client *self,
                                          gboolean     value,
                                          GError     **error);
 
+/* Set an integer override on @config_path.  Used for openvpn3 overrides
+ * whose value is numeric rather than boolean — currently log-level
+ * (0 silent … 6 debug). */
+gboolean ovpn3_config_set_override_int (Ovpn3Client *self,
+                                        const gchar *config_path,
+                                        const gchar *name,
+                                        gint64       value,
+                                        GError     **error);
+
 typedef void (*Ovpn3StatusChangeCb) (guint32      code_major,
                                      guint32      code_minor,
                                      const gchar *message,

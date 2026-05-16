@@ -2734,6 +2734,40 @@ config: connect-timeout &lt;n&gt; | server-poll-timeout &lt;n&gt;</property>
                     <property name="width">2</property>
                   </packing>
                 </child>
+                <child>
+                  <object class="GtkLabel" id="log_level_label">
+                    <property name="visible">True</property>
+                    <property name="can_focus">False</property>
+                    <property name="label" translatable="yes">openvpn3 log verbosity</property>
+                    <property name="xalign">0</property>
+                  </object>
+                  <packing>
+                    <property name="left_attach">0</property>
+                    <property name="top_attach">8</property>
+                  </packing>
+                </child>
+                <child>
+                  <object class="GtkComboBoxText" id="log_level_combo">
+                    <property name="visible">True</property>
+                    <property name="can_focus">False</property>
+                    <property name="halign">start</property>
+                    <property name="tooltip_text" translatable="yes">Override: log-level.  Controls the verbosity the openvpn3 backend writes to the journal.  0 silent, 3 default, 6 debug (very chatty).</property>
+                    <items>
+                      <item id="default" translatable="yes">Default</item>
+                      <item id="0">0 — silent</item>
+                      <item id="1">1</item>
+                      <item id="2">2</item>
+                      <item id="3" translatable="yes">3 — info (default)</item>
+                      <item id="4">4</item>
+                      <item id="5">5</item>
+                      <item id="6" translatable="yes">6 — debug</item>
+                    </items>
+                  </object>
+                  <packing>
+                    <property name="left_attach">1</property>
+                    <property name="top_attach">8</property>
+                  </packing>
+                </child>
               </object>
             </child>
             <child type="tab">

@@ -807,6 +807,7 @@ static const char *const advanced_keys[] = {
 	NM_OPENVPN3_KEY_OVERRIDE_DCO,
 	NM_OPENVPN3_KEY_OVERRIDE_DNS_SETUP_DISABLED,
 	NM_OPENVPN3_KEY_OVERRIDE_FORCE_DEFAULT_GATEWAY,
+	NM_OPENVPN3_KEY_OVERRIDE_LOG_LEVEL,
 	NM_OPENVPN3_KEY_OVERRIDE_ROUTE_NOPULL,
 	NM_OPENVPN3_KEY_PING,
 	NM_OPENVPN3_KEY_PING_EXIT,
@@ -1987,6 +1988,15 @@ advanced_dialog_new (GHashTable *hash, const char *contype)
 	_builder_init_toggle_button (builder, "override_dco",
 	                             _hash_get_boolean (hash, NM_OPENVPN3_KEY_OVERRIDE_DCO));
 
+	/* Log-level combo: id="default" → no override (combo index 0);
+	 * id="0".."6" → numeric override value. */
+	combo = GTK_WIDGET (gtk_builder_get_object (builder, "log_level_combo"));
+	value = g_hash_table_lookup (hash, NM_OPENVPN3_KEY_OVERRIDE_LOG_LEVEL);
+	if (value && *value)
+		gtk_combo_box_set_active_id (GTK_COMBO_BOX (combo), value);
+	else
+		gtk_combo_box_set_active_id (GTK_COMBO_BOX (combo), "default");
+
 	return dialog;
 }
 
@@ -2323,6 +2333,17 @@ advanced_dialog_new_hash_from_dialog (GtkWidget *dialog)
 			widget = GTK_WIDGET (gtk_builder_get_object (builder, override_widgets[i].widget_id));
 			if (widget && gtk_check_button_get_active (GTK_CHECK_BUTTON (widget)))
 				g_hash_table_insert (hash, (gpointer) override_widgets[i].key, g_strdup ("yes"));
+		}
+	}
+
+	{
+		const char *id;
+		combo = GTK_WIDGET (gtk_builder_get_object (builder, "log_level_combo"));
+		id = gtk_combo_box_get_active_id (GTK_COMBO_BOX (combo));
+		if (id && id[0] && g_strcmp0 (id, "default") != 0) {
+			g_hash_table_insert (hash,
+			                     (gpointer) NM_OPENVPN3_KEY_OVERRIDE_LOG_LEVEL,
+			                     g_strdup (id));
 		}
 	}
 

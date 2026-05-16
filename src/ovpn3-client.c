@@ -173,18 +173,18 @@ ovpn3_new_tunnel (Ovpn3Client *self,
 	return g_strdup (path);
 }
 
-gboolean
-ovpn3_config_set_override_bool (Ovpn3Client *self,
-                                const gchar *config_path,
-                                const gchar *name,
-                                gboolean     value,
-                                GError     **error)
+static gboolean
+config_set_override (Ovpn3Client *self,
+                     const gchar *config_path,
+                     const gchar *name,
+                     GVariant    *value,
+                     GError     **error)
 {
 	g_return_val_if_fail (self != NULL, FALSE);
 	g_return_val_if_fail (config_path != NULL, FALSE);
 	g_return_val_if_fail (name != NULL, FALSE);
 
-	GVariant *params = g_variant_new ("(sv)", name, g_variant_new_boolean (value));
+	GVariant *params = g_variant_new ("(sv)", name, value);
 	g_autoptr (GVariant) result = g_dbus_connection_call_sync (
 		self->bus,
 		OVPN3_BUS_CONFIG,
@@ -196,6 +196,28 @@ ovpn3_config_set_override_bool (Ovpn3Client *self,
 		G_DBUS_CALL_FLAGS_NONE,
 		-1, NULL, error);
 	return result != NULL;
+}
+
+gboolean
+ovpn3_config_set_override_bool (Ovpn3Client *self,
+                                const gchar *config_path,
+                                const gchar *name,
+                                gboolean     value,
+                                GError     **error)
+{
+	return config_set_override (self, config_path, name,
+	                            g_variant_new_boolean (value), error);
+}
+
+gboolean
+ovpn3_config_set_override_int (Ovpn3Client *self,
+                               const gchar *config_path,
+                               const gchar *name,
+                               gint64       value,
+                               GError     **error)
+{
+	return config_set_override (self, config_path, name,
+	                            g_variant_new_int64 (value), error);
 }
 
 static GDBusProxy *

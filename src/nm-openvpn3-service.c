@@ -951,6 +951,30 @@ apply_config_overrides (Ovpn3Client *ovpn3,
 			ovpn3_trace ("SetOverride(%s)=TRUE", override_map[i].ovpn3_name);
 		}
 	}
+
+	/* Numeric override: log-level.  Stored as decimal string in vpn.data;
+	 * absent / "default" means leave the backend at its built-in default
+	 * (currently 3 INFO). */
+	{
+		const char *log_str = nm_setting_vpn_get_data_item (
+			s_vpn, NM_OPENVPN3_KEY_OVERRIDE_LOG_LEVEL);
+		if (log_str && *log_str) {
+			gint64 v = _nm_utils_ascii_str_to_int64 (log_str, 10, 0, 6, -1);
+			if (v >= 0) {
+				g_autoptr (GError) ov_err = NULL;
+				if (!ovpn3_config_set_override_int (ovpn3, config_path,
+				                                    "log-level",
+				                                    v, &ov_err)) {
+					_LOGW ("SetOverride(log-level=%" G_GINT64_FORMAT ") failed: %s",
+					       v, ov_err ? ov_err->message : "(unknown)");
+				} else {
+					ovpn3_trace ("SetOverride(log-level=%" G_GINT64_FORMAT ")", v);
+				}
+			} else {
+				_LOGW ("invalid log-level override '%s' (must be 0..6)", log_str);
+			}
+		}
+	}
 }
 
 /* Scan /run/user for the lowest non-zero uid (systemd marks active user
