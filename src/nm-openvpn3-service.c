@@ -70,9 +70,6 @@ mask_for_prefix (guint32 prefix)
 
 static struct {
 	gboolean debug;
-	int log_level;
-	int log_level_ovpn;
-	bool log_syslog;
 	GPtrArray *tmp_file_paths;
 } gl/*obal*/;
 
@@ -140,25 +137,18 @@ G_DEFINE_TYPE (NMOpenvpn3Plugin, nm_openvpn3_plugin, NM_TYPE_VPN_SERVICE_PLUGIN)
 
 /*****************************************************************************/
 
-#define _NMLOG(level, ...) \
-	G_STMT_START { \
-		if (gl.log_level >= (level)) { \
-			g_print ("nm-openvpn3[%ld] %-7s " _NM_UTILS_MACRO_FIRST (__VA_ARGS__) "\n", \
-			         (long) getpid (), \
-			         nm_utils_syslog_to_str (level) \
-			         _NM_UTILS_MACRO_REST (__VA_ARGS__)); \
-		} \
-	} G_STMT_END
-
-static gboolean
-_LOGD_enabled (void)
-{
-	return gl.log_level >= LOG_INFO;
-}
-
-#define _LOGD(...) _NMLOG(LOG_INFO,    __VA_ARGS__)
-#define _LOGI(...) _NMLOG(LOG_NOTICE,  __VA_ARGS__)
-#define _LOGW(...) _NMLOG(LOG_WARNING, __VA_ARGS__)
+/* Route every diagnostic through GLib's structured logger.  G_LOG_DOMAIN is
+ * compiled-in as "nm-openvpn3" via -DG_LOG_DOMAIN in Makefile.am, so the
+ * standard g_debug / g_message / g_warning helpers already tag the output
+ * with our domain and reach the journal without any gating bookkeeping.
+ *
+ * Visibility under the default GLib handler:
+ *   _LOGD → G_LOG_LEVEL_DEBUG    — suppressed unless G_MESSAGES_DEBUG matches
+ *   _LOGI → G_LOG_LEVEL_MESSAGE  — always printed
+ *   _LOGW → G_LOG_LEVEL_WARNING  — always printed (and flagged) */
+#define _LOGD(...) g_debug   (__VA_ARGS__)
+#define _LOGI(...) g_message (__VA_ARGS__)
+#define _LOGW(...) g_warning (__VA_ARGS__)
 
 /*****************************************************************************/
 
@@ -338,7 +328,7 @@ lookup_ext_gateway_be (Ovpn3Client *ovpn3, const gchar *session_path)
 		return 0;
 	if (!inet_aton (ext_host, &ia))
 		return 0;
-	ovpn3_trace ("STARTED branch: ext_host='%s'", ext_host);
+	g_message ("STARTED branch: ext_host='%s'", ext_host);
 	return ia.s_addr;
 }
 
@@ -388,7 +378,7 @@ add_dns_servers (GVariantBuilder *b, GStrv dns_servers)
 		if (inet_aton (*p, &ia))
 			g_variant_builder_add (&dnsb, "u", ia.s_addr);
 		else
-			ovpn3_trace ("DNS skip non-IPv4 entry '%s'", *p);
+			g_message ("DNS skip non-IPv4 entry '%s'", *p);
 	}
 	g_variant_builder_add (b, "{sv}",
 	                       NM_VPN_PLUGIN_IP4_CONFIG_DNS,
@@ -457,7 +447,7 @@ add_routes (GVariantBuilder *b, GArray *routes, guint32 addr_be, guint32 prefix)
 		g_variant_builder_add_value (&rb, g_variant_builder_end (&one));
 		emitted++;
 	}
-	ovpn3_trace ("routes emitted to NM: %u (of %u parsed)",
+	g_message ("routes emitted to NM: %u (of %u parsed)",
 	             emitted, routes->len);
 	g_variant_builder_add (b, "{sv}",
 	                       NM_VPN_PLUGIN_IP4_CONFIG_ROUTES,
@@ -505,7 +495,7 @@ stats_timer_cb (gpointer user_data)
 	                                                         priv->session_path,
 	                                                         &e);
 	if (!s) {
-		ovpn3_trace ("stats fetch failed: %s", e ? e->message : "(unknown)");
+		g_message ("stats fetch failed: %s", e ? e->message : "(unknown)");
 		return G_SOURCE_CONTINUE;
 	}
 
@@ -534,11 +524,11 @@ stats_timer_cb (gpointer user_data)
 		gdouble rate_out = (d_out * G_GINT64_CONSTANT (1000000)) / (gdouble) dt_us;
 		g_autofree gchar *fri = fmt_bytes ((gint64) rate_in);
 		g_autofree gchar *fro = fmt_bytes ((gint64) rate_out);
-		ovpn3_trace ("stats: rx=%s tx=%s tun_rx=%s tun_tx=%s pkt_in=%" G_GINT64_FORMAT
+		g_message ("stats: rx=%s tx=%s tun_rx=%s tun_tx=%s pkt_in=%" G_GINT64_FORMAT
 		             " pkt_out=%" G_GINT64_FORMAT " rate_rx=%s/s rate_tx=%s/s",
 		             fin, fout, ftin, ftout, pkt_in, pkt_out, fri, fro);
 	} else {
-		ovpn3_trace ("stats: rx=%s tx=%s tun_rx=%s tun_tx=%s pkt_in=%" G_GINT64_FORMAT
+		g_message ("stats: rx=%s tx=%s tun_rx=%s tun_tx=%s pkt_in=%" G_GINT64_FORMAT
 		             " pkt_out=%" G_GINT64_FORMAT,
 		             fin, fout, ftin, ftout, pkt_in, pkt_out);
 	}
@@ -565,7 +555,7 @@ emit_started_ip4_config (NMOpenvpn3Plugin *self)
 	g_autofree gchar *dev = ovpn3_session_get_device_name (
 		priv->ovpn3, priv->session_path, &ge);
 	const gchar *tundev = (dev && *dev) ? dev : "tun0";
-	ovpn3_trace ("STARTED branch: device_name='%s'", tundev);
+	g_message ("STARTED branch: device_name='%s'", tundev);
 
 	/* Pull the IPv4 address openvpn3 already programmed on the tun
 	 * device.  NM requires ADDRESS + PREFIX + INT_GATEWAY to mark
@@ -573,13 +563,13 @@ emit_started_ip4_config (NMOpenvpn3Plugin *self)
 	guint32 addr_be = 0, peer_be = 0;
 	guint32 prefix = 32;
 	gboolean have_ip = lookup_tun_ipv4 (tundev, &addr_be, &peer_be, &prefix);
-	ovpn3_trace ("STARTED branch: have_ip=%d addr=0x%08x peer=0x%08x prefix=%u",
+	g_message ("STARTED branch: have_ip=%d addr=0x%08x peer=0x%08x prefix=%u",
 	             have_ip, addr_be, peer_be, prefix);
 
 	/* Read remote VPN endpoint (ext-gateway) so NM keeps a host route
 	 * to it OUTSIDE the tunnel. */
 	guint32 ext_gw_be = lookup_ext_gateway_be (priv->ovpn3, priv->session_path);
-	ovpn3_trace ("STARTED branch: ext_gw=0x%08x", ext_gw_be);
+	g_message ("STARTED branch: ext_gw=0x%08x", ext_gw_be);
 
 	/* Pull DNS + search domains from the openvpn3 netcfg device. */
 	g_autofree gchar *dev_path = ovpn3_session_get_device_path (
@@ -590,7 +580,7 @@ emit_started_ip4_config (NMOpenvpn3Plugin *self)
 		dns_servers = ovpn3_netcfg_get_dns_servers (priv->ovpn3, dev_path, NULL);
 		dns_search  = ovpn3_netcfg_get_dns_search  (priv->ovpn3, dev_path, NULL);
 	}
-	ovpn3_trace ("STARTED branch: dev_path=%s dns_count=%u search_count=%u",
+	g_message ("STARTED branch: dev_path=%s dns_count=%u search_count=%u",
 	             dev_path ? dev_path : "(null)",
 	             dns_servers ? g_strv_length (dns_servers) : 0,
 	             dns_search  ? g_strv_length (dns_search)  : 0);
@@ -627,7 +617,7 @@ emit_started_ip4_config (NMOpenvpn3Plugin *self)
 	/* Pull installed routes from kernel for our tun device. */
 	g_autoptr (GError) re = NULL;
 	g_autoptr (GArray) routes = ovpn3_read_proc_routes (tundev, &re);
-	ovpn3_trace ("STARTED branch: route_count=%u%s%s",
+	g_message ("STARTED branch: route_count=%u%s%s",
 	             routes ? routes->len : 0,
 	             re ? " err=" : "",
 	             re ? re->message : "");
@@ -642,7 +632,7 @@ emit_started_ip4_config (NMOpenvpn3Plugin *self)
 		g_variant_builder_add (&b, "{sv}",
 		                       NM_VPN_PLUGIN_IP4_CONFIG_NEVER_DEFAULT,
 		                       g_variant_new_boolean (TRUE));
-		ovpn3_trace ("split-tunnel: emit never-default=TRUE (no 0.0.0.0/0 on tun)");
+		g_message ("split-tunnel: emit never-default=TRUE (no 0.0.0.0/0 on tun)");
 	}
 
 	add_routes (&b, routes, addr_be, prefix);
@@ -733,7 +723,7 @@ auto_provide_known_slots (NMOpenvpn3Plugin *self, GSList *slots)
 		if (ovpn3_session_provide_input (priv->ovpn3, priv->session_path,
 		                                 slot->type, slot->group, slot->id,
 		                                 value, &pe)) {
-			ovpn3_trace ("auto-ProvideInput(%s) ok", slot->name);
+			g_message ("auto-ProvideInput(%s) ok", slot->name);
 			ovpn3_input_slot_free (slot);
 		} else {
 			_LOGW ("auto-ProvideInput(%s) failed: %s",
@@ -755,11 +745,11 @@ attention_required_cb (guint32      type,
 	NMOpenvpn3PluginPrivate *priv = NM_OPENVPN3_PLUGIN_GET_PRIVATE (self);
 	NMVpnServicePlugin *plugin = (NMVpnServicePlugin *) self;
 
-	ovpn3_trace ("AttentionRequired: type=%u group=%u msg='%s'",
+	g_message ("AttentionRequired: type=%u group=%u msg='%s'",
 	             type, group, msg ?: "");
 
 	if (!priv->session_path) {
-		ovpn3_trace ("AttentionRequired: no session_path, ignoring");
+		g_message ("AttentionRequired: no session_path, ignoring");
 		return;
 	}
 
@@ -774,14 +764,14 @@ attention_required_cb (guint32      type,
 		return;
 	}
 	if (!slots) {
-		ovpn3_trace ("AttentionRequired: queue empty, nothing to ask for");
+		g_message ("AttentionRequired: queue empty, nothing to ask for");
 		return;
 	}
 
 	/* Auto-provide whatever the connection already has stored. */
 	slots = auto_provide_known_slots (self, slots);
 	if (!slots) {
-		ovpn3_trace ("AttentionRequired: all slots auto-provided");
+		g_message ("AttentionRequired: all slots auto-provided");
 		return;
 	}
 
@@ -825,7 +815,7 @@ status_handle_state (NMOpenvpn3Plugin *self,
 
 	int state = ovpn3_status_to_nm_state (maj, min);
 
-	ovpn3_trace ("status: maj=%u min=%u msg=%s -> nm_state=%d",
+	g_message ("status: maj=%u min=%u msg=%s -> nm_state=%d",
 	             maj, min, msg ?: "", state);
 
 	if (state == NM_VPN_SERVICE_STATE_STARTED) {
@@ -885,7 +875,7 @@ poll_status_cb (gpointer user_data)
 			 * session-manage --disconnect` behind NM's back).  Tell
 			 * NM the tunnel is gone so it tears the connection down
 			 * instead of showing ACTIVATED with a dead tun. */
-			ovpn3_trace ("session disappeared post-connect; failing to NM");
+			g_message ("session disappeared post-connect; failing to NM");
 			return poll_fail (self);
 		}
 		if (priv->poll_ticks >= POLL_MAX_TICKS)
@@ -948,7 +938,7 @@ apply_config_overrides (Ovpn3Client *ovpn3,
 			       override_map[i].ovpn3_name,
 			       ov_err ? ov_err->message : "(unknown)");
 		} else {
-			ovpn3_trace ("SetOverride(%s)=TRUE", override_map[i].ovpn3_name);
+			g_message ("SetOverride(%s)=TRUE", override_map[i].ovpn3_name);
 		}
 	}
 
@@ -969,14 +959,14 @@ apply_config_overrides (Ovpn3Client *ovpn3,
 				if (!ovpn3_config_set_override_string (ovpn3, config_path,
 				                                       "log-level",
 				                                       log_str, &ov_err)) {
-					ovpn3_trace ("SetOverride(log-level=%s) failed: %s",
+					g_message ("SetOverride(log-level=%s) failed: %s",
 					             log_str,
 					             ov_err ? ov_err->message : "(unknown)");
 				} else {
-					ovpn3_trace ("SetOverride(log-level=%s) ok", log_str);
+					g_message ("SetOverride(log-level=%s) ok", log_str);
 				}
 			} else {
-				ovpn3_trace ("invalid log-level override '%s' (must be 1..6)",
+				g_message ("invalid log-level override '%s' (must be 1..6)",
 				             log_str);
 			}
 		}
@@ -1009,16 +999,16 @@ grant_access_run_user_fallback (Ovpn3Client *ovpn3, const gchar *session_path)
 	g_dir_close (d);
 
 	if (best_uid == 0) {
-		ovpn3_trace ("AccessGrant fallback: no non-root uid in /run/user");
+		g_message ("AccessGrant fallback: no non-root uid in /run/user");
 		return;
 	}
 
 	g_autoptr (GError) ag_err = NULL;
 	if (!ovpn3_session_access_grant (ovpn3, session_path, best_uid, &ag_err)) {
-		ovpn3_trace ("AccessGrant fallback uid=%u failed: %s",
+		g_message ("AccessGrant fallback uid=%u failed: %s",
 		             best_uid, ag_err ? ag_err->message : "(unknown)");
 	} else {
-		ovpn3_trace ("AccessGrant fallback uid=%u (/run/user scan) ok", best_uid);
+		g_message ("AccessGrant fallback uid=%u (/run/user scan) ok", best_uid);
 	}
 }
 
@@ -1036,7 +1026,7 @@ grant_access_for_connection (Ovpn3Client *ovpn3,
 {
 	g_autoptr (GError) pa_err = NULL;
 	if (!ovpn3_session_set_public_access (ovpn3, session_path, TRUE, &pa_err)) {
-		ovpn3_trace ("set public_access=TRUE failed: %s",
+		g_message ("set public_access=TRUE failed: %s",
 		             pa_err ? pa_err->message : "(unknown)");
 	}
 
@@ -1054,19 +1044,19 @@ grant_access_for_connection (Ovpn3Client *ovpn3,
 
 		struct passwd *pw = getpwnam (pitem);
 		if (!pw) {
-			ovpn3_trace ("AccessGrant: getpwnam(%s) failed", pitem);
+			g_message ("AccessGrant: getpwnam(%s) failed", pitem);
 			continue;
 		}
 
 		g_autoptr (GError) ag_err = NULL;
 		if (!ovpn3_session_access_grant (ovpn3, session_path,
 		                                 (guint32) pw->pw_uid, &ag_err)) {
-			ovpn3_trace ("AccessGrant uid=%u (%s) failed: %s",
+			g_message ("AccessGrant uid=%u (%s) failed: %s",
 			             (guint) pw->pw_uid, pitem,
 			             ag_err ? ag_err->message : "(unknown)");
 		} else {
 			granted_any = TRUE;
-			ovpn3_trace ("AccessGrant uid=%u (%s) ok",
+			g_message ("AccessGrant uid=%u (%s) ok",
 			             (guint) pw->pw_uid, pitem);
 		}
 	}
@@ -1125,10 +1115,10 @@ real_connect (NMVpnServicePlugin *plugin,
 			priv->ovpn3, priv->session_path,
 			status_change_signal_cb, self, &sub_err);
 		if (!priv->status_sub_id) {
-			ovpn3_trace ("StatusChange subscribe failed: %s",
+			g_message ("StatusChange subscribe failed: %s",
 			             sub_err ? sub_err->message : "(unknown)");
 		} else {
-			ovpn3_trace ("StatusChange subscribed sub_id=%u", priv->status_sub_id);
+			g_message ("StatusChange subscribed sub_id=%u", priv->status_sub_id);
 		}
 	}
 
@@ -1141,10 +1131,10 @@ real_connect (NMVpnServicePlugin *plugin,
 			priv->ovpn3, priv->session_path,
 			attention_required_cb, self, &sub_err);
 		if (!priv->attention_sub_id) {
-			ovpn3_trace ("AttentionRequired subscribe failed: %s",
+			g_message ("AttentionRequired subscribe failed: %s",
 			             sub_err ? sub_err->message : "(unknown)");
 		} else {
-			ovpn3_trace ("AttentionRequired subscribed sub_id=%u",
+			g_message ("AttentionRequired subscribed sub_id=%u",
 			             priv->attention_sub_id);
 		}
 	}
@@ -1183,7 +1173,11 @@ real_need_secrets (NMVpnServicePlugin *plugin,
 	g_return_val_if_fail (NM_IS_VPN_SERVICE_PLUGIN (plugin), FALSE);
 	g_return_val_if_fail (NM_IS_CONNECTION (connection), FALSE);
 
-	if (_LOGD_enabled ()) {
+	/* nm_connection_dump prints to stdout regardless of any log filter,
+	 * so gate it on the --debug flag specifically (independent of
+	 * G_MESSAGES_DEBUG).  Otherwise every connect would dump the whole
+	 * connection (and its secrets) to the journal. */
+	if (gl.debug) {
 		_LOGD ("connection -------------------------------------");
 		nm_connection_dump (connection);
 	}
@@ -1231,7 +1225,7 @@ real_new_secrets (NMVpnServicePlugin *base_plugin,
 	if (!priv->pending_slots) {
 		/* Nothing was queued by AttentionRequired — NM may have called
 		 * us speculatively after a connect retry.  Nothing to do. */
-		ovpn3_trace ("new_secrets: no pending slots, nop");
+		g_message ("new_secrets: no pending slots, nop");
 		return TRUE;
 	}
 
@@ -1247,7 +1241,7 @@ real_new_secrets (NMVpnServicePlugin *base_plugin,
 		const char *value = slot_value_from_s_vpn (s_vpn, vkey);
 
 		if (!value || !*value) {
-			ovpn3_trace ("new_secrets: slot '%s' has no value in vpn.secrets[%s]",
+			g_message ("new_secrets: slot '%s' has no value in vpn.secrets[%s]",
 			             slot->name, vkey);
 			missing++;
 			continue;
@@ -1257,7 +1251,7 @@ real_new_secrets (NMVpnServicePlugin *base_plugin,
 		if (ovpn3_session_provide_input (priv->ovpn3, priv->session_path,
 		                                 slot->type, slot->group, slot->id,
 		                                 value, &pe)) {
-			ovpn3_trace ("ProvideInput(%s) ok", slot->name);
+			g_message ("ProvideInput(%s) ok", slot->name);
 			sent++;
 		} else {
 			_LOGW ("ProvideInput(%s) failed: %s",
@@ -1276,7 +1270,7 @@ real_new_secrets (NMVpnServicePlugin *base_plugin,
 		return FALSE;
 	}
 
-	ovpn3_trace ("new_secrets: provided %u slots", sent);
+	g_message ("new_secrets: provided %u slots", sent);
 	return TRUE;
 }
 
@@ -1437,32 +1431,13 @@ main (int argc, char *argv[])
 	}
 	g_option_context_free (opt_ctx);
 
-	gl.log_level = _nm_utils_ascii_str_to_int64 (getenv ("NM_VPN_LOG_LEVEL"),
-	                                             10, 0, LOG_DEBUG, -1);
-	if (gl.log_level >= 0) {
-		if (gl.log_level >= LOG_DEBUG)
-			gl.log_level_ovpn = 10;
-		else if (gl.log_level >= LOG_INFO)
-			gl.log_level_ovpn = 5;
-		else if (gl.log_level > 0)
-			gl.log_level_ovpn = 2;
-		else
-			gl.log_level_ovpn = 1;
-	} else if (gl.debug)
-		gl.log_level_ovpn = 10;
-	else {
-		/* the default level is already "--verb 1", which is fine for us. */
-		gl.log_level_ovpn = -1;
-	}
+	/* --debug raises everything we emit through the GLib logger to DEBUG
+	 * level by routing the "all" tag into G_MESSAGES_DEBUG, which the
+	 * default handler then echoes for our domain. */
+	if (gl.debug && !g_getenv ("G_MESSAGES_DEBUG"))
+		g_setenv ("G_MESSAGES_DEBUG", "all", TRUE);
 
-	if (gl.log_level < 0)
-		gl.log_level = gl.debug ? LOG_INFO : LOG_NOTICE;
-
-	gl.log_syslog = _nm_utils_ascii_str_to_int64 (getenv ("NM_VPN_LOG_SYSLOG"),
-	                                              10, 0, 1,
-	                                              gl.debug ? 0 : 1);
-
-	_LOGD ("nm-openvpn3-service (version " DIST_VERSION ") starting...");
+	_LOGI ("nm-openvpn3-service (version " DIST_VERSION ") starting...");
 
 	if (   !g_file_test ("/sys/class/misc/tun", G_FILE_TEST_EXISTS)
 	    && (system ("/sbin/modprobe tun") == -1))

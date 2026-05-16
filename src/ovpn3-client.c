@@ -1,21 +1,6 @@
 #include "ovpn3-client.h"
 
-#include <stdarg.h>
 #include <string.h>
-
-/* Forward openvpn3-client diagnostics through GLib's logging into the same
- * journal stream that NetworkManager uses for our service.  MESSAGE level
- * is always shown by GLib's default handler (INFO/DEBUG are suppressed
- * unless G_MESSAGES_DEBUG is set), and NM captures our stderr into
- * journald under the nm-openvpn3-service syslog ident. */
-void
-ovpn3_trace (const char *fmt, ...)
-{
-	va_list ap;
-	va_start (ap, fmt);
-	g_logv ("nm-openvpn3", G_LOG_LEVEL_MESSAGE, fmt, ap);
-	va_end (ap);
-}
 
 struct _Ovpn3Client {
 	GDBusConnection *bus;
@@ -119,7 +104,7 @@ dbus_call_with_retry (GDBusProxy  *proxy,
 		if (!transient)
 			break;   /* non-transient; surface immediately */
 		if (i + 1 < attempts) {
-			ovpn3_trace ("dbus_call_with_retry: %s attempt %u failed (%s); retrying in %u ms",
+			g_message ("dbus_call_with_retry: %s attempt %u failed (%s); retrying in %u ms",
 			             method, i + 1, local->message, backoff_ms);
 			g_usleep (backoff_ms * 1000);
 		}
@@ -467,7 +452,7 @@ ovpn3_session_fetch_input_slots (Ovpn3Client *self,
 			G_VARIANT_TYPE ("(au)"),
 			G_DBUS_CALL_FLAGS_NONE, -1, NULL, &ce);
 		if (!chk) {
-			ovpn3_trace ("UserInputQueueCheck(%u,%u) failed: %s",
+			g_message ("UserInputQueueCheck(%u,%u) failed: %s",
 			             type, group,
 			             ce ? ce->message : "(unknown)");
 			continue;
