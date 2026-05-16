@@ -17,17 +17,21 @@
 
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{anyhow, Context};
+use futures_util::stream::StreamExt;
 use ovpn3_client::Client;
 use tokio::sync::Mutex;
 use tracing::{debug, info, warn};
-use zbus::zvariant::{OwnedObjectPath, OwnedValue};
+use zbus::zvariant::{ObjectPath, OwnedObjectPath, OwnedValue};
 use zbus::interface;
+use zbus::object_server::SignalEmitter;
 
 use crate::connection::{vpn_data, Settings};
-use crate::state::NMVpnServiceState;
+use crate::state::{NMVpnPluginFailure, NMVpnServiceState};
+use crate::status::status_to_nm_state;
 
 pub const NM_VPN_PLUGIN_PATH: &str = "/org/freedesktop/NetworkManager/VPN/Plugin";
 pub const NM_VPN_PLUGIN_IFACE: &str = "org.freedesktop.NetworkManager.VPN.Plugin";
@@ -56,25 +60,126 @@ struct SessionState {
 
 pub struct Plugin {
     client: Client,
-    state: Mutex<NMVpnServiceState>,
-    session: Mutex<SessionState>,
+    /// Connection clone, used by both interface methods (indirectly via
+    /// the per-call emitter) and background tasks (which manufacture
+    /// their own SignalEmitter via Connection + NM_VPN_PLUGIN_PATH).
+    connection: zbus::Connection,
+    state: Arc<Mutex<NMVpnServiceState>>,
+    session: Arc<Mutex<SessionState>>,
+}
+
+fn make_emitter(connection: &zbus::Connection) -> zbus::Result<SignalEmitter<'static>> {
+    SignalEmitter::new(
+        connection,
+        ObjectPath::try_from(NM_VPN_PLUGIN_PATH)
+            .expect("NM_VPN_PLUGIN_PATH must parse as ObjectPath"),
+    )
+}
+
+/// Transition the cached state and emit StateChanged.  Free function
+/// so background tasks can call it with their cloned Arc references.
+async fn set_state_via(
+    emitter: &SignalEmitter<'_>,
+    state: &Arc<Mutex<NMVpnServiceState>>,
+    new: NMVpnServiceState,
+) {
+    let changed = {
+        let mut s = state.lock().await;
+        if *s == new {
+            false
+        } else {
+            info!("state {:?} → {:?}", *s, new);
+            *s = new;
+            true
+        }
+    };
+    if changed {
+        if let Err(e) = emitter.state_changed(new.as_u32()).await {
+            warn!("StateChanged emit failed: {e}");
+        }
+    }
 }
 
 impl Plugin {
-    pub fn new(client: Client) -> Self {
+    pub fn new(client: Client, connection: zbus::Connection) -> Self {
         Self {
             client,
-            state: Mutex::new(NMVpnServiceState::Init),
-            session: Mutex::new(SessionState::default()),
+            connection,
+            state: Arc::new(Mutex::new(NMVpnServiceState::Init)),
+            session: Arc::new(Mutex::new(SessionState::default())),
         }
     }
 
-    async fn set_state(&self, new: NMVpnServiceState) {
-        let mut s = self.state.lock().await;
-        if *s != new {
-            info!("state {:?} → {:?}", *s, new);
-            *s = new;
-        }
+    /// Spawn the StatusChange listener.  Takes only what the task
+    /// needs — no `self` reference — so the spawned future is `'static`
+    /// without us shaving Arc-of-Plugin onto the ObjectServer-owned
+    /// instance.
+    fn spawn_status_listener(&self, session_path: OwnedObjectPath) {
+        let connection = self.connection.clone();
+        let client = self.client.clone();
+        let state = self.state.clone();
+        tokio::spawn(async move {
+            let proxy = match client.session_proxy(&session_path).await {
+                Ok(p) => p,
+                Err(e) => {
+                    warn!("StatusChange subscribe failed: {e}");
+                    return;
+                }
+            };
+            let mut stream = match proxy.receive_status_change().await {
+                Ok(s) => s,
+                Err(e) => {
+                    warn!("receive_status_change failed: {e}");
+                    return;
+                }
+            };
+            info!("StatusChange listener attached to {session_path}");
+            while let Some(signal) = stream.next().await {
+                let Ok(args) = signal.args() else { continue };
+                let (major, minor) = (args.major, args.minor);
+                debug!(
+                    "StatusChange: major={major} minor={minor} msg='{}'",
+                    args.message
+                );
+                let Some(target) = status_to_nm_state(major, minor) else {
+                    continue;
+                };
+                let Ok(emitter) = make_emitter(&connection) else {
+                    warn!("dropping StatusChange — could not build emitter");
+                    continue;
+                };
+                match target {
+                    NMVpnServiceState::Started => {
+                        if let Err(e) =
+                            crate::ip4::emit(&emitter, &client, &session_path).await
+                        {
+                            warn!("Ip4Config emit failed: {e:#}");
+                        }
+                        set_state_via(&emitter, &state, target).await;
+                    }
+                    NMVpnServiceState::Stopped => {
+                        set_state_via(&emitter, &state, target).await;
+                        let reason = if major == crate::status::OVPN3_MAJOR_SESSION {
+                            NMVpnPluginFailure::LoginFailed
+                        } else {
+                            NMVpnPluginFailure::ConnectFailed
+                        };
+                        let _ = emitter.failure(reason.as_u32()).await;
+                        break;
+                    }
+                    other => set_state_via(&emitter, &state, other).await,
+                }
+            }
+            debug!("StatusChange listener exited for {session_path}");
+        });
+    }
+
+    /// Mutate the cached state and emit a StateChanged signal so NM can
+    /// follow the activation FSM.  `emitter` is the per-call
+    /// SignalEmitter taken from the interface method's #[zbus(signal_emitter)]
+    /// parameter.
+    async fn set_state(&self, emitter: &SignalEmitter<'_>, new: NMVpnServiceState) {
+        set_state_via(emitter, &self.state, new).await;
     }
 
     async fn apply_overrides(
@@ -112,7 +217,11 @@ impl Plugin {
         }
     }
 
-    async fn do_connect(&self, connection: Settings) -> anyhow::Result<()> {
+    async fn do_connect(
+        &self,
+        emitter: &SignalEmitter<'_>,
+        connection: Settings,
+    ) -> anyhow::Result<()> {
         let data = vpn_data(&connection).context("parsing vpn.data")?;
         let profile_path = data
             .get(KEY_PROFILE)
@@ -122,7 +231,7 @@ impl Plugin {
         let profile = std::fs::read_to_string(Path::new(profile_path))
             .with_context(|| format!("reading profile file {profile_path}"))?;
 
-        self.set_state(NMVpnServiceState::Starting).await;
+        self.set_state(emitter, NMVpnServiceState::Starting).await;
 
         let id = data
             .get("connection-name")
@@ -150,6 +259,8 @@ impl Plugin {
             .await
             .context("waiting for session")?;
 
+        self.grant_access(&session_path).await;
+
         self.client
             .session_connect(&session_path)
             .await
@@ -158,33 +269,142 @@ impl Plugin {
         {
             let mut s = self.session.lock().await;
             s.config_path = Some(config_path);
-            s.session_path = Some(session_path);
+            s.session_path = Some(session_path.clone());
         }
+
+        // Attach the StatusChange listener so the activation FSM (and
+        // any subsequent backend failure) reaches NM.
+        self.spawn_status_listener(session_path.clone());
+        // Periodic statistics dump alongside the listener.
+        self.spawn_stats_timer(session_path);
 
         info!("Connect dispatched; backend handshake in progress");
         Ok(())
     }
+
+    /// Open the session up for the user's CLI (`openvpn3 sessions-list`)
+    /// and grant per-property read access via AccessGrant.  Mirrors the
+    /// C tree's `grant_access_for_connection()` — Phase 3 lands the
+    /// `/run/user` fallback only; explicit `permissions=user:NAME`
+    /// parsing waits for Phase 4 once a libc-bound name → uid lookup
+    /// is wired in.
+    async fn grant_access(&self, session_path: &OwnedObjectPath) {
+        if let Err(e) = self
+            .client
+            .session_set_public_access(session_path, true)
+            .await
+        {
+            warn!("set public_access=TRUE failed: {e}");
+        }
+        if let Some(uid) = lowest_run_user_uid() {
+            match self
+                .client
+                .session_access_grant(session_path, uid)
+                .await
+            {
+                Ok(()) => info!("AccessGrant uid={uid} (/run/user fallback) ok"),
+                Err(e) => warn!("AccessGrant uid={uid} failed: {e}"),
+            }
+        } else {
+            debug!("AccessGrant fallback: no non-root uid in /run/user");
+        }
+    }
+
+    /// Periodic openvpn3 session.statistics fetch, logged at INFO so
+    /// `journalctl -t nm-openvpn3-rust-service | grep stats` shows
+    /// live throughput.  Mirrors `stats_timer_cb` in the C tree (with
+    /// the v0.5.11 TUN_BYTES_* addition).
+    fn spawn_stats_timer(&self, session_path: OwnedObjectPath) {
+        let client = self.client.clone();
+        tokio::spawn(async move {
+            let mut last_bytes_in: i64 = 0;
+            let mut last_bytes_out: i64 = 0;
+            let mut last_tick = std::time::Instant::now();
+            let mut first = true;
+            loop {
+                tokio::time::sleep(Duration::from_secs(30)).await;
+                let stats = match client.session_get_statistics(&session_path).await {
+                    Ok(s) => s,
+                    Err(e) => {
+                        debug!("stats fetch failed: {e}");
+                        return;
+                    }
+                };
+                let bin = *stats.get("BYTES_IN").unwrap_or(&0);
+                let bout = *stats.get("BYTES_OUT").unwrap_or(&0);
+                let tbin = *stats.get("TUN_BYTES_IN").unwrap_or(&0);
+                let tbout = *stats.get("TUN_BYTES_OUT").unwrap_or(&0);
+                let pkt_in = *stats.get("PACKETS_IN").unwrap_or(&0);
+                let pkt_out = *stats.get("PACKETS_OUT").unwrap_or(&0);
+                if first {
+                    info!(
+                        "stats: rx={bin}B tx={bout}B tun_rx={tbin}B tun_tx={tbout}B \
+                         pkt_in={pkt_in} pkt_out={pkt_out}"
+                    );
+                    first = false;
+                } else {
+                    let now = std::time::Instant::now();
+                    let dt = now.duration_since(last_tick).as_secs_f64().max(1e-3);
+                    let rate_rx = ((bin - last_bytes_in) as f64 / dt) as i64;
+                    let rate_tx = ((bout - last_bytes_out) as f64 / dt) as i64;
+                    info!(
+                        "stats: rx={bin}B tx={bout}B tun_rx={tbin}B tun_tx={tbout}B \
+                         pkt_in={pkt_in} pkt_out={pkt_out} \
+                         rate_rx={rate_rx}B/s rate_tx={rate_tx}B/s"
+                    );
+                    last_tick = now;
+                }
+                last_bytes_in = bin;
+                last_bytes_out = bout;
+            }
+        });
+    }
+}
+
+/// Read /run/user and return the lowest non-zero UID present.  systemd
+/// creates per-user runtime dirs there, so the lowest UID is almost
+/// always the human session that triggered NM's activation.
+fn lowest_run_user_uid() -> Option<u32> {
+    let entries = std::fs::read_dir("/run/user").ok()?;
+    let mut best: Option<u32> = None;
+    for e in entries.flatten() {
+        let Some(name) = e.file_name().to_str().map(str::to_owned) else { continue };
+        let Ok(uid) = name.parse::<u32>() else { continue };
+        if uid == 0 {
+            continue;
+        }
+        best = Some(best.map_or(uid, |b| b.min(uid)));
+    }
+    best
 }
 
 #[interface(name = "org.freedesktop.NetworkManager.VPN.Plugin")]
 impl Plugin {
-    async fn connect(&self, connection: Settings) -> zbus::fdo::Result<()> {
-        match self.do_connect(connection).await {
+    async fn connect(
+        &self,
+        #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
+        connection: Settings,
+    ) -> zbus::fdo::Result<()> {
+        match self.do_connect(&emitter, connection).await {
             Ok(()) => Ok(()),
             Err(e) => {
                 warn!("Connect failed: {e:#}");
-                self.set_state(NMVpnServiceState::Stopped).await;
-                Err(zbus::fdo::Error::Failed(format!("{e:#}")).into())
+                self.set_state(&emitter, NMVpnServiceState::Stopped).await;
+                let _ = emitter
+                    .failure(crate::state::NMVpnPluginFailure::ConnectFailed.as_u32())
+                    .await;
+                Err(zbus::fdo::Error::Failed(format!("{e:#}")))
             }
         }
     }
 
     async fn connect_interactive(
         &self,
+        #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
         connection: Settings,
         _details: HashMap<String, OwnedValue>,
     ) -> zbus::fdo::Result<()> {
-        self.connect(connection).await
+        self.connect(emitter, connection).await
     }
 
     async fn need_secrets(&self, _connection: Settings) -> zbus::fdo::Result<String> {
@@ -194,7 +414,10 @@ impl Plugin {
         Ok(String::new())
     }
 
-    async fn disconnect(&self) -> zbus::fdo::Result<()> {
+    async fn disconnect(
+        &self,
+        #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
+    ) -> zbus::fdo::Result<()> {
         let session = {
             let mut s = self.session.lock().await;
             std::mem::take(&mut *s)
@@ -204,7 +427,7 @@ impl Plugin {
                 warn!("session.Disconnect failed: {e}");
             }
         }
-        self.set_state(NMVpnServiceState::Stopped).await;
+        self.set_state(&emitter, NMVpnServiceState::Stopped).await;
         Ok(())
     }
 
@@ -213,9 +436,36 @@ impl Plugin {
         Ok(())
     }
 
-    #[zbus(property)]
-    async fn state(&self) -> u32 {
-        let s = self.state.lock().await;
-        s.as_u32()
-    }
+    // Outbound signals (plugin → NM).  zbus 5 generates emit helpers
+    // that take a SignalEmitter as first argument; we invoke them via
+    // `Self::state_changed(&emitter, value).await` from method handlers.
+    // Note: signal declarations take no self.
+
+    #[zbus(signal)]
+    async fn state_changed(emitter: SignalEmitter<'_>, state: u32) -> zbus::Result<()>;
+
+    #[zbus(signal)]
+    async fn vpn_config(
+        emitter: SignalEmitter<'_>,
+        config: std::collections::HashMap<String, OwnedValue>,
+    ) -> zbus::Result<()>;
+
+    #[zbus(signal)]
+    async fn ip4_config(
+        emitter: SignalEmitter<'_>,
+        ip4_config: std::collections::HashMap<String, OwnedValue>,
+    ) -> zbus::Result<()>;
+
+    #[zbus(signal)]
+    async fn failure(emitter: SignalEmitter<'_>, reason: u32) -> zbus::Result<()>;
+
+    #[zbus(signal)]
+    async fn secrets_required(
+        emitter: SignalEmitter<'_>,
+        message: String,
+        hints: Vec<String>,
+    ) -> zbus::Result<()>;
+
+    #[zbus(signal)]
+    async fn login_banner(emitter: SignalEmitter<'_>, banner: String) -> zbus::Result<()>;
 }

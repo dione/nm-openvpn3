@@ -1,29 +1,27 @@
-//! nm-openvpn3-service — Rust port (Phase 2: NMVpnPlugin wired).
+//! nm-openvpn3-service — Rust port (Phase 3: signals + StatusChange).
 
 mod connection;
+mod ip4;
 mod plugin;
+mod routes;
 mod state;
+mod status;
 
 use anyhow::Context;
 use clap::Parser;
 use tokio::signal::unix::{signal, SignalKind};
-use tracing::{error, info};
+use tracing::info;
 use tracing_subscriber::EnvFilter;
 
 #[derive(Parser, Debug)]
 #[command(version, about = "NetworkManager openvpn3 plugin service (Rust port)")]
 struct Args {
-    /// D-Bus bus name to claim.  NM passes this via the `program=` line
-    /// in the plugin's .name file; the default matches the side-by-side
-    /// Rust .name we install, so the C tree's claim is undisturbed.
     #[arg(long, default_value = "org.freedesktop.NetworkManager.openvpn3rust")]
     bus_name: String,
 
-    /// Verbose tracing (RUST_LOG=debug if RUST_LOG is unset).
     #[arg(long)]
     debug: bool,
 
-    /// Stay running after the first session disconnects (NM contract).
     #[arg(long)]
     persist: bool,
 }
@@ -55,24 +53,29 @@ async fn main() -> anyhow::Result<()> {
         .await
         .context("opening system bus")?;
 
-    let plugin = plugin::Plugin::new(client);
-
+    // Build the bus connection first so the Plugin can stash a clone
+    // for background-task signal emission; register the interface
+    // after the fact via object_server().at(...).
     let connection = zbus::connection::Builder::session()
         .context("zbus builder")?
         .name(args.bus_name.as_str())
         .context("requesting bus name")?
-        .serve_at(plugin::NM_VPN_PLUGIN_PATH, plugin)
-        .context("registering Plugin at NM_VPN_PLUGIN_PATH")?
         .build()
         .await
         .with_context(|| format!("claiming bus name '{}'", args.bus_name))?;
+
+    let plugin = plugin::Plugin::new(client, connection.clone());
+    connection
+        .object_server()
+        .at(plugin::NM_VPN_PLUGIN_PATH, plugin)
+        .await
+        .context("registering Plugin on object server")?;
     info!(
         "registered {} at {}",
         plugin::NM_VPN_PLUGIN_IFACE,
         plugin::NM_VPN_PLUGIN_PATH
     );
 
-    // Hold the connection alive — dropping it tears down the bus claim.
     let _connection_holder = connection;
 
     let mut sigterm = signal(SignalKind::terminate())?;
@@ -81,12 +84,6 @@ async fn main() -> anyhow::Result<()> {
     tokio::select! {
         _ = sigterm.recv() => info!("SIGTERM received, shutting down"),
         _ = sigint.recv() => info!("SIGINT received, shutting down"),
-    }
-
-    if !args.persist {
-        info!("exiting (--persist not set)");
-    } else {
-        error!("--persist requested but Phase 2 still exits on signal");
     }
 
     Ok(())

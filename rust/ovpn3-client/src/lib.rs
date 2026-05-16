@@ -186,6 +186,101 @@ impl Client {
             .await?;
         proxy.dns_search_domains().await
     }
+
+    /// Build a Session proxy for an existing session path.  Callers use
+    /// this to subscribe to StatusChange / AttentionRequired streams
+    /// without going through one of the wrapped helpers.
+    pub async fn session_proxy(
+        &self,
+        session_path: &OwnedObjectPath,
+    ) -> zbus::Result<SessionProxy<'static>> {
+        SessionProxy::builder(&self.connection)
+            .path(session_path.clone())?
+            .build()
+            .await
+    }
+
+    /// Read the per-session connected_to property — (proto, host, port).
+    pub async fn session_get_connected_to(
+        &self,
+        session_path: &OwnedObjectPath,
+    ) -> zbus::Result<Option<(String, String, u32)>> {
+        // openvpn3 surfaces this as `(ssu)` directly on session; in the
+        // C tree this was a method but the underlying property is the
+        // same shape.  Once the property is wired we can swap to a
+        // typed accessor; for Phase 3 we use the raw Properties
+        // interface call.
+        let conn = &self.connection;
+        let reply = conn
+            .call_method(
+                Some(BUS_SESSIONS),
+                session_path.as_ref(),
+                Some("org.freedesktop.DBus.Properties"),
+                "Get",
+                &("net.openvpn.v3.sessions", "last_connected"),
+            )
+            .await;
+        // The session uses `connected_to` rather than `last_connected`;
+        // fall back to a typed read on whichever name responds.
+        let reply = match reply {
+            Ok(r) => r,
+            Err(_) => {
+                conn.call_method(
+                    Some(BUS_SESSIONS),
+                    session_path.as_ref(),
+                    Some("org.freedesktop.DBus.Properties"),
+                    "Get",
+                    &("net.openvpn.v3.sessions", "connected_to"),
+                )
+                .await?
+            }
+        };
+        let body = reply.body();
+        let value: zbus::zvariant::OwnedValue = body.deserialize()?;
+        if let Ok((p, h, port)) = <(String, String, u32)>::try_from(value.clone()) {
+            return Ok(Some((p, h, port)));
+        }
+        Ok(None)
+    }
+
+    /// Read the per-session device_name property.
+    pub async fn session_get_device_name(
+        &self,
+        session_path: &OwnedObjectPath,
+    ) -> zbus::Result<String> {
+        let proxy = self.session_proxy(session_path).await?;
+        proxy.device_name().await
+    }
+
+    /// Read the per-session device_path property.
+    pub async fn session_get_device_path(
+        &self,
+        session_path: &OwnedObjectPath,
+    ) -> zbus::Result<OwnedObjectPath> {
+        let proxy = self.session_proxy(session_path).await?;
+        proxy.device_path().await
+    }
+
+    /// `session.set_public_access(b)` toggles whether non-owner UIDs
+    /// can manage the session via the `openvpn3 sessions-list` CLI.
+    pub async fn session_set_public_access(
+        &self,
+        session_path: &OwnedObjectPath,
+        value: bool,
+    ) -> zbus::Result<()> {
+        let proxy = self.session_proxy(session_path).await?;
+        proxy.set_public_access(value).await
+    }
+
+    /// Grant a specific UID per-property read access via AccessGrant.
+    pub async fn session_access_grant(
+        &self,
+        session_path: &OwnedObjectPath,
+        uid: u32,
+    ) -> zbus::Result<()> {
+        let proxy = self.session_proxy(session_path).await?;
+        proxy.access_grant(uid).await
+    }
 }
 
 mod proxies {
