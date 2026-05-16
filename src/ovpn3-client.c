@@ -104,7 +104,7 @@ dbus_call_with_retry (GDBusProxy  *proxy,
 		if (!transient)
 			break;   /* non-transient; surface immediately */
 		if (i + 1 < attempts) {
-			g_message ("dbus_call_with_retry: %s attempt %u failed (%s); retrying in %u ms",
+			g_debug ("dbus_call_with_retry: %s attempt %u failed (%s); retrying in %u ms",
 			             method, i + 1, local->message, backoff_ms);
 			g_usleep (backoff_ms * 1000);
 		}
@@ -452,7 +452,7 @@ ovpn3_session_fetch_input_slots (Ovpn3Client *self,
 			G_VARIANT_TYPE ("(au)"),
 			G_DBUS_CALL_FLAGS_NONE, -1, NULL, &ce);
 		if (!chk) {
-			g_message ("UserInputQueueCheck(%u,%u) failed: %s",
+			g_debug ("UserInputQueueCheck(%u,%u) failed: %s",
 			             type, group,
 			             ce ? ce->message : "(unknown)");
 			continue;
