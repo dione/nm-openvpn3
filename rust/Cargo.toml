@@ -1,0 +1,31 @@
+[workspace]
+resolver = "2"
+members = [
+    "ovpn3-client",
+    "nm-openvpn3-service",
+]
+
+[workspace.package]
+version = "0.6.0-rust-alpha"
+edition = "2021"
+license = "GPL-2.0-or-later"
+authors = ["nm-openvpn3 contributors"]
+repository = "https://github.com/dione/nm-openvpn3"
+
+[workspace.dependencies]
+# zbus 5 - Rust async D-Bus client (pure Rust, no libdbus).
+zbus = { version = "5", default-features = false, features = ["tokio"] }
+# glib-rs - GLib bindings.  Needed for the GMainLoop that NM expects the
+# service plugin to drive, plus G_LOG_DOMAIN-aware logging that matches
+# the C build's journal output.
+glib = "0.20"
+# Standard error / async / logging crates.
+anyhow = "1"
+thiserror = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "time", "sync"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+clap = { version = "4", features = ["derive"] }
+
+# Local crate
+ovpn3-client = { path = "ovpn3-client" }

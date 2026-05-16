@@ -87,3 +87,7 @@ properties/resources.[ch]
 src/tests/test-build-profile
 src/tests/test-ovpn3-routes
 src/tests/test-ovpn3-status
+
+# Rust workspace
+rust/target/
+rust/**/target/
