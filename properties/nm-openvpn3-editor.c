@@ -2383,6 +2383,44 @@ check_gateway_entry (const char *str)
 	return success;
 }
 
+static guint
+count_gateway_tokens (const char *str)
+{
+	gs_free char *str_clone = NULL;
+	char *str_iter;
+	const char *tok;
+	guint n = 0;
+
+	if (!str || !str[0])
+		return 0;
+	str_clone = g_strdup (str);
+	str_iter = str_clone;
+	while ((tok = strsep (&str_iter, " \t,"))) {
+		if (tok[0])
+			n++;
+	}
+	return n;
+}
+
+static void
+gateway_entry_count_update_cb (GtkEditable *editable, gpointer user_data)
+{
+	GtkLabel *label = GTK_LABEL (user_data);
+	const char *str = gtk_editable_get_text (editable);
+	guint n = count_gateway_tokens (str);
+
+	if (n <= 1) {
+		gtk_label_set_text (label, "");
+	} else {
+		g_autofree char *txt = g_strdup_printf (
+			ngettext ("%u gateway (failover)",
+			          "%u gateways (failover)",
+			          n),
+			n);
+		gtk_label_set_text (label, txt);
+	}
+}
+
 static gboolean
 check_validity (Openvpn3Editor *self, GError **error)
 {
@@ -2616,6 +2654,16 @@ init_editor_plugin (Openvpn3Editor *self, NMConnection *connection)
 			gtk_editable_set_text (GTK_EDITABLE (widget), value);
 	}
 	g_signal_connect (G_OBJECT (widget), "changed", G_CALLBACK (stuff_changed_cb), self);
+
+	{
+		GtkWidget *count_label = GTK_WIDGET (gtk_builder_get_object (priv->builder,
+		                                                            "gateway_count_label"));
+		if (count_label) {
+			g_signal_connect (G_OBJECT (widget), "changed",
+			                  G_CALLBACK (gateway_entry_count_update_cb), count_label);
+			gateway_entry_count_update_cb (GTK_EDITABLE (widget), count_label);
+		}
+	}
 
 	widget = GTK_WIDGET (gtk_builder_get_object (priv->builder, "profile_entry"));
 	g_return_val_if_fail (widget != NULL, FALSE);

@@ -823,10 +823,7 @@ status_handle_state (NMOpenvpn3Plugin *self,
 	NMOpenvpn3PluginPrivate *priv = NM_OPENVPN3_PLUGIN_GET_PRIVATE (self);
 	NMVpnServicePlugin *plugin = (NMVpnServicePlugin *) self;
 
-	G_GNUC_BEGIN_IGNORE_DEPRECATIONS
-	NMVpnConnectionStateReason reason = NM_VPN_CONNECTION_STATE_REASON_NONE;
-	G_GNUC_END_IGNORE_DEPRECATIONS
-	int state = ovpn3_status_to_nm_state (maj, min, &reason);
+	int state = ovpn3_status_to_nm_state (maj, min);
 
 	ovpn3_trace ("status: maj=%u min=%u msg=%s -> nm_state=%d",
 	             maj, min, msg ?: "", state);

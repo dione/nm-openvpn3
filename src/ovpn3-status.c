@@ -1,31 +1,20 @@
 #include "ovpn3-status.h"
 
-/* NMVpnConnectionStateReason is deprecated upstream, but the libnm
- * VPN-plugin API still expects this typedef.  Wrap the implementation
- * in the suppression macros for as long as that contract holds. */
-G_GNUC_BEGIN_IGNORE_DEPRECATIONS
+#include <NetworkManager.h>   /* NM_VPN_SERVICE_STATE_* */
 
 int
-ovpn3_status_to_nm_state (guint32                     code_major,
-                          guint32                     code_minor,
-                          NMVpnConnectionStateReason *reason)
+ovpn3_status_to_nm_state (guint32 code_major,
+                          guint32 code_minor)
 {
-	g_return_val_if_fail (reason != NULL, -1);
-
 	if (code_major == OVPN3_MAJOR_CONNECTION) {
 		switch (code_minor) {
 		case OVPN3_MINOR_CONN_CONNECTING:
-			*reason = NM_VPN_CONNECTION_STATE_REASON_NONE;
+		case OVPN3_MINOR_CONN_RECONNECTING:
 			return NM_VPN_SERVICE_STATE_STARTING;
 		case OVPN3_MINOR_CONN_CONNECTED:
-			*reason = NM_VPN_CONNECTION_STATE_REASON_NONE;
 			return NM_VPN_SERVICE_STATE_STARTED;
 		case OVPN3_MINOR_CONN_DISCONNECTED:
-			*reason = NM_VPN_CONNECTION_STATE_REASON_NONE;
 			return NM_VPN_SERVICE_STATE_STOPPED;
-		case OVPN3_MINOR_CONN_RECONNECTING:
-			*reason = NM_VPN_CONNECTION_STATE_REASON_NONE;
-			return NM_VPN_SERVICE_STATE_STARTING;
 		default:
 			return -1;
 		}
@@ -33,7 +22,6 @@ ovpn3_status_to_nm_state (guint32                     code_major,
 	if (code_major == OVPN3_MAJOR_SESSION) {
 		switch (code_minor) {
 		case OVPN3_MINOR_SESS_AUTH_FAILED:
-			*reason = NM_VPN_CONNECTION_STATE_REASON_LOGIN_FAILED;
 			return NM_VPN_SERVICE_STATE_STOPPED;
 		default:
 			return -1;
@@ -41,5 +29,3 @@ ovpn3_status_to_nm_state (guint32                     code_major,
 	}
 	return -1;
 }
-
-G_GNUC_END_IGNORE_DEPRECATIONS

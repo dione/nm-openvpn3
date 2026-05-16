@@ -25,18 +25,14 @@ typedef enum {
 	OVPN3_MINOR_SESS_AUTH_USER_PASS = 5,
 } Ovpn3MinorSession;
 
-/* Maps an openvpn3 StatusChange tuple to a NetworkManager VPN service state.
- * Returns -1 if the status is not actionable (e.g. log-only).  On a known
- * status, fills *reason with the appropriate NMVpnConnectionStateReason.
+/* Maps an openvpn3 StatusChange tuple to a NetworkManager VPN service
+ * state.  Returns -1 for log-only / non-actionable statuses, otherwise
+ * one of NM_VPN_SERVICE_STATE_*.
  *
- * NMVpnConnectionStateReason is deprecated upstream in favour of
- * NMActiveConnectionStateReason; the NM VPN-plugin API still accepts the
- * old type though, so the wrapper macros suppress the GLib deprecation
- * warning at the only place we expose the symbol. */
-G_GNUC_BEGIN_IGNORE_DEPRECATIONS
-int ovpn3_status_to_nm_state (guint32                       code_major,
-                              guint32                       code_minor,
-                              NMVpnConnectionStateReason   *reason);
-G_GNUC_END_IGNORE_DEPRECATIONS
+ * The original signature also returned an NMVpnConnectionStateReason
+ * out-param but the service never read it back (and the type itself is
+ * deprecated upstream).  Dropped to keep the API surface honest. */
+int ovpn3_status_to_nm_state (guint32 code_major,
+                              guint32 code_minor);
 
 #endif
