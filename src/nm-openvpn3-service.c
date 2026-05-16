@@ -952,22 +952,26 @@ apply_config_overrides (Ovpn3Client *ovpn3,
 	{
 		const char *log_str = nm_setting_vpn_get_data_item (
 			s_vpn, NM_OPENVPN3_KEY_OVERRIDE_LOG_LEVEL);
-		if (log_str && *log_str) {
+		/* Treat "0" as unset — v0.5.14 briefly exposed it as a UI option
+		 * before the openvpn3 CLI documentation made clear the valid
+		 * range is 1..6.  Skipping it silently keeps old connections
+		 * usable until the user re-saves through the editor. */
+		if (log_str && *log_str && g_strcmp0 (log_str, "0") != 0) {
 			gint64 v = _nm_utils_ascii_str_to_int64 (log_str, 10, 1, 6, -1);
 			if (v >= 1) {
 				g_autoptr (GError) ov_err = NULL;
 				if (!ovpn3_config_set_override_string (ovpn3, config_path,
 				                                       "log-level",
 				                                       log_str, &ov_err)) {
-					g_message ("SetOverride(log-level=%s) failed: %s",
-					             log_str,
-					             ov_err ? ov_err->message : "(unknown)");
+					_LOGW ("SetOverride(log-level=%s) failed: %s",
+					       log_str,
+					       ov_err ? ov_err->message : "(unknown)");
 				} else {
-					g_message ("SetOverride(log-level=%s) ok", log_str);
+					_LOGI ("SetOverride(log-level=%s) ok", log_str);
 				}
 			} else {
-				g_message ("invalid log-level override '%s' (must be 1..6)",
-				             log_str);
+				_LOGW ("invalid log-level override '%s' (must be 1..6)",
+				       log_str);
 			}
 		}
 	}

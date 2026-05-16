@@ -1989,10 +1989,12 @@ advanced_dialog_new (GHashTable *hash, const char *contype)
 	                             _hash_get_boolean (hash, NM_OPENVPN3_KEY_OVERRIDE_DCO));
 
 	/* Log-level combo: id="default" → no override (combo index 0);
-	 * id="0".."6" → numeric override value. */
+	 * id="1".."6" → numeric override value.  Legacy connections from
+	 * v0.5.14 may carry the no-longer-supported "0" — fold it into the
+	 * default so a Save round-trip cleans the stale value. */
 	combo = GTK_WIDGET (gtk_builder_get_object (builder, "log_level_combo"));
 	value = g_hash_table_lookup (hash, NM_OPENVPN3_KEY_OVERRIDE_LOG_LEVEL);
-	if (value && *value)
+	if (value && *value && g_strcmp0 (value, "0") != 0)
 		gtk_combo_box_set_active_id (GTK_COMBO_BOX (combo), value);
 	else
 		gtk_combo_box_set_active_id (GTK_COMBO_BOX (combo), "default");
