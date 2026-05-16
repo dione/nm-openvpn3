@@ -1,0 +1,15 @@
+[VPN Connection]
+name=openvpn3rust
+service=org.freedesktop.NetworkManager.openvpn3rust
+program=@LIBEXECDIR@/nm-openvpn3-rust-service
+supports-multiple-connections=true
+supports-safe-private-file-access=true
+
+[libnm]
+plugin=@PLUGINDIR@/libnm-vpn-plugin-openvpn3.so
+
+[GNOME]
+auth-dialog=@LIBEXECDIR@/nm-openvpn3-auth-dialog
+properties=@PLUGINDIR@/libnm-vpn-plugin-openvpn3-editor.so
+supports-external-ui-mode=true
+supports-hints=true
