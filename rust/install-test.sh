@@ -14,6 +14,8 @@ NAMEDIR=/usr/lib/NetworkManager/VPN
 
 sudo install -m 0755 target/release/nm-openvpn3-service \
     "$LIBEXECDIR/nm-openvpn3-rust-service"
+sudo install -m 0755 target/release/nm-openvpn3-auth-dialog \
+    "$LIBEXECDIR/nm-openvpn3-rust-auth-dialog"
 
 # Render the @LIBEXECDIR@ / @PLUGINDIR@ placeholders.
 sed -e "s|@LIBEXECDIR@|$LIBEXECDIR|g" \

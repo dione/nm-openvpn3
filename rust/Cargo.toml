@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "ovpn3-client",
     "nm-openvpn3-service",
+    "nm-openvpn3-auth-dialog",
 ]
 
 [workspace.package]

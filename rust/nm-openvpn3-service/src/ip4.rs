@@ -8,6 +8,7 @@
 
 use std::collections::HashMap;
 use std::net::Ipv4Addr;
+use std::time::Duration;
 
 use anyhow::{anyhow, Result};
 use if_addrs::{IfAddr, Ifv4Addr};
@@ -149,17 +150,18 @@ pub async fn emit(
     let tundev = client
         .session_get_device_name(session_path)
         .await
-        .unwrap_or_else(|e| {
-            warn!("device_name read failed: {e}; defaulting to tun0");
-            "tun0".to_string()
-        });
+        .map_err(|e| anyhow!("session.device_name read failed: {e}"))?;
+    if tundev.is_empty() {
+        return Err(anyhow!(
+            "session reported empty device_name; cannot build Ip4Config"
+        ));
+    }
     debug!("STARTED: device='{tundev}'");
 
-    let (addr_be, prefix) = lookup_tun_ipv4(&tundev).unwrap_or_else(|| {
-        warn!("tun device '{tundev}' has no IPv4; emitting an empty IP4Config");
-        (0, 32)
-    });
-    let have_ip = addr_be != 0;
+    let (addr_be, prefix) = lookup_tun_ipv4(&tundev).ok_or_else(|| {
+        anyhow!("tun device '{tundev}' has no IPv4 address; aborting Ip4Config emit")
+    })?;
+    let have_ip = true;
 
     // NM rejects the SetConfig payload with "no VPN gateway address
     // received" if `gateway` is missing or 0, so we always try hard to
@@ -170,35 +172,51 @@ pub async fn emit(
         .await
         .ok()
         .flatten();
-    eprintln!("[nm-openvpn3-rust] last_connection={connected:?}");
+    debug!("last_connection={connected:?}");
     let ext_gw_be = match connected.as_ref() {
         Some((_, host, _)) if !host.is_empty() => match host.parse::<Ipv4Addr>() {
             Ok(ip) => u32::from(ip).to_be(),
             Err(_) => {
+                // Bound the async resolver so a slow / hung DNS server
+                // can't outlast NM's activation timeout.  tokio's
+                // lookup_host runs the resolution on the blocking
+                // pool, so the timeout cancels the *wait*, not the
+                // outstanding getaddrinfo call.
                 let host_port = format!("{host}:0");
-                tokio::task::block_in_place(|| {
-                    std::net::ToSocketAddrs::to_socket_addrs(&host_port.as_str())
-                        .ok()
-                        .and_then(|mut it| {
-                            it.find_map(|sa| match sa.ip() {
-                                std::net::IpAddr::V4(v4) => {
-                                    Some(u32::from(v4).to_be())
-                                }
-                                _ => None,
-                            })
+                let lookup = tokio::net::lookup_host(host_port.as_str());
+                let resolved = tokio::time::timeout(Duration::from_secs(5), lookup).await;
+                match resolved {
+                    Ok(Ok(mut it)) => it
+                        .find_map(|sa| match sa.ip() {
+                            std::net::IpAddr::V4(v4) => Some(u32::from(v4).to_be()),
+                            _ => None,
                         })
-                })
-                .unwrap_or_else(|| {
-                    warn!("could not resolve VPN gateway host '{host}' to IPv4");
-                    0
-                })
+                        .unwrap_or_else(|| {
+                            warn!(
+                                "VPN gateway host '{host}' resolved but had no IPv4 record"
+                            );
+                            0
+                        }),
+                    Ok(Err(e)) => {
+                        warn!("VPN gateway host '{host}' resolve failed: {e}");
+                        0
+                    }
+                    Err(_) => {
+                        warn!("VPN gateway host '{host}' resolve timed out after 5s");
+                        0
+                    }
+                }
             }
         },
-        _ => {
-            warn!("session.last_connection unavailable; gateway key omitted");
-            0
-        }
+        _ => 0,
     };
+    if ext_gw_be == 0 {
+        return Err(anyhow!(
+            "could not produce an IPv4 gateway for the SetConfig payload \
+             (last_connection={connected:?}); NM would reject this as \
+             'no VPN gateway address received'"
+        ));
+    }
 
     let dev_path = client
         .session_get_device_path(session_path)
@@ -218,9 +236,7 @@ pub async fn emit(
     // SetConfig dictionary.
     let mut cfg: HashMap<String, OwnedValue> = HashMap::new();
     cfg.insert(NM_KEY_CONFIG_TUNDEV.into(), owned_str(&tundev));
-    if ext_gw_be != 0 {
-        cfg.insert(NM_KEY_CONFIG_EXT_GATEWAY.into(), owned_u32(ext_gw_be));
-    }
+    cfg.insert(NM_KEY_CONFIG_EXT_GATEWAY.into(), owned_u32(ext_gw_be));
     cfg.insert(NM_KEY_CONFIG_HAS_IP4.into(), owned_bool(have_ip));
     cfg.insert(NM_KEY_CONFIG_HAS_IP6.into(), owned_bool(false));
     cfg.insert(NM_KEY_CONFIG_CAN_PERSIST.into(), owned_bool(false));

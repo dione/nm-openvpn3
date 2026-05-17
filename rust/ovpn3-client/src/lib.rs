@@ -310,6 +310,80 @@ impl Client {
         let proxy = self.session_proxy(session_path).await?;
         proxy.access_grant(uid).await
     }
+
+    /// Drain the session's UserInputQueue and return every pending
+    /// slot.  Mirrors the C `ovpn3_session_fetch_input_slots()` —
+    /// walks the (type, group) pairs, then `Check`s each pair for
+    /// queued slot indices, then `Fetch`es each to get the descriptor.
+    pub async fn session_fetch_input_slots(
+        &self,
+        session_path: &OwnedObjectPath,
+    ) -> anyhow::Result<Vec<InputSlot>> {
+        let proxy = self.session_proxy(session_path).await?;
+        let mut out = Vec::new();
+        let pairs = match proxy.user_input_queue_get_type_group().await {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::debug!("UserInputQueueGetTypeGroup failed: {e}");
+                return Ok(out);
+            }
+        };
+        for (t, g) in pairs {
+            let ids = match proxy.user_input_queue_check(t, g).await {
+                Ok(v) => v,
+                Err(e) => {
+                    tracing::debug!("UserInputQueueCheck({t},{g}) failed: {e}");
+                    continue;
+                }
+            };
+            for id in ids {
+                match proxy.user_input_queue_fetch(t, g, id).await {
+                    Ok((_t, _g, _id, name, descr, mask_input)) => out.push(InputSlot {
+                        type_: t,
+                        group: g,
+                        id,
+                        name,
+                        description: descr,
+                        mask_input,
+                    }),
+                    Err(e) => tracing::debug!(
+                        "UserInputQueueFetch({t},{g},{id}) failed: {e}"
+                    ),
+                }
+            }
+        }
+        Ok(out)
+    }
+
+    /// Send a queued user-input value back to the backend.
+    pub async fn session_provide_input(
+        &self,
+        session_path: &OwnedObjectPath,
+        slot: &InputSlot,
+        value: &str,
+    ) -> zbus::Result<()> {
+        let proxy = self.session_proxy(session_path).await?;
+        proxy
+            .user_input_provide(slot.type_, slot.group, slot.id, value)
+            .await
+    }
+}
+
+/// One queued credential request from openvpn3's UserInputQueue.
+/// `type_` + `group` + `id` are the coordinates ProvideInput needs.
+#[derive(Debug, Clone)]
+pub struct InputSlot {
+    pub type_: u32,
+    pub group: u32,
+    pub id: u32,
+    /// Slot identifier as openvpn3 names it ("username", "password",
+    /// "static_challenge", ...). Used by the NM-side slot→vpn-secrets
+    /// mapping.
+    pub name: String,
+    pub description: String,
+    /// True for password-style slots (NM should not echo the value).
+    #[allow(dead_code)]
+    pub mask_input: bool,
 }
 
 mod proxies {

@@ -4,6 +4,7 @@ mod connection;
 mod ip4;
 mod plugin;
 mod routes;
+mod secrets;
 mod state;
 mod status;
 

@@ -9,7 +9,7 @@ supports-safe-private-file-access=true
 plugin=@PLUGINDIR@/libnm-vpn-plugin-openvpn3.so
 
 [GNOME]
-auth-dialog=@LIBEXECDIR@/nm-openvpn3-auth-dialog
+auth-dialog=@LIBEXECDIR@/nm-openvpn3-rust-auth-dialog
 properties=@PLUGINDIR@/libnm-vpn-plugin-openvpn3-editor.so
 supports-external-ui-mode=true
 supports-hints=true

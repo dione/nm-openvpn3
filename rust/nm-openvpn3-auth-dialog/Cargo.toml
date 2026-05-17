@@ -1,0 +1,11 @@
+[package]
+name = "nm-openvpn3-auth-dialog"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+clap = { workspace = true }
+anyhow = { workspace = true }
