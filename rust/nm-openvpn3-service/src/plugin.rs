@@ -56,16 +56,21 @@ const OVERRIDE_BOOLS: &[(&str, &str)] = &[
 struct SessionState {
     config_path: Option<OwnedObjectPath>,
     session_path: Option<OwnedObjectPath>,
+    /// Background tasks (status poller, stats timer, signal listener).
+    /// Aborted en masse from Disconnect so the binary can self-exit
+    /// without leaving them spinning on a dead session.
+    tasks: Vec<tokio::task::JoinHandle<()>>,
 }
 
 pub struct Plugin {
     client: Client,
-    /// Connection clone, used by both interface methods (indirectly via
-    /// the per-call emitter) and background tasks (which manufacture
-    /// their own SignalEmitter via Connection + NM_VPN_PLUGIN_PATH).
-    connection: zbus::Connection,
     state: Arc<Mutex<NMVpnServiceState>>,
     session: Arc<Mutex<SessionState>>,
+    /// Fires when Disconnect runs (or activation hard-fails) so main
+    /// can drop the bus name and exit — NM only sends SIGTERM if we
+    /// hang, and without --persist the C plugin self-exits the same
+    /// way.
+    quit_tx: tokio::sync::mpsc::UnboundedSender<()>,
 }
 
 fn make_emitter(connection: &zbus::Connection) -> zbus::Result<SignalEmitter<'static>> {
@@ -101,12 +106,15 @@ async fn set_state_via(
 }
 
 impl Plugin {
-    pub fn new(client: Client, connection: zbus::Connection) -> Self {
+    pub fn new(
+        client: Client,
+        quit_tx: tokio::sync::mpsc::UnboundedSender<()>,
+    ) -> Self {
         Self {
             client,
-            connection,
             state: Arc::new(Mutex::new(NMVpnServiceState::Init)),
             session: Arc::new(Mutex::new(SessionState::default())),
+            quit_tx,
         }
     }
 
@@ -114,11 +122,14 @@ impl Plugin {
     /// needs — no `self` reference — so the spawned future is `'static`
     /// without us shaving Arc-of-Plugin onto the ObjectServer-owned
     /// instance.
-    fn spawn_status_listener(&self, session_path: OwnedObjectPath) {
-        let connection = self.connection.clone();
+    fn spawn_status_listener(
+        &self,
+        connection: zbus::Connection,
+        session_path: OwnedObjectPath,
+    ) -> tokio::task::JoinHandle<()> {
         let client = self.client.clone();
         let state = self.state.clone();
-        tokio::spawn(async move {
+        tokio::spawn::<_>(async move {
             let proxy = match client.session_proxy(&session_path).await {
                 Ok(p) => p,
                 Err(e) => {
@@ -171,7 +182,7 @@ impl Plugin {
                 }
             }
             debug!("StatusChange listener exited for {session_path}");
-        });
+        })
     }
 
     /// Mutate the cached state and emit a StateChanged signal so NM can
@@ -220,8 +231,10 @@ impl Plugin {
     async fn do_connect(
         &self,
         emitter: &SignalEmitter<'_>,
+        conn: &zbus::Connection,
         connection: Settings,
     ) -> anyhow::Result<()> {
+        eprintln!("[nm-openvpn3-rust] do_connect: parsing vpn.data");
         let data = vpn_data(&connection).context("parsing vpn.data")?;
         let profile_path = data
             .get(KEY_PROFILE)
@@ -238,33 +251,42 @@ impl Plugin {
             .cloned()
             .unwrap_or_else(|| "nm-openvpn3-rust".to_string());
 
+        eprintln!("[nm-openvpn3-rust] importing config '{id}' ({} bytes)", profile.len());
         let config_path = self
             .client
             .import_config(&id, &profile, true)
             .await
             .context("Import")?;
+        eprintln!("[nm-openvpn3-rust] config path: {config_path}");
         info!("config path: {config_path}");
 
         self.apply_overrides(&config_path, &data).await;
 
+        eprintln!("[nm-openvpn3-rust] calling NewTunnel");
         let session_path = self
             .client
             .new_tunnel(&config_path)
             .await
             .context("NewTunnel")?;
+        eprintln!("[nm-openvpn3-rust] session path: {session_path}");
         info!("session path: {session_path}");
 
+        eprintln!("[nm-openvpn3-rust] waiting for session ready");
         self.client
             .session_wait_ready(&session_path, Duration::from_secs(5))
             .await
             .context("waiting for session")?;
+        eprintln!("[nm-openvpn3-rust] session ready");
 
+        eprintln!("[nm-openvpn3-rust] granting access");
         self.grant_access(&session_path).await;
 
+        eprintln!("[nm-openvpn3-rust] calling session.Connect");
         self.client
             .session_connect(&session_path)
             .await
             .context("session.Connect")?;
+        eprintln!("[nm-openvpn3-rust] session.Connect ok");
 
         {
             let mut s = self.session.lock().await;
@@ -273,10 +295,21 @@ impl Plugin {
         }
 
         // Attach the StatusChange listener so the activation FSM (and
-        // any subsequent backend failure) reaches NM.
-        self.spawn_status_listener(session_path.clone());
-        // Periodic statistics dump alongside the listener.
-        self.spawn_stats_timer(session_path);
+        // any subsequent backend failure) reaches NM.  openvpn3-linux
+        // historically unicasts StatusChange to subscribers that
+        // existed *before* the backend client registered (the C tree
+        // documented this as the reason it kept a polling watchdog
+        // alongside the signal), so we run a polling loop in parallel
+        // as the source of truth and treat the signal stream as a
+        // bonus low-latency path when it works.
+        let h1 = self.spawn_status_listener(conn.clone(), session_path.clone());
+        let h2 = self.spawn_status_poller(conn.clone(), session_path.clone());
+        // Periodic statistics dump.
+        let h3 = self.spawn_stats_timer(session_path);
+        {
+            let mut s = self.session.lock().await;
+            s.tasks.extend([h1, h2, h3]);
+        }
 
         info!("Connect dispatched; backend handshake in progress");
         Ok(())
@@ -310,13 +343,140 @@ impl Plugin {
         }
     }
 
+    /// Poll the session's status every 500 ms (fast-poll) until the
+    /// backend transitions to STARTED, then thin out to a 5 s
+    /// watchdog tick.  Mirrors the C tree's poll_status_cb plus the
+    /// idempotence gate around emit_started_ip4_config.
+    fn spawn_status_poller(
+        &self,
+        connection: zbus::Connection,
+        session_path: OwnedObjectPath,
+    ) -> tokio::task::JoinHandle<()> {
+        let client = self.client.clone();
+        let state = self.state.clone();
+        tokio::spawn::<_>(async move {
+            eprintln!("[nm-openvpn3-rust] poller task started for {session_path}");
+            let proxy = match client.session_proxy(&session_path).await {
+                Ok(p) => p,
+                Err(e) => {
+                    eprintln!("[nm-openvpn3-rust] poller proxy build failed: {e}");
+                    return;
+                }
+            };
+            eprintln!("[nm-openvpn3-rust] poller proxy ready");
+            let mut ip4_emitted = false;
+            let mut tick_interval = Duration::from_millis(500);
+            let max_ticks_pre_started = 120; // 120 * 500ms = 60s
+            let mut ticks = 0u32;
+            loop {
+                tokio::time::sleep(tick_interval).await;
+                ticks += 1;
+                match proxy.status().await {
+                    Ok((major, minor, _msg)) => {
+                        eprintln!("[nm-openvpn3-rust] poll status: major={major} minor={minor}");
+                        let mut target = status_to_nm_state(major, minor);
+
+                        // openvpn3-linux v27 does not always flip the
+                        // session.status property to CONN_CONNECTED
+                        // after the backend client transitions — the
+                        // signal that would have triggered the update
+                        // is unicast and the session manager misses
+                        // it.  As a fallback, read device_name: it
+                        // goes from "" to "tun*" exactly when the
+                        // backend installs its tun device, which is
+                        // the moment NM needs the Ip4Config.
+                        if !ip4_emitted
+                            && target != Some(NMVpnServiceState::Stopped)
+                        {
+                            match proxy.device_name().await {
+                                Ok(dev) if dev.starts_with("tun") => {
+                                    eprintln!(
+                                        "[nm-openvpn3-rust] device_name='{dev}' → treating as Started"
+                                    );
+                                    target = Some(NMVpnServiceState::Started);
+                                }
+                                Ok(dev) => eprintln!(
+                                    "[nm-openvpn3-rust] device_name='{dev}' (waiting for tun*)"
+                                ),
+                                Err(e) => eprintln!(
+                                    "[nm-openvpn3-rust] device_name read failed: {e}"
+                                ),
+                            }
+                        }
+
+                        let Some(target) = target else { continue };
+                        let Ok(emitter) = make_emitter(&connection) else {
+                            continue;
+                        };
+                        match target {
+                            NMVpnServiceState::Started if !ip4_emitted => {
+                                if let Err(e) =
+                                    crate::ip4::emit(&emitter, &client, &session_path).await
+                                {
+                                    warn!("Ip4Config emit failed: {e:#}");
+                                }
+                                set_state_via(&emitter, &state, target).await;
+                                ip4_emitted = true;
+                                tick_interval = Duration::from_secs(5);
+                                ticks = 0;
+                            }
+                            NMVpnServiceState::Stopped => {
+                                set_state_via(&emitter, &state, target).await;
+                                let reason = if major == crate::status::OVPN3_MAJOR_SESSION {
+                                    NMVpnPluginFailure::LoginFailed
+                                } else {
+                                    NMVpnPluginFailure::ConnectFailed
+                                };
+                                let _ = emitter.failure(reason.as_u32()).await;
+                                break;
+                            }
+                            other if !ip4_emitted => {
+                                set_state_via(&emitter, &state, other).await;
+                            }
+                            _ => {}
+                        }
+                    }
+                    Err(e) if ip4_emitted => {
+                        warn!(
+                            "session disappeared post-connect ({e}); failing to NM"
+                        );
+                        if let Ok(emitter) = make_emitter(&connection) {
+                            set_state_via(&emitter, &state, NMVpnServiceState::Stopped)
+                                .await;
+                            let _ = emitter
+                                .failure(NMVpnPluginFailure::ConnectFailed.as_u32())
+                                .await;
+                        }
+                        break;
+                    }
+                    Err(e) => {
+                        eprintln!("[nm-openvpn3-rust] status poll err: {e}");
+                        if !ip4_emitted && ticks >= max_ticks_pre_started {
+                            warn!("status poll timed out after {ticks} ticks");
+                            if let Ok(emitter) = make_emitter(&connection) {
+                                let _ = emitter
+                                    .failure(NMVpnPluginFailure::ConnectFailed.as_u32())
+                                    .await;
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+            debug!("status poller exited for {session_path}");
+        })
+    }
+
     /// Periodic openvpn3 session.statistics fetch, logged at INFO so
     /// `journalctl -t nm-openvpn3-rust-service | grep stats` shows
     /// live throughput.  Mirrors `stats_timer_cb` in the C tree (with
     /// the v0.5.11 TUN_BYTES_* addition).
-    fn spawn_stats_timer(&self, session_path: OwnedObjectPath) {
+    fn spawn_stats_timer(
+        &self,
+        session_path: OwnedObjectPath,
+    ) -> tokio::task::JoinHandle<()> {
         let client = self.client.clone();
-        tokio::spawn(async move {
+        tokio::spawn::<_>(async move {
             let mut last_bytes_in: i64 = 0;
             let mut last_bytes_out: i64 = 0;
             let mut last_tick = std::time::Instant::now();
@@ -357,7 +517,7 @@ impl Plugin {
                 last_bytes_in = bin;
                 last_bytes_out = bout;
             }
-        });
+        })
     }
 }
 
@@ -383,9 +543,14 @@ impl Plugin {
     async fn connect(
         &self,
         #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
+        #[zbus(connection)] conn: &zbus::Connection,
         connection: Settings,
     ) -> zbus::fdo::Result<()> {
-        match self.do_connect(&emitter, connection).await {
+        eprintln!("[nm-openvpn3-rust] Connect dispatch entered");
+        info!("Connect dispatch entered");
+        let r = self.do_connect(&emitter, conn, connection).await;
+        eprintln!("[nm-openvpn3-rust] Connect dispatch returned: {r:?}");
+        match r {
             Ok(()) => Ok(()),
             Err(e) => {
                 warn!("Connect failed: {e:#}");
@@ -401,10 +566,11 @@ impl Plugin {
     async fn connect_interactive(
         &self,
         #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
+        #[zbus(connection)] conn: &zbus::Connection,
         connection: Settings,
         _details: HashMap<String, OwnedValue>,
     ) -> zbus::fdo::Result<()> {
-        self.connect(emitter, connection).await
+        self.connect(emitter, conn, connection).await
     }
 
     async fn need_secrets(&self, _connection: Settings) -> zbus::fdo::Result<String> {
@@ -418,16 +584,26 @@ impl Plugin {
         &self,
         #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
     ) -> zbus::fdo::Result<()> {
+        eprintln!("[nm-openvpn3-rust] Disconnect dispatched");
         let session = {
             let mut s = self.session.lock().await;
             std::mem::take(&mut *s)
         };
+        // Abort the poller / stats / signal-listener background tasks
+        // so they stop talking to a session we are about to tear down.
+        for h in session.tasks {
+            h.abort();
+        }
         if let Some(path) = session.session_path.as_ref() {
             if let Err(e) = self.client.session_disconnect(path).await {
                 warn!("session.Disconnect failed: {e}");
             }
         }
         self.set_state(&emitter, NMVpnServiceState::Stopped).await;
+        // NM's contract: the plugin process exits after Disconnect
+        // unless it was started with --persist.  Tickle main to drop
+        // the bus name and return from the signal-wait loop.
+        let _ = self.quit_tx.send(());
         Ok(())
     }
 
@@ -444,13 +620,17 @@ impl Plugin {
     #[zbus(signal)]
     async fn state_changed(emitter: SignalEmitter<'_>, state: u32) -> zbus::Result<()>;
 
-    #[zbus(signal)]
+    // libnm dispatch table maps the wire signal `Config(a{sv})` →
+    // `NMVpnServicePlugin::config`; zbus would otherwise emit
+    // `VpnConfig` and NM would silently drop it, leaving NM stuck
+    // with "no VPN gateway address received".
+    #[zbus(signal, name = "Config")]
     async fn vpn_config(
         emitter: SignalEmitter<'_>,
         config: std::collections::HashMap<String, OwnedValue>,
     ) -> zbus::Result<()>;
 
-    #[zbus(signal)]
+    #[zbus(signal, name = "Ip4Config")]
     async fn ip4_config(
         emitter: SignalEmitter<'_>,
         ip4_config: std::collections::HashMap<String, OwnedValue>,

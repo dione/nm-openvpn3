@@ -6,18 +6,27 @@
 
 use crate::state::NMVpnServiceState;
 
-// openvpn3-linux StatusMajor enum.
+// openvpn3-linux v27 StatusMajor enum (src/dbus/constants.hpp).
 pub const OVPN3_MAJOR_CONNECTION: u32 = 2;
 pub const OVPN3_MAJOR_SESSION: u32 = 3;
 
-// MinorConnection subset we actually translate to NM service state.
-pub const OVPN3_MINOR_CONN_CONNECTING: u32 = 2;
+// v27 StatusMinor — every value advances by one because UNSET=0 takes
+// the slot the older docs sometimes omit.  Cross-checked against
+// `(uus) status = (2, 7, '')` introspected on a live session.
+pub const OVPN3_MINOR_CONN_CONNECTING: u32 = 6;
 pub const OVPN3_MINOR_CONN_CONNECTED: u32 = 7;
-pub const OVPN3_MINOR_CONN_DISCONNECTED: u32 = 8;
-pub const OVPN3_MINOR_CONN_RECONNECTING: u32 = 9;
+#[allow(dead_code)]
+pub const OVPN3_MINOR_CONN_DISCONNECTING: u32 = 8;
+pub const OVPN3_MINOR_CONN_DISCONNECTED: u32 = 9;
+pub const OVPN3_MINOR_CONN_FAILED: u32 = 10;
+pub const OVPN3_MINOR_CONN_AUTH_FAILED: u32 = 11;
+pub const OVPN3_MINOR_CONN_RECONNECTING: u32 = 12;
+pub const OVPN3_MINOR_CONN_DONE: u32 = 16;
 
-// MinorSession we care about (login failure).
-pub const OVPN3_MINOR_SESS_AUTH_FAILED: u32 = 4;
+// MinorSession we treat as terminal login failure.  v27 puts
+// SESS_AUTH_USERPASS / SESS_AUTH_CHALLENGE here but those are inputs
+// to the Plan 2 auth flow, not failures.
+pub const OVPN3_MINOR_SESS_AUTH_FAILED: u32 = 11;
 
 /// Returns `Some(NMVpnServiceState)` for actionable events, `None` for
 /// log-only transitions the dispatcher should ignore.
@@ -27,8 +36,14 @@ pub fn status_to_nm_state(major: u32, minor: u32) -> Option<NMVpnServiceState> {
             OVPN3_MINOR_CONN_CONNECTING | OVPN3_MINOR_CONN_RECONNECTING => {
                 NMVpnServiceState::Starting
             }
-            OVPN3_MINOR_CONN_CONNECTED => NMVpnServiceState::Started,
-            OVPN3_MINOR_CONN_DISCONNECTED => NMVpnServiceState::Stopped,
+            // CONN_DONE shows up post-CONNECTED on some openvpn3
+            // versions; treat both as "tunnel is up".
+            OVPN3_MINOR_CONN_CONNECTED | OVPN3_MINOR_CONN_DONE => {
+                NMVpnServiceState::Started
+            }
+            OVPN3_MINOR_CONN_DISCONNECTED
+            | OVPN3_MINOR_CONN_FAILED
+            | OVPN3_MINOR_CONN_AUTH_FAILED => NMVpnServiceState::Stopped,
             _ => return None,
         });
     }

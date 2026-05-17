@@ -161,14 +161,44 @@ pub async fn emit(
     });
     let have_ip = addr_be != 0;
 
-    let ext_gw_be = client
+    // NM rejects the SetConfig payload with "no VPN gateway address
+    // received" if `gateway` is missing or 0, so we always try hard to
+    // produce an IPv4 here — parse first (cheap path), then fall back
+    // to a synchronous DNS lookup against the FQDN.
+    let connected = client
         .session_get_connected_to(session_path)
         .await
         .ok()
-        .flatten()
-        .and_then(|(_, host, _)| host.parse::<Ipv4Addr>().ok())
-        .map(|ip| u32::from(ip).to_be())
-        .unwrap_or(0);
+        .flatten();
+    eprintln!("[nm-openvpn3-rust] last_connection={connected:?}");
+    let ext_gw_be = match connected.as_ref() {
+        Some((_, host, _)) if !host.is_empty() => match host.parse::<Ipv4Addr>() {
+            Ok(ip) => u32::from(ip).to_be(),
+            Err(_) => {
+                let host_port = format!("{host}:0");
+                tokio::task::block_in_place(|| {
+                    std::net::ToSocketAddrs::to_socket_addrs(&host_port.as_str())
+                        .ok()
+                        .and_then(|mut it| {
+                            it.find_map(|sa| match sa.ip() {
+                                std::net::IpAddr::V4(v4) => {
+                                    Some(u32::from(v4).to_be())
+                                }
+                                _ => None,
+                            })
+                        })
+                })
+                .unwrap_or_else(|| {
+                    warn!("could not resolve VPN gateway host '{host}' to IPv4");
+                    0
+                })
+            }
+        },
+        _ => {
+            warn!("session.last_connection unavailable; gateway key omitted");
+            0
+        }
+    };
 
     let dev_path = client
         .session_get_device_path(session_path)

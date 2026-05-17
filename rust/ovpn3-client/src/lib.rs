@@ -105,12 +105,11 @@ impl Client {
         proxy.set_override(name, &v).await
     }
 
-    /// Poll the session's `Ready` property by reading `status`; returns
-    /// once the backend client has finished registering on the bus or
-    /// `timeout` elapses.
-    ///
-    /// In the C client we polled `Ready`; here we accept that
-    /// `get_status` succeeding is a sufficient readiness probe.
+    /// Poll the session's `Ready` method until the backend client has
+    /// finished registering on the bus.  GetStatus would also work
+    /// once the session is alive, but it is per-property ACL-gated;
+    /// `Ready` is not, so it is the right probe to use before
+    /// AccessGrant has been issued.
     pub async fn session_wait_ready(
         &self,
         session_path: &OwnedObjectPath,
@@ -122,8 +121,8 @@ impl Client {
             .await?;
         let deadline = std::time::Instant::now() + timeout;
         loop {
-            match proxy.get_status().await {
-                Ok(_) => return Ok(()),
+            match proxy.ready().await {
+                Ok(()) => return Ok(()),
                 Err(_) if std::time::Instant::now() < deadline => {
                     tokio::time::sleep(Duration::from_millis(100)).await;
                 }
@@ -200,45 +199,75 @@ impl Client {
             .await
     }
 
-    /// Read the per-session connected_to property — (proto, host, port).
+    /// Read the per-session remote host.  openvpn3-linux v27 exposes
+    /// the live remote endpoint via the `last_connection` property
+    /// (`a{sv}` with `host`, `port`, `protocol`, `ip` keys).  Older
+    /// builds shipped `connected_to` as a plain string of the form
+    /// `user@host:port`; we accept either.
     pub async fn session_get_connected_to(
         &self,
         session_path: &OwnedObjectPath,
     ) -> zbus::Result<Option<(String, String, u32)>> {
-        // openvpn3 surfaces this as `(ssu)` directly on session; in the
-        // C tree this was a method but the underlying property is the
-        // same shape.  Once the property is wired we can swap to a
-        // typed accessor; for Phase 3 we use the raw Properties
-        // interface call.
+        use zbus::zvariant::OwnedValue;
         let conn = &self.connection;
-        let reply = conn
-            .call_method(
-                Some(BUS_SESSIONS),
-                session_path.as_ref(),
-                Some("org.freedesktop.DBus.Properties"),
-                "Get",
-                &("net.openvpn.v3.sessions", "last_connected"),
-            )
-            .await;
-        // The session uses `connected_to` rather than `last_connected`;
-        // fall back to a typed read on whichever name responds.
-        let reply = match reply {
-            Ok(r) => r,
-            Err(_) => {
+
+        let try_prop = |name: &'static str| {
+            let conn = conn.clone();
+            let path = session_path.clone();
+            async move {
                 conn.call_method(
                     Some(BUS_SESSIONS),
-                    session_path.as_ref(),
+                    path.as_ref(),
                     Some("org.freedesktop.DBus.Properties"),
                     "Get",
-                    &("net.openvpn.v3.sessions", "connected_to"),
+                    &("net.openvpn.v3.sessions", name),
                 )
-                .await?
+                .await
             }
         };
-        let body = reply.body();
-        let value: zbus::zvariant::OwnedValue = body.deserialize()?;
-        if let Ok((p, h, port)) = <(String, String, u32)>::try_from(value.clone()) {
-            return Ok(Some((p, h, port)));
+
+        // Preferred: `last_connection` dict (v27+).
+        if let Ok(reply) = try_prop("last_connection").await {
+            let body = reply.body();
+            if let Ok(value) = body.deserialize::<OwnedValue>() {
+                if let Ok(map) = <HashMap<String, OwnedValue>>::try_from(value) {
+                    let host = map
+                        .get("ip")
+                        .or_else(|| map.get("host"))
+                        .and_then(|v| <String>::try_from(v.try_clone().ok()?).ok())
+                        .unwrap_or_default();
+                    let port = map
+                        .get("port")
+                        .and_then(|v| <u32>::try_from(v.try_clone().ok()?).ok())
+                        .unwrap_or(0);
+                    let proto = map
+                        .get("protocol")
+                        .and_then(|v| <String>::try_from(v.try_clone().ok()?).ok())
+                        .unwrap_or_default();
+                    if !host.is_empty() {
+                        return Ok(Some((proto, host, port)));
+                    }
+                }
+            }
+        }
+
+        // Legacy: `connected_to` — usually `(ssu)` or a single string.
+        if let Ok(reply) = try_prop("connected_to").await {
+            let body = reply.body();
+            if let Ok(value) = body.deserialize::<OwnedValue>() {
+                if let Ok((p, h, port)) = <(String, String, u32)>::try_from(value.try_clone()?) {
+                    return Ok(Some((p, h, port)));
+                }
+                if let Ok(s) = <String>::try_from(value) {
+                    // "user@host:port" or "host:port" or bare host.
+                    let rest = s.rsplit_once('@').map(|(_, r)| r).unwrap_or(&s);
+                    if let Some((host, port)) = rest.rsplit_once(':') {
+                        let port = port.parse::<u32>().unwrap_or(0);
+                        return Ok(Some((String::new(), host.to_string(), port)));
+                    }
+                    return Ok(Some((String::new(), rest.to_string(), 0)));
+                }
+            }
         }
         Ok(None)
     }
@@ -312,7 +341,7 @@ mod proxies {
         fn set_override(&self, name: &str, value: &Value<'_>) -> zbus::Result<()>;
         fn unset_override(&self, name: &str) -> zbus::Result<()>;
 
-        #[zbus(property)]
+        #[zbus(property, name = "overrides")]
         fn overrides(&self) -> zbus::Result<HashMap<String, OwnedValue>>;
     }
 
@@ -341,9 +370,19 @@ mod proxies {
         fn ready(&self) -> zbus::Result<()>;
         fn access_grant(&self, uid: u32) -> zbus::Result<()>;
 
-        /// Returns `(major, minor, message)`.
-        #[zbus(name = "GetStatus")]
-        fn get_status(&self) -> zbus::Result<(u32, u32, String)>;
+        /// `status` is a read-only property (the `GetStatus` method
+        /// exists too but is not in the upstream D-Bus policy
+        /// allow-list — Properties.Get is, so the property read is the
+        /// only safe probe from a non-_openvpn process).  Returns a
+        /// `(major, minor, message)` tuple.  Lower-case `status` —
+        /// zbus would otherwise PascalCase it to `Status`.
+        // openvpn3-linux does NOT emit PropertiesChanged for `status`
+        // (only its unicast `StatusChange` signal carries the data), so
+        // zbus' default property cache would freeze on the first poll.
+        // `emits_changed_signal = "false"` forces a fresh Properties.Get
+        // on every call.
+        #[zbus(property(emits_changed_signal = "false"), name = "status")]
+        fn status(&self) -> zbus::Result<(u32, u32, String)>;
 
         // UserInputQueue (Plan 2 path)
         #[zbus(name = "UserInputQueueGetTypeGroup")]
@@ -360,15 +399,20 @@ mod proxies {
         #[zbus(name = "UserInputProvide")]
         fn user_input_provide(&self, t: u32, g: u32, id: u32, value: &str) -> zbus::Result<()>;
 
-        #[zbus(property)]
+        // openvpn3-linux exposes its properties in snake_case; zbus
+        // would otherwise PascalCase the Rust fn names.
+        // Same caveat as `status` above — openvpn3 mutates these
+        // properties without firing PropertiesChanged, so we must
+        // bypass zbus' cache or the poller will see stale data forever.
+        #[zbus(property(emits_changed_signal = "false"), name = "statistics")]
         fn statistics(&self) -> zbus::Result<HashMap<String, i64>>;
-        #[zbus(property)]
+        #[zbus(property(emits_changed_signal = "false"), name = "device_name")]
         fn device_name(&self) -> zbus::Result<String>;
-        #[zbus(property)]
+        #[zbus(property(emits_changed_signal = "false"), name = "device_path")]
         fn device_path(&self) -> zbus::Result<OwnedObjectPath>;
-        #[zbus(property)]
+        #[zbus(property, name = "public_access")]
         fn public_access(&self) -> zbus::Result<bool>;
-        #[zbus(property)]
+        #[zbus(property, name = "public_access")]
         fn set_public_access(&self, value: bool) -> zbus::Result<()>;
 
         /// Backend status changes (major, minor, message).
@@ -387,9 +431,9 @@ mod proxies {
         assume_defaults = false
     )]
     pub trait NetCfgDevice {
-        #[zbus(property)]
+        #[zbus(property, name = "dns_name_servers")]
         fn dns_name_servers(&self) -> zbus::Result<Vec<String>>;
-        #[zbus(property)]
+        #[zbus(property, name = "dns_search_domains")]
         fn dns_search_domains(&self) -> zbus::Result<Vec<String>>;
     }
 }

@@ -1,6 +1,6 @@
 [VPN Connection]
-name=openvpn3rust
-service=org.freedesktop.NetworkManager.openvpn3rust
+name=openvpn3.rust
+service=org.freedesktop.NetworkManager.openvpn3.rust
 program=@LIBEXECDIR@/nm-openvpn3-rust-service
 supports-multiple-connections=true
 supports-safe-private-file-access=true
