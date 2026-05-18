@@ -11,7 +11,10 @@ jobs:
     name: Build + make check (Fedora)
     runs-on: ubuntu-latest
     container:
-      image: fedora:latest
+      # Pinned to a specific Fedora release so a downstream image bump
+      # cannot silently break the build.  Bump deliberately when the
+      # upstream package set changes (e.g. libnm SONAME, glib API).
+      image: fedora:42
     steps:
       - name: Install build dependencies
         # Mirrors the dependency set used by the upstream GitLab pipeline
@@ -70,7 +73,10 @@ jobs:
     name: Build + tests under AddressSanitizer (Fedora)
     runs-on: ubuntu-latest
     container:
-      image: fedora:latest
+      # Pinned to a specific Fedora release so a downstream image bump
+      # cannot silently break the build.  Bump deliberately when the
+      # upstream package set changes (e.g. libnm SONAME, glib API).
+      image: fedora:42
     env:
       CFLAGS: "-fsanitize=address -fsanitize=undefined -fno-omit-frame-pointer -fno-sanitize-recover=undefined -g -O1"
       LDFLAGS: "-fsanitize=address -fsanitize=undefined"

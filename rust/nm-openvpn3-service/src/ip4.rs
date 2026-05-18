@@ -17,6 +17,9 @@ use tracing::{debug, warn};
 use zbus::object_server::SignalEmitter;
 use zbus::zvariant::{Array, OwnedValue, Type, Value};
 
+// Trait synthesized by zbus' `#[interface]` macro on `Plugin`; carries
+// the signal-emit helpers (`vpn_config`, `ip4_config`, `failure`, ...)
+// that get dispatched against `SignalEmitter` below.
 use crate::plugin::PluginSignals;
 use crate::routes::{self, Route};
 
@@ -85,7 +88,7 @@ fn build_routes_array(routes: &[Route], addr_be: u32, prefix: u32) -> Result<Own
         }
         emitted.push(Value::Array(row_arr));
     }
-    let sig = zbus::zvariant::Signature::try_from("au").unwrap();
+    let sig = zbus::zvariant::Signature::try_from("au").expect("\"au\" is a valid D-Bus signature");
     let mut outer = Array::new(&sig);
     for row in emitted {
         outer.append(row).map_err(|e| anyhow!("routes push: {e}"))?;
@@ -209,14 +212,24 @@ pub async fn emit(
 
     let dev_path = client.session_get_device_path(session_path).await.ok();
     let (dns_servers, dns_search) = match dev_path {
-        Some(ref p) => (
-            client.netcfg_get_dns_servers(p).await.unwrap_or_default(),
-            client.netcfg_get_dns_search(p).await.unwrap_or_default(),
-        ),
-        None => (Vec::new(), Vec::new()),
+        Some(ref p) => {
+            let servers = client.netcfg_get_dns_servers(p).await.unwrap_or_else(|e| {
+                warn!("netcfg dns_name_servers read failed: {e}; emitting empty list");
+                Vec::new()
+            });
+            let search = client.netcfg_get_dns_search(p).await.unwrap_or_else(|e| {
+                warn!("netcfg dns_search_domains read failed: {e}; emitting empty list");
+                Vec::new()
+            });
+            (servers, search)
+        }
+        None => {
+            warn!("session has no device_path; skipping DNS push to NM");
+            (Vec::new(), Vec::new())
+        }
     };
 
-    let routes = routes::for_tun_device(&tundev).unwrap_or_default();
+    let routes = routes::for_tun_device(&tundev);
     let has_default = routes::has_default_route(&routes);
 
     // SetConfig dictionary.

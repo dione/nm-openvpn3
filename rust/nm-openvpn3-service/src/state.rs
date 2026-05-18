@@ -23,7 +23,7 @@ pub enum NMVpnServiceState {
 }
 
 impl NMVpnServiceState {
-    pub fn as_u32(self) -> u32 {
+    pub const fn as_u32(self) -> u32 {
         self as u32
     }
 }
@@ -37,7 +37,7 @@ pub enum NMVpnPluginFailure {
 }
 
 impl NMVpnPluginFailure {
-    pub fn as_u32(self) -> u32 {
+    pub const fn as_u32(self) -> u32 {
         self as u32
     }
 }

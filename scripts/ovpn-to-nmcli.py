@@ -62,7 +62,14 @@ def _summary(path: Path) -> dict[str, object]:
     has_redirect_gateway = False
 
     in_block: str | None = None
-    for raw in path.read_text(encoding="utf-8", errors="replace").splitlines():
+    try:
+        text = path.read_text(encoding="utf-8", errors="strict")
+    except UnicodeDecodeError as e:
+        raise SystemExit(
+            f"error: {path}: not valid UTF-8 (byte {e.start}): {e.reason}. "
+            "OpenVPN profiles are text — refusing to silently mangle binary input."
+        ) from e
+    for raw in text.splitlines():
         line = raw.strip()
         if not line or line.startswith("#") or line.startswith(";"):
             continue
@@ -150,7 +157,13 @@ def _cosmetic_vpn_data(
 def _maybe_inject_redirect_gateway(profile_bytes: bytes, already: bool) -> bytes:
     if already:
         return profile_bytes
-    text = profile_bytes.decode("utf-8", errors="replace")
+    try:
+        text = profile_bytes.decode("utf-8", errors="strict")
+    except UnicodeDecodeError as e:
+        raise SystemExit(
+            f"error: profile is not valid UTF-8 (byte {e.start}): {e.reason}. "
+            "Refusing to inject redirect-gateway into binary input."
+        ) from e
     injection = "redirect-gateway def1\n"
     m = re.search(r"^<[A-Za-z][A-Za-z0-9_-]*>\s*$", text, flags=re.MULTILINE)
     if m:

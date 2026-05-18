@@ -9,3 +9,4 @@ repository.workspace = true
 [dependencies]
 clap = { workspace = true }
 anyhow = { workspace = true }
+zeroize = { workspace = true }

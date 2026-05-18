@@ -11,6 +11,7 @@ use std::collections::HashMap;
 
 use ovpn3_client::InputSlot;
 use zbus::zvariant::OwnedValue;
+use zeroize::Zeroizing;
 
 // vpn.data / vpn.secrets keys — must match the C tree's
 // `NM_OPENVPN3_KEY_*` macros from shared/nm-service-defines.h.
@@ -44,28 +45,34 @@ pub fn slot_to_vpn_key(slot: &InputSlot) -> &'static str {
     }
 }
 
+/// Map of plaintext credentials whose values are scrubbed from memory
+/// on drop (Zeroizing-wrapped Strings).  Username is non-secret, so the
+/// `data` half is a plain HashMap; everything in `secrets` is wrapped.
+pub type SecretsMap = HashMap<String, Zeroizing<String>>;
+
 /// Read the value backing @vkey: username lives in vpn.data, every
 /// other secrets-style key in vpn.secrets.  Returns `None` when unset.
 pub fn lookup_value<'a>(
     vkey: &str,
     data: &'a HashMap<String, String>,
-    secrets: &'a HashMap<String, String>,
+    secrets: &'a SecretsMap,
 ) -> Option<&'a str> {
     if vkey == KEY_USERNAME {
         data.get(KEY_USERNAME).map(String::as_str)
     } else {
-        secrets.get(vkey).map(String::as_str)
+        secrets.get(vkey).map(|z| z.as_str())
     }
 }
 
 /// Pull vpn.data and vpn.secrets sub-dicts out of a Connection
 /// settings dictionary (the `a{sa{sv}}` NM hands us).  Either slot
-/// missing → empty HashMap.
+/// missing → empty HashMap.  The secrets half is wrapped in `Zeroizing`
+/// so credential bytes are scrubbed when the map is dropped.
 pub fn split_vpn(
     settings: &HashMap<String, HashMap<String, OwnedValue>>,
-) -> (HashMap<String, String>, HashMap<String, String>) {
+) -> (HashMap<String, String>, SecretsMap) {
     let mut data = HashMap::new();
-    let mut secrets = HashMap::new();
+    let mut secrets: SecretsMap = HashMap::new();
     if let Some(vpn) = settings.get("vpn") {
         if let Some(inner) = vpn
             .get("data")
@@ -77,7 +84,10 @@ pub fn split_vpn(
             .get("secrets")
             .and_then(|v| flatten_str_map(v.try_clone().ok()?))
         {
-            secrets = inner;
+            secrets = inner
+                .into_iter()
+                .map(|(k, v)| (k, Zeroizing::new(v)))
+                .collect();
         }
     }
     (data, secrets)

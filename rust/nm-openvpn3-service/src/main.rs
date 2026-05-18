@@ -86,6 +86,12 @@ async fn main() -> anyhow::Result<()> {
         plugin::NM_VPN_PLUGIN_PATH
     );
 
+    // The zbus Connection must outlive every method call and signal
+    // emission this process performs.  Dropping it releases the bus
+    // name and tears down dispatch, so in-flight RPCs silently fail.
+    // The leading underscore only suppresses the unused-variable lint;
+    // it is NOT a hint that the value is safe to discard — the binding
+    // must stay live until the select! below returns.
     let _connection_holder = connection;
 
     let mut sigterm = signal(SignalKind::terminate())?;

@@ -120,7 +120,7 @@ _call_editor_factory (gpointer factory,
 static NMVpnEditor *
 get_editor (NMVpnEditorPlugin *iface, NMConnection *connection, GError **error)
 {
-	gpointer gtk3_only_symbol;
+	gpointer gtk3_only_symbol = NULL;
 	GModule *self_module;
 	const char *editor;
 
@@ -128,9 +128,15 @@ get_editor (NMVpnEditorPlugin *iface, NMConnection *connection, GError **error)
 	g_return_val_if_fail (NM_IS_CONNECTION (connection), NULL);
 	g_return_val_if_fail (!error || !*error, NULL);
 
+	/* g_module_open(NULL, 0) returns the handle for the process itself;
+	 * NULL only on platforms where GModule is unsupported (we then fall
+	 * through to the gtk4 editor).  Guard the dereference so we never
+	 * pass NULL into g_module_symbol / g_module_close. */
 	self_module = g_module_open (NULL, 0);
-	g_module_symbol (self_module, "gtk_container_add", &gtk3_only_symbol);
-	g_module_close (self_module);
+	if (self_module) {
+		g_module_symbol (self_module, "gtk_container_add", &gtk3_only_symbol);
+		g_module_close (self_module);
+	}
 
 	if (gtk3_only_symbol) {
 		editor = "libnm-vpn-plugin-openvpn3-editor.so";

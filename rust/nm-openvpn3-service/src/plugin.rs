@@ -31,8 +31,9 @@ use zbus::object_server::SignalEmitter;
 use zbus::zvariant::{ObjectPath, OwnedObjectPath, OwnedValue};
 
 use crate::connection::{vpn_data, Settings};
+use crate::secrets::SecretsMap;
 use crate::state::{NMVpnPluginFailure, NMVpnServiceState};
-use crate::status::status_to_nm_state;
+use crate::status::Status;
 use ovpn3_client::InputSlot;
 
 pub const NM_VPN_PLUGIN_PATH: &str = "/org/freedesktop/NetworkManager/VPN/Plugin";
@@ -65,10 +66,15 @@ struct SessionState {
     /// Slots queued by AttentionRequired that still need NM to prompt
     /// the user.  `new_secrets` walks this list and ProvideInputs each.
     pending_slots: Vec<InputSlot>,
-    /// Last Connection settings we received via Connect — re-used by
-    /// AttentionRequired to auto-provide credentials already persisted
-    /// in vpn.data / vpn.secrets without bouncing through NM.
-    current_settings: Option<Settings>,
+    /// Most recent vpn.data half of the Settings dict, kept around so
+    /// AttentionRequired can auto-fill non-secret slots (username,
+    /// connection-name, …) without bouncing through NM.
+    current_data: HashMap<String, String>,
+    /// Most recent vpn.secrets half, wrapped in `Zeroizing` so the
+    /// plaintext bytes are scrubbed when the map is replaced or the
+    /// session torn down (rather than living in zbus' OwnedValue cache
+    /// for the lifetime of the plugin).
+    current_secrets: SecretsMap,
 }
 
 pub struct Plugin {
@@ -161,12 +167,14 @@ impl Plugin {
             info!("StatusChange listener attached to {session_path}");
             while let Some(signal) = stream.next().await {
                 let Ok(args) = signal.args() else { continue };
-                let (major, minor) = (args.major, args.minor);
                 debug!(
-                    "StatusChange: major={major} minor={minor} msg='{}'",
-                    args.message
+                    "StatusChange: major={} minor={} msg='{}'",
+                    args.major, args.minor, args.message
                 );
-                let Some(target) = status_to_nm_state(major, minor) else {
+                let Some(status) = Status::from_wire(args.major, args.minor) else {
+                    continue;
+                };
+                let Some(target) = status.to_nm_state() else {
                     continue;
                 };
                 let Ok(emitter) = make_emitter(&connection) else {
@@ -177,8 +185,16 @@ impl Plugin {
                     NMVpnServiceState::Started => {
                         // Race-safe coordinate with spawn_status_poller —
                         // whichever spots CONNECTED first emits, the
-                        // other becomes a no-op.  `compare_exchange`
-                        // returns Err if the value was already true.
+                        // other becomes a no-op.  Memory-ordering:
+                        //   * success = AcqRel — the winner publishes
+                        //     "ip4 has been emitted" before NM sees the
+                        //     SetConfig signal it triggers.
+                        //   * failure = Acquire — the loser must see
+                        //     every state write the winner made before
+                        //     it stored `true`.
+                        //   * roll-back path (Ip4Config emit failed)
+                        //     stores `false` with Release — pairs with
+                        //     the next CAS's Acquire on either path.
                         if ip4_emitted
                             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
                             .is_err()
@@ -203,12 +219,7 @@ impl Plugin {
                     }
                     NMVpnServiceState::Stopped => {
                         set_state_via(&emitter, &state, target).await;
-                        let reason = if major == crate::status::OVPN3_MAJOR_SESSION {
-                            NMVpnPluginFailure::LoginFailed
-                        } else {
-                            NMVpnPluginFailure::ConnectFailed
-                        };
-                        let _ = emitter.failure(reason.as_u32()).await;
+                        let _ = emitter.failure(status.failure_reason().as_u32()).await;
                         break;
                     }
                     other => set_state_via(&emitter, &state, other).await,
@@ -274,7 +285,8 @@ impl Plugin {
             .ok_or_else(|| anyhow!("vpn.data['{KEY_PROFILE}'] is required in Phase 2"))?;
         debug!("profile path: {profile_path}");
 
-        let profile = std::fs::read_to_string(Path::new(profile_path))
+        let profile = tokio::fs::read_to_string(Path::new(profile_path))
+            .await
             .with_context(|| format!("reading profile file {profile_path}"))?;
 
         self.set_state(emitter, NMVpnServiceState::Starting).await;
@@ -301,25 +313,51 @@ impl Plugin {
             .context("NewTunnel")?;
         debug!("session path: {session_path}");
 
-        self.client
-            .session_wait_ready(&session_path, Duration::from_secs(5))
-            .await
-            .context("waiting for session")?;
-
-        self.grant_access(&session_path).await;
-
-        self.client
-            .session_connect(&session_path)
-            .await
-            .context("session.Connect")?;
-        info!("session.Connect ok");
-
+        // Stash the session immediately so any subsequent failure can
+        // tear it down — otherwise the openvpn3 daemon keeps a dangling
+        // session around until process exit (it survives both NM's
+        // failure dispatch and a fresh activation attempt).  Pre-split
+        // the Settings dict into (data, Zeroizing<secrets>) before
+        // stashing so we never hold the raw `Settings` clone — the
+        // OwnedValue inside that map carries plaintext credentials and
+        // would otherwise sit in process memory for the whole session.
+        let (data_map, secret_map) = crate::secrets::split_vpn(&connection);
+        drop(connection);
         {
             let mut s = self.session.lock().await;
             s.config_path = Some(config_path);
             s.session_path = Some(session_path.clone());
-            s.current_settings = Some(connection);
+            s.current_data = data_map;
+            s.current_secrets = secret_map;
         }
+
+        let bring_up: anyhow::Result<()> = async {
+            self.client
+                .session_wait_ready(&session_path, Duration::from_secs(5))
+                .await
+                .context("waiting for session")?;
+            self.grant_access(&session_path).await;
+            self.client
+                .session_connect(&session_path)
+                .await
+                .context("session.Connect")?;
+            Ok(())
+        }
+        .await;
+
+        if let Err(e) = bring_up {
+            warn!("activation failed after NewTunnel; tearing down session {session_path}");
+            if let Err(de) = self.client.session_disconnect(&session_path).await {
+                warn!("cleanup session.Disconnect failed: {de}");
+            }
+            let mut s = self.session.lock().await;
+            s.config_path = None;
+            s.session_path = None;
+            s.current_data.clear();
+            s.current_secrets.clear();
+            return Err(e);
+        }
+        info!("session.Connect ok");
 
         // Attach the StatusChange listener so the activation FSM (and
         // any subsequent backend failure) reaches NM.  openvpn3-linux
@@ -411,6 +449,25 @@ impl Plugin {
             loop {
                 tokio::time::sleep(tick_interval).await;
                 ticks += 1;
+                // Hard cap on pre-Started polling.  Without this the
+                // loop would sit happily on Ok(non-Started) status
+                // forever if the backend gets wedged short of
+                // CONNECTED — NM eventually trips its own activation
+                // timeout and SIGKILLs us, but the poller would never
+                // emit a clean Failure first.
+                if !ip4_emitted && ticks >= max_ticks_pre_started {
+                    warn!(
+                        "session never reached Started within {ticks} polls ({}s); failing to NM",
+                        (ticks as u64) * tick_interval.as_millis() as u64 / 1000
+                    );
+                    if let Ok(emitter) = make_emitter(&connection) {
+                        set_state_via(&emitter, &state, NMVpnServiceState::Stopped).await;
+                        let _ = emitter
+                            .failure(NMVpnPluginFailure::ConnectFailed.as_u32())
+                            .await;
+                    }
+                    break;
+                }
                 match proxy.status().await {
                     Ok((major, minor, _msg)) => {
                         post_started_errs = 0;
@@ -424,7 +481,8 @@ impl Plugin {
                         } else {
                             tracing::trace!("poll status: major={major} minor={minor}");
                         }
-                        let mut target = status_to_nm_state(major, minor);
+                        let status = Status::from_wire(major, minor);
+                        let mut target = status.and_then(Status::to_nm_state);
 
                         // openvpn3-linux v27 does not always flip the
                         // session.status property to CONN_CONNECTED
@@ -491,11 +549,10 @@ impl Plugin {
                             }
                             NMVpnServiceState::Stopped => {
                                 set_state_via(&emitter, &state, target).await;
-                                let reason = if major == crate::status::OVPN3_MAJOR_SESSION {
-                                    NMVpnPluginFailure::LoginFailed
-                                } else {
-                                    NMVpnPluginFailure::ConnectFailed
-                                };
+                                let reason = status.map_or(
+                                    NMVpnPluginFailure::ConnectFailed,
+                                    Status::failure_reason,
+                                );
                                 let _ = emitter.failure(reason.as_u32()).await;
                                 break;
                             }
@@ -529,16 +586,11 @@ impl Plugin {
                         break;
                     }
                     Err(e) => {
-                        warn!("status poll err: {e}");
-                        if !ip4_emitted && ticks >= max_ticks_pre_started {
-                            warn!("status poll timed out after {ticks} ticks");
-                            if let Ok(emitter) = make_emitter(&connection) {
-                                let _ = emitter
-                                    .failure(NMVpnPluginFailure::ConnectFailed.as_u32())
-                                    .await;
-                            }
-                            break;
-                        }
+                        // Pre-Started: tolerate transient errors and
+                        // let the loop-top timeout catch persistent
+                        // ones.  Post-Started errors are handled by the
+                        // `Err(e) if ip4_emitted` arm above.
+                        warn!("status poll err (pre-Started): {e}");
                     }
                 }
             }
@@ -660,16 +712,21 @@ async fn handle_attention(
         return Ok(());
     }
 
-    // Snapshot the settings dict so we don't hold the session lock
-    // while talking to the backend.
-    let settings = {
+    // Snapshot the stashed (data, secrets) so we don't hold the
+    // session lock while talking to the backend.  Also verify the
+    // session we're about to ProvideInput against is still the one the
+    // plugin owns — a Disconnect can land between the signal stream
+    // waking us and this point, leaving `session_path` stale and
+    // ProvideInput racing an already-torn-down backend.
+    let (data, secrets, still_owned) = {
         let s = session_state.lock().await;
-        s.current_settings.clone()
+        let owned = s.session_path.as_ref() == Some(session_path);
+        (s.current_data.clone(), s.current_secrets.clone(), owned)
     };
-    let (data, secrets) = match settings.as_ref() {
-        Some(s) => crate::secrets::split_vpn(s),
-        None => (HashMap::new(), HashMap::new()),
-    };
+    if !still_owned {
+        debug!("AttentionRequired: session no longer owned by plugin (post-Disconnect); skipping");
+        return Ok(());
+    }
 
     let mut still_needed: Vec<InputSlot> = Vec::new();
     for slot in slots {
@@ -782,15 +839,17 @@ impl Plugin {
         #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
         #[zbus(connection)] conn: &zbus::Connection,
         connection: Settings,
-        _details: HashMap<String, OwnedValue>,
+        details: HashMap<String, OwnedValue>,
     ) -> zbus::fdo::Result<()> {
+        let _ = details;
         self.connect(emitter, conn, connection).await
     }
 
-    async fn need_secrets(&self, _connection: Settings) -> zbus::fdo::Result<String> {
+    async fn need_secrets(&self, connection: Settings) -> zbus::fdo::Result<String> {
         // Profile-file path needs no secrets up-front; openvpn3 may still
         // prompt via AttentionRequired after Connect (Plan 2 in C; not
         // ported yet).
+        let _ = connection;
         Ok(String::new())
     }
 
@@ -829,12 +888,14 @@ impl Plugin {
     /// auto-provide the credentials we just persisted.
     async fn new_secrets(&self, connection: Settings) -> zbus::fdo::Result<()> {
         let (data, secrets) = crate::secrets::split_vpn(&connection);
+        drop(connection);
 
         let session_path;
         let pending;
         {
             let mut s = self.session.lock().await;
-            s.current_settings = Some(connection);
+            s.current_data = data.clone();
+            s.current_secrets = secrets.clone();
             session_path = s.session_path.clone();
             pending = std::mem::take(&mut s.pending_slots);
         }

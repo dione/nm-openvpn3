@@ -857,6 +857,8 @@ advanced_dialog_new_hash_from_connection (NMConnection *connection)
 	hash = g_hash_table_new_full (g_str_hash, g_str_equal, NULL, g_free);
 
 	s_vpn = nm_connection_get_setting_vpn (connection);
+	if (!s_vpn)
+		return hash;
 	nm_setting_vpn_foreach_data_item (s_vpn, copy_values, hash);
 
 	/* HTTP Proxy password is special */
@@ -1050,7 +1052,11 @@ populate_hmacauth_combo (GtkComboBox *box, const char *hmacauth)
 		}
 	}
 
-	if (!active_initialized) {
+	/* Only append a synthetic row when the profile actually carries an
+	 * hmacauth value that didn't appear in the built-in list.  When
+	 * hmacauth is NULL or empty leave the model untouched so the
+	 * "Default" row stays active. */
+	if (!active_initialized && hmacauth && *hmacauth) {
 		gtk_list_store_append (store, &iter);
 		gtk_list_store_set (store, &iter,
 		                    HMACAUTH_COL_NAME, hmacauth,
@@ -2399,10 +2405,13 @@ check_gateway_entry (const char *str)
 		                         NULL,
 		                         NULL,
 		                         NULL,
-		                         NULL) != -1)
-		   return FALSE;
+		                         NULL) == -1) {
+			g_free (str_clone);
+			return FALSE;
+		}
 		success = TRUE;
 	}
+	g_free (str_clone);
 	return success;
 }
 

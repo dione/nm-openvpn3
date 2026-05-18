@@ -79,4 +79,6 @@ Create a test connection (replace `<path>` with a profile path):
 Activate + tail the journal:
 
     nmcli connection up ovpn3-rust-test
-    journalctl --since '1 min ago' _COMM=nm-openvpn3-rust-service
+    # Kernel truncates comm to TASK_COMM_LEN=16, so `nm-openvpn3-rust-service`
+    # shows up in journald as `nm-openvpn3-rus` (15 chars).
+    journalctl --since '1 min ago' _COMM=nm-openvpn3-rus

@@ -23,14 +23,14 @@ pub struct Route {
 }
 
 /// Read `/proc/net/route` and return rows whose Iface matches `tundev`.
-/// Logs a warning and returns `Ok(Vec::new())` if the file is missing
+/// Logs a warning and returns an empty vec if the file is missing
 /// (no routes to emit yet).
-pub fn for_tun_device(tundev: &str) -> anyhow::Result<Vec<Route>> {
+pub fn for_tun_device(tundev: &str) -> Vec<Route> {
     let raw = match fs::read_to_string("/proc/net/route") {
         Ok(s) => s,
         Err(e) => {
             tracing::warn!("/proc/net/route unreadable: {e}");
-            return Ok(Vec::new());
+            return Vec::new();
         }
     };
     let mut out = Vec::new();
@@ -57,9 +57,8 @@ pub fn for_tun_device(tundev: &str) -> anyhow::Result<Vec<Route>> {
         let Ok(mask_be) = u32::from_str_radix(cols[7], 16) else {
             continue;
         };
-        // Mask is `sin_addr.s_addr` shape; the prefix is the number of
-        // bits set in the value.  Convert to host order to count safely.
-        let prefix = u32::from_be(mask_be.to_be()).count_ones();
+        // popcount is byte-order-agnostic.
+        let prefix = mask_be.count_ones();
         out.push(Route {
             dest_be,
             prefix,
@@ -67,7 +66,7 @@ pub fn for_tun_device(tundev: &str) -> anyhow::Result<Vec<Route>> {
             metric,
         });
     }
-    Ok(out)
+    out
 }
 
 /// True when the route table for `tundev` contains a 0.0.0.0/0 entry —

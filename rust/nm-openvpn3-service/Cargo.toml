@@ -11,7 +11,6 @@ path = "src/main.rs"
 [dependencies]
 ovpn3-client.workspace = true
 zbus.workspace = true
-glib.workspace = true
 anyhow.workspace = true
 clap.workspace = true
 tracing.workspace = true
@@ -19,3 +18,4 @@ tracing-subscriber.workspace = true
 tokio.workspace = true
 futures-util.workspace = true
 if-addrs.workspace = true
+zeroize.workspace = true

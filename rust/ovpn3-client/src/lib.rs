@@ -264,8 +264,13 @@ impl Client {
                 if let Ok(s) = <String>::try_from(value) {
                     // "user@host:port" or "host:port" or bare host.
                     let rest = s.rsplit_once('@').map(|(_, r)| r).unwrap_or(&s);
-                    if let Some((host, port)) = rest.rsplit_once(':') {
-                        let port = port.parse::<u32>().unwrap_or(0);
+                    if let Some((host, port_s)) = rest.rsplit_once(':') {
+                        let port = port_s.parse::<u32>().unwrap_or_else(|e| {
+                            tracing::warn!(
+                                "connected_to: malformed port '{port_s}' ({e}); defaulting to 0"
+                            );
+                            0
+                        });
                         return Ok(Some((String::new(), host.to_string(), port)));
                     }
                     return Ok(Some((String::new(), rest.to_string(), 0)));
@@ -341,13 +346,12 @@ impl Client {
             };
             for id in ids {
                 match proxy.user_input_queue_fetch(t, g, id).await {
-                    Ok((_t, _g, _id, name, descr, mask_input)) => out.push(InputSlot {
+                    Ok((_t, _g, _id, name, descr, _mask_input)) => out.push(InputSlot {
                         type_: t,
                         group: g,
                         id,
                         name,
                         description: descr,
-                        mask_input,
                     }),
                     Err(e) => tracing::debug!("UserInputQueueFetch({t},{g},{id}) failed: {e}"),
                 }
@@ -382,9 +386,6 @@ pub struct InputSlot {
     /// mapping.
     pub name: String,
     pub description: String,
-    /// True for password-style slots (NM should not echo the value).
-    #[allow(dead_code)]
-    pub mask_input: bool,
 }
 
 mod proxies {

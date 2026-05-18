@@ -42,6 +42,7 @@ use std::process::ExitCode;
 
 use anyhow::{bail, Context, Result};
 use clap::Parser;
+use zeroize::Zeroizing;
 
 // Must match shared/nm-service-defines.h.
 const NM_VPN_SERVICE_TYPE_OPENVPN3: &str = "org.freedesktop.NetworkManager.openvpn3";
@@ -139,6 +140,10 @@ fn run() -> Result<()> {
         bail!("only --external-ui-mode is supported");
     }
 
+    // `_secrets` is parsed off stdin so we honour libnm's protocol, but
+    // the dialog never echoes credentials back; the `Zeroizing` wrapper
+    // scrubs the bytes from process memory at end of scope, before the
+    // process exits.
     let (data, _secrets) =
         read_vpn_details(io::stdin().lock()).context("reading vpn details from stdin")?;
 
@@ -163,13 +168,16 @@ fn run() -> Result<()> {
     Ok(())
 }
 
+type DataMap = HashMap<String, String>;
+type SecretsMap = HashMap<String, Zeroizing<String>>;
+
 /// Parse stdin per libnm's `nm_vpn_service_plugin_read_vpn_details`
-/// format.  Returns (data, secrets).  Either may be empty.
-fn read_vpn_details<R: BufRead>(
-    reader: R,
-) -> Result<(HashMap<String, String>, HashMap<String, String>)> {
-    let mut data = HashMap::new();
-    let mut secrets = HashMap::new();
+/// format.  Returns (data, secrets).  Either may be empty.  Secret
+/// values are wrapped in `Zeroizing` so their bytes are scrubbed when
+/// the returned map is dropped.
+fn read_vpn_details<R: BufRead>(reader: R) -> Result<(DataMap, SecretsMap)> {
+    let mut data: DataMap = HashMap::new();
+    let mut secrets: SecretsMap = HashMap::new();
 
     let mut current_key: Option<(String, bool)> = None; // (key, is_secret)
     let mut data_mode = true;
@@ -195,7 +203,7 @@ fn read_vpn_details<R: BufRead>(
                 }
                 ("SECRET_KEY", _) => current_key = Some((value.to_string(), true)),
                 ("SECRET_VAL", Some((k, true))) => {
-                    secrets.insert(k.clone(), value.to_string());
+                    secrets.insert(k.clone(), Zeroizing::new(value.to_string()));
                     current_key = None;
                 }
                 _ => {
@@ -223,11 +231,28 @@ fn secret_required_flag(data: &HashMap<String, String>, key: &str) -> bool {
     (bits & 0x2) == 0
 }
 
-fn is_encrypted_keyfile_path(_path: &str) -> bool {
-    // Best-effort port of utils.c `is_encrypted()` — without parsing
-    // the PEM/PKCS#1 header we'd need to slurp the file.  Default to
-    // "yes" so we err on prompting; the user can dismiss if not.
-    true
+fn is_encrypted_keyfile_path(path: &str) -> bool {
+    // Port of utils.c `is_encrypted()`.  We open the file and look for
+    // markers that mean the key is password-protected:
+    //   * legacy PEM: `Proc-Type: 4,ENCRYPTED`
+    //   * PKCS#8:    `BEGIN ENCRYPTED PRIVATE KEY`
+    //   * PKCS#12:   binary `.p12` / `.pfx` containers always carry a
+    //                MAC password, so prompt unconditionally.
+    // On any I/O error we fall back to "yes" — over-prompting is
+    // harmless (the user dismisses), under-prompting hangs the
+    // activation.
+    let bytes = match std::fs::read(path) {
+        Ok(b) => b,
+        Err(_) => return true,
+    };
+    let lower = path.to_ascii_lowercase();
+    if lower.ends_with(".p12") || lower.ends_with(".pfx") {
+        return true;
+    }
+    // PEM markers are 7-bit ASCII; from_utf8_lossy is safe and avoids
+    // copying for valid inputs.
+    let text = std::str::from_utf8(&bytes).unwrap_or("");
+    text.contains("Proc-Type: 4,ENCRYPTED") || text.contains("BEGIN ENCRYPTED PRIVATE KEY")
 }
 
 fn needs(data: &HashMap<String, String>, hints: &[String]) -> Needed {
@@ -411,7 +436,7 @@ mod tests {
             d.get("connection-type").map(String::as_str),
             Some("password")
         );
-        assert_eq!(s.get("password").map(String::as_str), Some("p"));
+        assert_eq!(s.get("password").map(|v| v.as_str()), Some("p"));
     }
 
     #[test]
