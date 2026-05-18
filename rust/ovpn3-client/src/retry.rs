@@ -24,6 +24,11 @@ where
     F: FnMut() -> Fut,
     Fut: Future<Output = zbus::Result<T>>,
 {
+    if attempts == 0 {
+        return Err(anyhow::anyhow!(
+            "with_transient_retry called with attempts=0; nothing tried"
+        ));
+    }
     let mut last_err: Option<zbus::Error> = None;
     for i in 0..attempts {
         match op().await {

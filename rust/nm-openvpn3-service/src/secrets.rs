@@ -67,10 +67,16 @@ pub fn split_vpn(
     let mut data = HashMap::new();
     let mut secrets = HashMap::new();
     if let Some(vpn) = settings.get("vpn") {
-        if let Some(inner) = vpn.get("data").and_then(|v| flatten_str_map(v.try_clone().ok()?)) {
+        if let Some(inner) = vpn
+            .get("data")
+            .and_then(|v| flatten_str_map(v.try_clone().ok()?))
+        {
             data = inner;
         }
-        if let Some(inner) = vpn.get("secrets").and_then(|v| flatten_str_map(v.try_clone().ok()?)) {
+        if let Some(inner) = vpn
+            .get("secrets")
+            .and_then(|v| flatten_str_map(v.try_clone().ok()?))
+        {
             secrets = inner;
         }
     }

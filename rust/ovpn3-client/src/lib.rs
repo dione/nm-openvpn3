@@ -14,7 +14,10 @@ use zbus::{proxy, Connection};
 
 pub mod retry;
 
-pub use proxies::{ConfigurationManagerProxy, ConfigurationProxy, NetCfgDeviceProxy, SessionProxy, SessionsManagerProxy};
+pub use proxies::{
+    ConfigurationManagerProxy, ConfigurationProxy, NetCfgDeviceProxy, SessionProxy,
+    SessionsManagerProxy,
+};
 
 pub const BUS_CONFIG: &str = "net.openvpn.v3.configuration";
 pub const BUS_SESSIONS: &str = "net.openvpn.v3.sessions";
@@ -346,9 +349,7 @@ impl Client {
                         description: descr,
                         mask_input,
                     }),
-                    Err(e) => tracing::debug!(
-                        "UserInputQueueFetch({t},{g},{id}) failed: {e}"
-                    ),
+                    Err(e) => tracing::debug!("UserInputQueueFetch({t},{g},{id}) failed: {e}"),
                 }
             }
         }
@@ -425,8 +426,10 @@ mod proxies {
         default_path = "/net/openvpn/v3/sessions"
     )]
     pub trait SessionsManager {
-        fn new_tunnel(&self, config_path: &zbus::zvariant::ObjectPath<'_>)
-            -> zbus::Result<OwnedObjectPath>;
+        fn new_tunnel(
+            &self,
+            config_path: &zbus::zvariant::ObjectPath<'_>,
+        ) -> zbus::Result<OwnedObjectPath>;
 
         #[zbus(name = "FetchAvailableSessions")]
         fn fetch_available_sessions(&self) -> zbus::Result<Vec<OwnedObjectPath>>;

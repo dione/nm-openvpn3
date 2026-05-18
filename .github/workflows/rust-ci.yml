@@ -1,0 +1,66 @@
+name: Rust CI
+
+# Independent of the C tree's CI in ci.yml — only fires when the Rust
+# workspace under rust/ changes (or when this workflow itself is
+# edited).  Keeps unrelated C-side changes from spinning up the Rust
+# toolchain and vice versa.
+
+on:
+  push:
+    branches: [ "**" ]
+    paths:
+      - "rust/**"
+      - ".github/workflows/rust-ci.yml"
+  pull_request:
+    branches: [ "**" ]
+    paths:
+      - "rust/**"
+      - ".github/workflows/rust-ci.yml"
+
+defaults:
+  run:
+    working-directory: rust
+
+env:
+  CARGO_TERM_COLOR: always
+  # cargo treats every transient warning as a real diagnostic at -D warnings;
+  # explicit RUSTFLAGS keeps the CI signal sharp without burying real errors.
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  fmt:
+    name: cargo fmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all -- --check
+
+  clippy:
+    name: cargo clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+      - run: cargo clippy --all-targets --release -- -D warnings
+
+  test:
+    name: cargo build + test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+      - name: cargo build --release
+        run: cargo build --release --all-targets
+      - name: cargo test --release
+        run: cargo test --release --all-targets

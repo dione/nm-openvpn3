@@ -45,10 +45,18 @@ pub fn for_tun_device(tundev: &str) -> anyhow::Result<Vec<Route>> {
         if cols[0] != tundev {
             continue;
         }
-        let Ok(dest_be) = u32::from_str_radix(cols[1], 16) else { continue };
-        let Ok(next_hop_be) = u32::from_str_radix(cols[2], 16) else { continue };
-        let Ok(metric) = cols[6].parse::<u32>() else { continue };
-        let Ok(mask_be) = u32::from_str_radix(cols[7], 16) else { continue };
+        let Ok(dest_be) = u32::from_str_radix(cols[1], 16) else {
+            continue;
+        };
+        let Ok(next_hop_be) = u32::from_str_radix(cols[2], 16) else {
+            continue;
+        };
+        let Ok(metric) = cols[6].parse::<u32>() else {
+            continue;
+        };
+        let Ok(mask_be) = u32::from_str_radix(cols[7], 16) else {
+            continue;
+        };
         // Mask is `sin_addr.s_addr` shape; the prefix is the number of
         // bits set in the value.  Convert to host order to count safely.
         let prefix = u32::from_be(mask_be.to_be()).count_ones();

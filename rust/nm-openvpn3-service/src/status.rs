@@ -38,9 +38,7 @@ pub fn status_to_nm_state(major: u32, minor: u32) -> Option<NMVpnServiceState> {
             }
             // CONN_DONE shows up post-CONNECTED on some openvpn3
             // versions; treat both as "tunnel is up".
-            OVPN3_MINOR_CONN_CONNECTED | OVPN3_MINOR_CONN_DONE => {
-                NMVpnServiceState::Started
-            }
+            OVPN3_MINOR_CONN_CONNECTED | OVPN3_MINOR_CONN_DONE => NMVpnServiceState::Started,
             OVPN3_MINOR_CONN_DISCONNECTED
             | OVPN3_MINOR_CONN_FAILED
             | OVPN3_MINOR_CONN_AUTH_FAILED => NMVpnServiceState::Stopped,

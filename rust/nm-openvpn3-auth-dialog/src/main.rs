@@ -139,8 +139,8 @@ fn run() -> Result<()> {
         bail!("only --external-ui-mode is supported");
     }
 
-    let (data, _secrets) = read_vpn_details(io::stdin().lock())
-        .context("reading vpn details from stdin")?;
+    let (data, _secrets) =
+        read_vpn_details(io::stdin().lock()).context("reading vpn details from stdin")?;
 
     let needed = needs(&data, &args.hints);
 
@@ -165,7 +165,9 @@ fn run() -> Result<()> {
 
 /// Parse stdin per libnm's `nm_vpn_service_plugin_read_vpn_details`
 /// format.  Returns (data, secrets).  Either may be empty.
-fn read_vpn_details<R: BufRead>(reader: R) -> Result<(HashMap<String, String>, HashMap<String, String>)> {
+fn read_vpn_details<R: BufRead>(
+    reader: R,
+) -> Result<(HashMap<String, String>, HashMap<String, String>)> {
     let mut data = HashMap::new();
     let mut secrets = HashMap::new();
 
@@ -277,10 +279,8 @@ fn needs(data: &HashMap<String, String>, hints: &[String]) -> Needed {
                 }
             }
         }
-        CONTYPE_PASSWORD => {
-            if secret_required_flag(data, KEY_PASSWORD) {
-                out.password = true;
-            }
+        CONTYPE_PASSWORD if secret_required_flag(data, KEY_PASSWORD) => {
+            out.password = true;
         }
         _ => {}
     }
@@ -317,8 +317,22 @@ fn write_eui_keyfile(
     writeln!(out, "Description={}", escape(prompt))?;
     writeln!(out, "Title=Authentication required")?;
 
-    write_entry(out, KEY_PASSWORD, "", "Password", false, needed.password && allow_interaction)?;
-    write_entry(out, KEY_CERTPASS, "", "Certificate password", false, needed.certpass && allow_interaction)?;
+    write_entry(
+        out,
+        KEY_PASSWORD,
+        "",
+        "Password",
+        false,
+        needed.password && allow_interaction,
+    )?;
+    write_entry(
+        out,
+        KEY_CERTPASS,
+        "",
+        "Certificate password",
+        false,
+        needed.certpass && allow_interaction,
+    )?;
     write_entry(
         out,
         KEY_HTTP_PROXY_PASSWORD,
@@ -362,7 +376,11 @@ fn write_entry(
 }
 
 fn bool_str(b: bool) -> &'static str {
-    if b { "true" } else { "false" }
+    if b {
+        "true"
+    } else {
+        "false"
+    }
 }
 
 /// Match GKeyFile string escaping rules (only the chars libnm cares
@@ -389,7 +407,10 @@ mod tests {
     fn parses_data_and_secrets_blocks() {
         let stdin = b"DATA_KEY=connection-type\nDATA_VAL=password\n\nSECRET_KEY=password\nSECRET_VAL=p\n\nDONE\n";
         let (d, s) = read_vpn_details(&stdin[..]).unwrap();
-        assert_eq!(d.get("connection-type").map(String::as_str), Some("password"));
+        assert_eq!(
+            d.get("connection-type").map(String::as_str),
+            Some("password")
+        );
         assert_eq!(s.get("password").map(String::as_str), Some("p"));
     }
 

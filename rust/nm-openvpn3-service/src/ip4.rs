@@ -46,10 +46,7 @@ fn lookup_tun_ipv4(tundev: &str) -> Option<(u32, u32)> {
         if ifa.name != tundev {
             continue;
         }
-        if let IfAddr::V4(Ifv4Addr {
-            ip, netmask, ..
-        }) = ifa.addr
-        {
+        if let IfAddr::V4(Ifv4Addr { ip, netmask, .. }) = ifa.addr {
             let addr_be: u32 = u32::from(ip).to_be();
             let mask_he: u32 = u32::from(netmask);
             let prefix = mask_he.count_ones();
@@ -60,11 +57,7 @@ fn lookup_tun_ipv4(tundev: &str) -> Option<(u32, u32)> {
 }
 
 /// Build the routes array NM consumes (`aau` of `[dest, prefix, next, metric]`).
-fn build_routes_array(
-    routes: &[Route],
-    addr_be: u32,
-    prefix: u32,
-) -> Result<OwnedValue> {
+fn build_routes_array(routes: &[Route], addr_be: u32, prefix: u32) -> Result<OwnedValue> {
     let mut emitted: Vec<Value<'static>> = Vec::with_capacity(routes.len());
     let mask_be = if prefix == 0 {
         0u32
@@ -76,9 +69,7 @@ fn build_routes_array(
     for r in routes {
         // Skip the auto on-link route for the tun's own subnet — NM
         // derives it from ADDRESS/PREFIX.
-        if r.prefix == prefix
-            && (r.dest_be & mask_be) == (addr_be & mask_be)
-            && r.next_hop_be == 0
+        if r.prefix == prefix && (r.dest_be & mask_be) == (addr_be & mask_be) && r.next_hop_be == 0
         {
             continue;
         }
@@ -88,7 +79,7 @@ fn build_routes_array(
             Value::U32(r.next_hop_be),
             Value::U32(r.metric),
         ];
-        let mut row_arr = Array::new(&<u32 as Type>::SIGNATURE);
+        let mut row_arr = Array::new(<u32 as Type>::SIGNATURE);
         for v in row {
             row_arr.append(v).map_err(|e| anyhow!("route push: {e}"))?;
         }
@@ -105,7 +96,7 @@ fn build_routes_array(
 /// Convert dotted-quad strings (whatever openvpn3 netcfg hands us) to
 /// the `u32 BE` form NM expects in its DNS array.
 fn dns_strings_to_array(servers: &[String]) -> Result<OwnedValue> {
-    let mut arr = Array::new(&<u32 as Type>::SIGNATURE);
+    let mut arr = Array::new(<u32 as Type>::SIGNATURE);
     for s in servers {
         match s.parse::<Ipv4Addr>() {
             Ok(a) => arr
@@ -119,7 +110,7 @@ fn dns_strings_to_array(servers: &[String]) -> Result<OwnedValue> {
 
 /// Build the search-domain array NM expects (`as`).
 fn search_to_array(domains: &[String]) -> Result<OwnedValue> {
-    let mut arr = Array::new(&<String as Type>::SIGNATURE);
+    let mut arr = Array::new(<String as Type>::SIGNATURE);
     for d in domains {
         arr.append(Value::Str(d.as_str().into()))
             .map_err(|e| anyhow!("search push: {e}"))?;
@@ -192,9 +183,7 @@ pub async fn emit(
                             _ => None,
                         })
                         .unwrap_or_else(|| {
-                            warn!(
-                                "VPN gateway host '{host}' resolved but had no IPv4 record"
-                            );
+                            warn!("VPN gateway host '{host}' resolved but had no IPv4 record");
                             0
                         }),
                     Ok(Err(e)) => {
@@ -218,10 +207,7 @@ pub async fn emit(
         ));
     }
 
-    let dev_path = client
-        .session_get_device_path(session_path)
-        .await
-        .ok();
+    let dev_path = client.session_get_device_path(session_path).await.ok();
     let (dns_servers, dns_search) = match dev_path {
         Some(ref p) => (
             client.netcfg_get_dns_servers(p).await.unwrap_or_default(),

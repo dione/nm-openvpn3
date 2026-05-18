@@ -12,7 +12,9 @@ pub type Settings = HashMap<String, HashMap<String, OwnedValue>>;
 /// (`a{ss}`-shaped — keys and values are strings even though the wire
 /// representation uses variant values).
 pub fn vpn_data(settings: &Settings) -> anyhow::Result<HashMap<String, String>> {
-    let vpn = settings.get("vpn").context("missing 'vpn' settings group")?;
+    let vpn = settings
+        .get("vpn")
+        .context("missing 'vpn' settings group")?;
     let raw = vpn.get("data").context("missing vpn.data dict")?;
     string_string_dict(raw)
 }

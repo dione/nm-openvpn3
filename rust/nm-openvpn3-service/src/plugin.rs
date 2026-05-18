@@ -17,6 +17,7 @@
 
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -25,9 +26,9 @@ use futures_util::stream::StreamExt;
 use ovpn3_client::Client;
 use tokio::sync::Mutex;
 use tracing::{debug, info, warn};
-use zbus::zvariant::{ObjectPath, OwnedObjectPath, OwnedValue};
 use zbus::interface;
 use zbus::object_server::SignalEmitter;
+use zbus::zvariant::{ObjectPath, OwnedObjectPath, OwnedValue};
 
 use crate::connection::{vpn_data, Settings};
 use crate::state::{NMVpnPluginFailure, NMVpnServiceState};
@@ -74,6 +75,12 @@ pub struct Plugin {
     client: Client,
     state: Arc<Mutex<NMVpnServiceState>>,
     session: Arc<Mutex<SessionState>>,
+    /// Tracks whether `Config`/`Ip4Config` was already pushed to NM
+    /// for the current session.  The StatusChange listener and the
+    /// status poller both race to detect CONNECTED, so they share
+    /// this flag and the loser becomes a no-op.  Reset on every new
+    /// Connect dispatch.
+    ip4_emitted: Arc<AtomicBool>,
     /// Fires when Disconnect runs (or activation hard-fails) so main
     /// can drop the bus name and exit — NM only sends SIGTERM if we
     /// hang, and without --persist the C plugin self-exits the same
@@ -114,14 +121,12 @@ async fn set_state_via(
 }
 
 impl Plugin {
-    pub fn new(
-        client: Client,
-        quit_tx: tokio::sync::mpsc::UnboundedSender<()>,
-    ) -> Self {
+    pub fn new(client: Client, quit_tx: tokio::sync::mpsc::UnboundedSender<()>) -> Self {
         Self {
             client,
             state: Arc::new(Mutex::new(NMVpnServiceState::Init)),
             session: Arc::new(Mutex::new(SessionState::default())),
+            ip4_emitted: Arc::new(AtomicBool::new(false)),
             quit_tx,
         }
     }
@@ -137,6 +142,7 @@ impl Plugin {
     ) -> tokio::task::JoinHandle<()> {
         let client = self.client.clone();
         let state = self.state.clone();
+        let ip4_emitted = self.ip4_emitted.clone();
         tokio::spawn::<_>(async move {
             let proxy = match client.session_proxy(&session_path).await {
                 Ok(p) => p,
@@ -169,12 +175,25 @@ impl Plugin {
                 };
                 match target {
                     NMVpnServiceState::Started => {
-                        if let Err(e) =
-                            crate::ip4::emit(&emitter, &client, &session_path).await
+                        // Race-safe coordinate with spawn_status_poller —
+                        // whichever spots CONNECTED first emits, the
+                        // other becomes a no-op.  `compare_exchange`
+                        // returns Err if the value was already true.
+                        if ip4_emitted
+                            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+                            .is_err()
                         {
+                            debug!("StatusChange: Started reached after poller emitted, skipping");
+                            set_state_via(&emitter, &state, target).await;
+                            continue;
+                        }
+                        if let Err(e) = crate::ip4::emit(&emitter, &client, &session_path).await {
                             warn!("Ip4Config emit failed: {e:#}; failing to NM");
-                            set_state_via(&emitter, &state, NMVpnServiceState::Stopped)
-                                .await;
+                            // Roll back the guard so a recovery path
+                            // (status re-poll) can still retry once
+                            // openvpn3 fixes its state.
+                            ip4_emitted.store(false, Ordering::Release);
+                            set_state_via(&emitter, &state, NMVpnServiceState::Stopped).await;
                             let _ = emitter
                                 .failure(NMVpnPluginFailure::BadIpConfig.as_u32())
                                 .await;
@@ -207,11 +226,7 @@ impl Plugin {
         set_state_via(emitter, &self.state, new).await;
     }
 
-    async fn apply_overrides(
-        &self,
-        config_path: &OwnedObjectPath,
-        data: &HashMap<String, String>,
-    ) {
+    async fn apply_overrides(&self, config_path: &OwnedObjectPath, data: &HashMap<String, String>) {
         for (vpn_key, ovpn3_name) in OVERRIDE_BOOLS {
             if data.get(*vpn_key).map(|s| s.as_str()) != Some("yes") {
                 continue;
@@ -248,6 +263,11 @@ impl Plugin {
         conn: &zbus::Connection,
         connection: Settings,
     ) -> anyhow::Result<()> {
+        // Reset the per-session ip4 emit guard so this Connect can
+        // push Config / Ip4Config even if a previous activation set
+        // it.  Plugin instance is reused across Connect cycles.
+        self.ip4_emitted.store(false, Ordering::Release);
+
         let data = vpn_data(&connection).context("parsing vpn.data")?;
         let profile_path = data
             .get(KEY_PROFILE)
@@ -343,11 +363,7 @@ impl Plugin {
             warn!("set public_access=TRUE failed: {e}");
         }
         if let Some(uid) = lowest_run_user_uid() {
-            match self
-                .client
-                .session_access_grant(session_path, uid)
-                .await
-            {
+            match self.client.session_access_grant(session_path, uid).await {
                 Ok(()) => info!("AccessGrant uid={uid} (/run/user fallback) ok"),
                 Err(e) => warn!("AccessGrant uid={uid} failed: {e}"),
             }
@@ -367,6 +383,7 @@ impl Plugin {
     ) -> tokio::task::JoinHandle<()> {
         let client = self.client.clone();
         let state = self.state.clone();
+        let ip4_emitted_shared = self.ip4_emitted.clone();
         tokio::spawn::<_>(async move {
             debug!("poller task started for {session_path}");
             let proxy = match client.session_proxy(&session_path).await {
@@ -376,6 +393,10 @@ impl Plugin {
                     return;
                 }
             };
+            // Local mirror of the shared flag — once we've coordinated
+            // the emit with the listener we treat ourselves as "past
+            // Started" for our internal state machine (slow-tick mode,
+            // budget reset, etc.).
             let mut ip4_emitted = false;
             let mut tick_interval = Duration::from_millis(500);
             let max_ticks_pre_started = 120; // 120 * 500ms = 60s
@@ -414,9 +435,7 @@ impl Plugin {
                         // goes from "" to "tun*" exactly when the
                         // backend installs its tun device, which is
                         // the moment NM needs the Ip4Config.
-                        if !ip4_emitted
-                            && target != Some(NMVpnServiceState::Stopped)
-                        {
+                        if !ip4_emitted && target != Some(NMVpnServiceState::Stopped) {
                             match proxy.device_name().await {
                                 Ok(dev) if dev.starts_with("tun") => {
                                     info!("device_name='{dev}' → treating as Started");
@@ -433,22 +452,39 @@ impl Plugin {
                         };
                         match target {
                             NMVpnServiceState::Started if !ip4_emitted => {
-                                if let Err(e) =
-                                    crate::ip4::emit(&emitter, &client, &session_path).await
-                                {
-                                    warn!("Ip4Config emit failed: {e:#}; failing to NM");
-                                    set_state_via(
-                                        &emitter,
-                                        &state,
-                                        NMVpnServiceState::Stopped,
+                                // Race-safe handshake with
+                                // spawn_status_listener.  If the
+                                // listener already emitted, just slow
+                                // down and stop probing — don't push a
+                                // duplicate Config / Ip4Config pair to
+                                // NM.
+                                let we_emit = ip4_emitted_shared
+                                    .compare_exchange(
+                                        false,
+                                        true,
+                                        Ordering::AcqRel,
+                                        Ordering::Acquire,
                                     )
-                                    .await;
-                                    let _ = emitter
-                                        .failure(NMVpnPluginFailure::BadIpConfig.as_u32())
-                                        .await;
-                                    break;
+                                    .is_ok();
+                                if we_emit {
+                                    if let Err(e) =
+                                        crate::ip4::emit(&emitter, &client, &session_path).await
+                                    {
+                                        warn!("Ip4Config emit failed: {e:#}; failing to NM");
+                                        ip4_emitted_shared.store(false, Ordering::Release);
+                                        set_state_via(&emitter, &state, NMVpnServiceState::Stopped)
+                                            .await;
+                                        let _ = emitter
+                                            .failure(NMVpnPluginFailure::BadIpConfig.as_u32())
+                                            .await;
+                                        break;
+                                    }
+                                    set_state_via(&emitter, &state, target).await;
+                                } else {
+                                    debug!(
+                                        "poller: Started reached after listener emitted, switching to slow tick"
+                                    );
                                 }
-                                set_state_via(&emitter, &state, target).await;
                                 ip4_emitted = true;
                                 tick_interval = Duration::from_secs(5);
                                 ticks = 0;
@@ -485,8 +521,7 @@ impl Plugin {
                             "session unreachable for {post_started_errs} consecutive polls ({e}); failing to NM"
                         );
                         if let Ok(emitter) = make_emitter(&connection) {
-                            set_state_via(&emitter, &state, NMVpnServiceState::Stopped)
-                                .await;
+                            set_state_via(&emitter, &state, NMVpnServiceState::Stopped).await;
                             let _ = emitter
                                 .failure(NMVpnPluginFailure::ConnectFailed.as_u32())
                                 .await;
@@ -515,10 +550,7 @@ impl Plugin {
     /// `journalctl -t nm-openvpn3-rust-service | grep stats` shows
     /// live throughput.  Mirrors `stats_timer_cb` in the C tree (with
     /// the v0.5.11 TUN_BYTES_* addition).
-    fn spawn_stats_timer(
-        &self,
-        session_path: OwnedObjectPath,
-    ) -> tokio::task::JoinHandle<()> {
+    fn spawn_stats_timer(&self, session_path: OwnedObjectPath) -> tokio::task::JoinHandle<()> {
         let client = self.client.clone();
         tokio::spawn::<_>(async move {
             let mut last_bytes_in: i64 = 0;
@@ -595,14 +627,9 @@ impl Plugin {
                 let Ok(args) = signal.args() else { continue };
                 let (t, g, msg) = (args.t, args.g, args.message);
                 info!("AttentionRequired: type={t} group={g} msg='{msg}'");
-                if let Err(e) = handle_attention(
-                    &connection,
-                    &client,
-                    &session_path,
-                    &session_state,
-                    &msg,
-                )
-                .await
+                if let Err(e) =
+                    handle_attention(&connection, &client, &session_path, &session_state, &msg)
+                        .await
                 {
                     warn!("AttentionRequired handler failed: {e:#}; failing to NM");
                     if let Ok(emitter) = make_emitter(&connection) {
@@ -649,7 +676,10 @@ async fn handle_attention(
         let vkey = crate::secrets::slot_to_vpn_key(&slot);
         match crate::secrets::lookup_value(vkey, &data, &secrets) {
             Some(value) if !value.is_empty() => {
-                match client.session_provide_input(session_path, &slot, value).await {
+                match client
+                    .session_provide_input(session_path, &slot, value)
+                    .await
+                {
                     Ok(()) => info!("auto-ProvideInput({})", slot.name),
                     Err(e) => {
                         // ProvideInput failed despite a value being on
@@ -707,8 +737,12 @@ fn lowest_run_user_uid() -> Option<u32> {
     let entries = std::fs::read_dir("/run/user").ok()?;
     let mut best: Option<u32> = None;
     for e in entries.flatten() {
-        let Some(name) = e.file_name().to_str().map(str::to_owned) else { continue };
-        let Ok(uid) = name.parse::<u32>() else { continue };
+        let Some(name) = e.file_name().to_str().map(str::to_owned) else {
+            continue;
+        };
+        let Ok(uid) = name.parse::<u32>() else {
+            continue;
+        };
         if uid == 0 {
             continue;
         }
@@ -832,7 +866,10 @@ impl Plugin {
                     }
                 }
                 _ => {
-                    debug!("new_secrets: slot '{}' has no value in vpn.{vkey}", slot.name);
+                    debug!(
+                        "new_secrets: slot '{}' has no value in vpn.{vkey}",
+                        slot.name
+                    );
                     missing += 1;
                 }
             }
