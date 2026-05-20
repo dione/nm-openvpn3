@@ -59,6 +59,13 @@ sed -e "s|@LIBEXECDIR@|$LIBEXECDIR|g" \
 sudo install -m 0644 "$RENDERED" \
     "$NAMEDIR/nm-openvpn3-rust-service.name"
 
+# D-Bus system policy.  Without this file the dbus default-deny on
+# method_call still blocks unprivileged callers, but shipping an explicit
+# policy keeps the audit trail visible alongside the C plugin's
+# nm-openvpn3-service.conf.
+sudo install -m 0644 nm-openvpn3-rust-service.conf \
+    /usr/share/dbus-1/system.d/nm-openvpn3-rust-service.conf
+
 sudo systemctl reload dbus
 echo
 echo "Installed.  Verify with:"

@@ -241,16 +241,36 @@ fn is_encrypted_keyfile_path(path: &str) -> bool {
     // On any I/O error we fall back to "yes" — over-prompting is
     // harmless (the user dismisses), under-prompting hangs the
     // activation.
-    let bytes = match std::fs::read(path) {
-        Ok(b) => b,
-        Err(_) => return true,
-    };
+    // Cap to a sane PEM upper bound.  NM hands us the path verbatim
+    // from `vpn.data['key']`; a hostile or misconfigured profile that
+    // points at `/dev/urandom` or a 10 GiB blob must not stall the
+    // dialog (NM gives up on us and leaves activation broken).  Any
+    // real PEM/PKCS#12 keyfile fits comfortably in 256 KiB.
+    const MAX_KEYFILE_BYTES: u64 = 256 * 1024;
     let lower = path.to_ascii_lowercase();
     if lower.ends_with(".p12") || lower.ends_with(".pfx") {
         return true;
     }
-    // PEM markers are 7-bit ASCII; from_utf8_lossy is safe and avoids
-    // copying for valid inputs.
+    let md = match std::fs::metadata(path) {
+        Ok(m) => m,
+        Err(_) => return true,
+    };
+    if !md.is_file() {
+        return true;
+    }
+    if md.len() > MAX_KEYFILE_BYTES {
+        // Pathologically large file — over-prompt rather than read.
+        return true;
+    }
+    let bytes = match std::fs::read(path) {
+        Ok(b) if (b.len() as u64) <= MAX_KEYFILE_BYTES => b,
+        // File grew between metadata and read (TOCTOU): play safe.
+        Ok(_) => return true,
+        Err(_) => return true,
+    };
+    // PEM markers are 7-bit ASCII; binary PKCS#12 was handled by the
+    // extension check above, so anything not-quite-UTF-8 here is
+    // garbage we don't want to scan.
     let text = std::str::from_utf8(&bytes).unwrap_or("");
     text.contains("Proc-Type: 4,ENCRYPTED") || text.contains("BEGIN ENCRYPTED PRIVATE KEY")
 }

@@ -46,6 +46,14 @@ pub const NM_VPN_PLUGIN_IFACE: &str = "org.freedesktop.NetworkManager.VPN.Plugin
 pub const KEY_PROFILE: &str = "nm-openvpn3-profile";
 pub const KEY_OVERRIDE_LOG_LEVEL: &str = "override-log-level";
 
+/// Hard cap on the inline .ovpn profile we'll slurp off disk.  NM passes
+/// the path via attacker-controllable `vpn.data`, so an oversized or
+/// special file (`/dev/zero`, a swap-backed FIFO) would otherwise drive
+/// the service into unbounded allocation or an indefinite read.  1 MiB
+/// is well past anything a legitimate OpenVPN profile reaches in
+/// practice (CA bundle + inline cert/key tops out around 50 KiB).
+const MAX_PROFILE_BYTES: u64 = 1 << 20;
+
 /// Bool override keys that map 1:1 onto openvpn3 SetOverride flags.
 const OVERRIDE_BOOLS: &[(&str, &str)] = &[
     ("override-route-nopull", "route-nopull"),
@@ -75,18 +83,19 @@ struct SessionState {
     /// session torn down (rather than living in zbus' OwnedValue cache
     /// for the lifetime of the plugin).
     current_secrets: SecretsMap,
+    /// Per-session emit guard.  Listener + poller race to publish
+    /// Config / Ip4Config; the loser becomes a no-op.  Held on the
+    /// session (not the plugin) so a Disconnect that finishes while
+    /// the prior session's listener is mid-emit can't race a fresh
+    /// Connect resetting a plugin-global flag — the old listeners
+    /// hold their own Arc and the new Connect builds a new one.
+    ip4_emitted: Arc<AtomicBool>,
 }
 
 pub struct Plugin {
     client: Client,
     state: Arc<Mutex<NMVpnServiceState>>,
     session: Arc<Mutex<SessionState>>,
-    /// Tracks whether `Config`/`Ip4Config` was already pushed to NM
-    /// for the current session.  The StatusChange listener and the
-    /// status poller both race to detect CONNECTED, so they share
-    /// this flag and the loser becomes a no-op.  Reset on every new
-    /// Connect dispatch.
-    ip4_emitted: Arc<AtomicBool>,
     /// Fires when Disconnect runs (or activation hard-fails) so main
     /// can drop the bus name and exit — NM only sends SIGTERM if we
     /// hang, and without --persist the C plugin self-exits the same
@@ -132,7 +141,6 @@ impl Plugin {
             client,
             state: Arc::new(Mutex::new(NMVpnServiceState::Init)),
             session: Arc::new(Mutex::new(SessionState::default())),
-            ip4_emitted: Arc::new(AtomicBool::new(false)),
             quit_tx,
         }
     }
@@ -145,10 +153,10 @@ impl Plugin {
         &self,
         connection: zbus::Connection,
         session_path: OwnedObjectPath,
+        ip4_emitted: Arc<AtomicBool>,
     ) -> tokio::task::JoinHandle<()> {
         let client = self.client.clone();
         let state = self.state.clone();
-        let ip4_emitted = self.ip4_emitted.clone();
         tokio::spawn::<_>(async move {
             let proxy = match client.session_proxy(&session_path).await {
                 Ok(p) => p,
@@ -274,10 +282,11 @@ impl Plugin {
         conn: &zbus::Connection,
         connection: Settings,
     ) -> anyhow::Result<()> {
-        // Reset the per-session ip4 emit guard so this Connect can
-        // push Config / Ip4Config even if a previous activation set
-        // it.  Plugin instance is reused across Connect cycles.
-        self.ip4_emitted.store(false, Ordering::Release);
+        // Fresh per-session emit guard.  Prior listeners (if any are
+        // mid-emit during a fast Disconnect/Connect cycle) keep
+        // referencing the previous Arc; this Connect's listeners get a
+        // brand-new flag they alone can flip.
+        let ip4_emitted = Arc::new(AtomicBool::new(false));
 
         let data = vpn_data(&connection).context("parsing vpn.data")?;
         let profile_path = data
@@ -285,9 +294,27 @@ impl Plugin {
             .ok_or_else(|| anyhow!("vpn.data['{KEY_PROFILE}'] is required in Phase 2"))?;
         debug!("profile path: {profile_path}");
 
+        let md = tokio::fs::metadata(Path::new(profile_path))
+            .await
+            .with_context(|| format!("stat'ing profile file {profile_path}"))?;
+        if !md.is_file() {
+            return Err(anyhow!("profile path {profile_path} is not a regular file"));
+        }
+        if md.len() > MAX_PROFILE_BYTES {
+            return Err(anyhow!(
+                "profile {profile_path} is {} bytes; refusing (cap {MAX_PROFILE_BYTES})",
+                md.len()
+            ));
+        }
         let profile = tokio::fs::read_to_string(Path::new(profile_path))
             .await
             .with_context(|| format!("reading profile file {profile_path}"))?;
+        if profile.len() as u64 > MAX_PROFILE_BYTES {
+            // TOCTOU guard: file grew between metadata and read.
+            return Err(anyhow!(
+                "profile {profile_path} grew past {MAX_PROFILE_BYTES} bytes during read"
+            ));
+        }
 
         self.set_state(emitter, NMVpnServiceState::Starting).await;
 
@@ -329,6 +356,7 @@ impl Plugin {
             s.session_path = Some(session_path.clone());
             s.current_data = data_map;
             s.current_secrets = secret_map;
+            s.ip4_emitted = ip4_emitted.clone();
         }
 
         let bring_up: anyhow::Result<()> = async {
@@ -347,8 +375,18 @@ impl Plugin {
 
         if let Err(e) = bring_up {
             warn!("activation failed after NewTunnel; tearing down session {session_path}");
+            // openvpn3 drops sessions whose backend has yet to register;
+            // an in-flight tear-down can return ObjectNotFound (handled
+            // here) or transient bus errors that succeed on retry.  One
+            // retry is enough — if openvpn3 still rejects the call the
+            // session was probably already gone.
             if let Err(de) = self.client.session_disconnect(&session_path).await {
-                warn!("cleanup session.Disconnect failed: {de}");
+                warn!("cleanup session.Disconnect {session_path} failed: {de}; retrying once");
+                if let Err(de2) = self.client.session_disconnect(&session_path).await {
+                    warn!(
+                        "cleanup session.Disconnect {session_path} failed twice ({de2}); leaving orphan session for openvpn3 to GC"
+                    );
+                }
             }
             let mut s = self.session.lock().await;
             s.config_path = None;
@@ -367,18 +405,25 @@ impl Plugin {
         // alongside the signal), so we run a polling loop in parallel
         // as the source of truth and treat the signal stream as a
         // bonus low-latency path when it works.
-        let h1 = self.spawn_status_listener(conn.clone(), session_path.clone());
-        let h2 = self.spawn_status_poller(conn.clone(), session_path.clone());
-        // Periodic statistics dump.
-        let h3 = self.spawn_stats_timer(session_path.clone());
-        // Plan 2: openvpn3 fires AttentionRequired whenever the backend
-        // needs another credential slot filled (initial password,
-        // dynamic challenge, 2FA code …).  We auto-provide whatever is
-        // already in vpn.data/vpn.secrets and ask NM (via
-        // SecretsRequired) for the rest.
-        let h4 = self.spawn_attention_listener(conn.clone(), session_path);
+        //
+        // Spawn under the session lock so a Disconnect arriving between
+        // the first spawn and the tasks.push can't drop a fresh
+        // listener on the floor (signal-driven listeners may otherwise
+        // race state updates against an in-flight tear-down).
         {
             let mut s = self.session.lock().await;
+            let h1 =
+                self.spawn_status_listener(conn.clone(), session_path.clone(), ip4_emitted.clone());
+            let h2 =
+                self.spawn_status_poller(conn.clone(), session_path.clone(), ip4_emitted.clone());
+            // Periodic statistics dump.
+            let h3 = self.spawn_stats_timer(session_path.clone());
+            // Plan 2: openvpn3 fires AttentionRequired whenever the
+            // backend needs another credential slot filled (initial
+            // password, dynamic challenge, 2FA code …).  We auto-
+            // provide whatever is already in vpn.data/vpn.secrets and
+            // ask NM (via SecretsRequired) for the rest.
+            let h4 = self.spawn_attention_listener(conn.clone(), session_path);
             s.tasks.extend([h1, h2, h3, h4]);
         }
 
@@ -418,10 +463,10 @@ impl Plugin {
         &self,
         connection: zbus::Connection,
         session_path: OwnedObjectPath,
+        ip4_emitted_shared: Arc<AtomicBool>,
     ) -> tokio::task::JoinHandle<()> {
         let client = self.client.clone();
         let state = self.state.clone();
-        let ip4_emitted_shared = self.ip4_emitted.clone();
         tokio::spawn::<_>(async move {
             debug!("poller task started for {session_path}");
             let proxy = match client.session_proxy(&session_path).await {
@@ -869,7 +914,10 @@ impl Plugin {
         }
         if let Some(path) = session.session_path.as_ref() {
             if let Err(e) = self.client.session_disconnect(path).await {
-                warn!("session.Disconnect failed: {e}");
+                warn!("session.Disconnect {path} failed: {e}; retrying once");
+                if let Err(e2) = self.client.session_disconnect(path).await {
+                    warn!("session.Disconnect {path} failed twice ({e2}); leaving orphan session");
+                }
             }
         }
         self.set_state(&emitter, NMVpnServiceState::Stopped).await;
