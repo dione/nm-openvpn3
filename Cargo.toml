@@ -1,0 +1,32 @@
+[workspace]
+resolver = "2"
+members = [
+    "ovpn3-client",
+    "nm-openvpn3-service",
+    "nm-openvpn3-auth-dialog",
+]
+
+[workspace.package]
+version = "0.6.0-alpha.1"
+edition = "2021"
+license = "GPL-2.0-or-later"
+authors = ["nm-openvpn3 contributors"]
+repository = "https://github.com/dione/nm-openvpn3"
+
+[workspace.dependencies]
+# zbus 5 - Rust async D-Bus client (pure Rust, no libdbus).
+zbus = { version = "5", default-features = false, features = ["tokio"] }
+# Standard error / async / logging crates.
+anyhow = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "signal", "time", "sync"] }
+futures-util = "0.3"
+if-addrs = "0.15"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+clap = { version = "4", features = ["derive"] }
+# Zero plaintext credentials out of process memory before drop so a
+# core dump / swap page cannot leak them.
+zeroize = { version = "1", features = ["zeroize_derive"] }
+
+# Local crate
+ovpn3-client = { path = "ovpn3-client" }

@@ -1,128 +1,67 @@
-# nm-openvpn3
+# nm-openvpn3 — Rust implementation
 
-NetworkManager VPN plugin for the OpenVPN 3 Linux D-Bus stack
-(`net.openvpn.v3.*`).
+NetworkManager VPN service plugin for [OpenVPN 3 Linux](https://github.com/OpenVPN/openvpn3-linux), written in async Rust on top of zbus.
 
-[![CI](https://github.com/dione/nm-openvpn3/actions/workflows/ci.yml/badge.svg)](https://github.com/dione/nm-openvpn3/actions/workflows/ci.yml)
+This branch (`rust/main`) is the Rust-only tree.  The original C implementation lives on the [`fork/openvpn3-skeleton`](../../tree/fork/openvpn3-skeleton) branch — pick the branch matching the language you want to work on.
 
-This is a fork of [GNOME/NetworkManager-openvpn][upstream] (1.12.5,
-upstream commit 9514bde) rewired to drive
-[OpenVPN/openvpn3-linux][ovpn3] via D-Bus instead of the legacy
-`openvpn` v2 fork+exec path.  Upstream still talks to a management
-socket; this fork talks to `net.openvpn.v3.configuration`,
-`net.openvpn.v3.sessions`, and `net.openvpn.v3.netcfg`.
+## Layout
 
-[upstream]: https://gitlab.gnome.org/GNOME/NetworkManager-openvpn
-[ovpn3]: https://github.com/OpenVPN/openvpn3-linux
+```
+.
+├── ovpn3-client/             # async zbus client for openvpn3-linux
+├── nm-openvpn3-service/      # NMVpnServicePlugin D-Bus service
+├── nm-openvpn3-auth-dialog/  # external-UI-mode auth-dialog binary
+├── data/
+│   ├── dbus-1/               # system bus policy
+│   ├── NetworkManager-VPN/   # NM .name file (vpn-type discovery)
+│   └── systemd/              # sysusers / tmpfiles
+├── docs/                     # architecture + phase notes
+├── scripts/                  # ovpn-to-nmcli helpers
+└── install-test.sh           # build + install for local smoke-test
+```
 
-## What you get
+## Identifiers
 
-- **VPN type "OpenVPN 3"** in `nm-connection-editor` next to the regular
-  OpenVPN entry.  Same dialog layout, fewer openvpn2-only fields.
-- **`.ovpn` profile file chooser** on the main tab — point at a verbatim
-  config and `openvpn3` interprets it directly.  Preserves
-  `tls-crypt-v2`, `peer-fingerprint`, `data-ciphers`, and other modern
-  syntax the upstream token parser drops.
-- **Five SetOverride toggles** in the Misc tab (route-nopull,
-  force-default-gateway, block-ipv6, dns-setup-disabled, dco) that map
-  to `net.openvpn.v3.configuration.SetOverride` after Import.
-- **Live DNS + routes** pushed from `openvpn3`'s netcfg device into
-  NetworkManager via the standard SetIp4Config bundle.
-- **Split-tunnel detection**: if the profile does not redirect default
-  gateway, NM gets `NEVER_DEFAULT=TRUE` so it does not promote the VPN
-  to the system default route.
-- **Periodic session statistics** (bytes / packets, every 30 s) emitted
-  to the journal under `SYSLOG_IDENTIFIER=nm-openvpn3-service`.
-- **AttentionRequired / UserInputQueue** plumbing (v0.6.0-alpha,
-  untested end-to-end — needs a password-protected openvpn3 server to
-  smoke test; see `docs/PLAN-2-SMOKE-TEST.md`).
+| Field | Value |
+|---|---|
+| Service bus name | `org.freedesktop.NetworkManager.openvpn3` |
+| `vpn-type=` | `openvpn3` |
+| Service binary | `/usr/libexec/nm-openvpn3-service` |
+| Auth-dialog binary | `/usr/libexec/nm-openvpn3-auth-dialog` |
+| `.name` file | `nm-openvpn3-service.name` (rendered from `.name.in`) |
 
-## Build & install
+The `.name` file does **not** point at a libnm-vpn-plugin cdylib yet — the editor/properties side has not been ported.  GUI applications (gnome-control-center, nm-applet) will list the plugin without property pages until a Rust libnm-vpn-plugin lands.  The runtime path is unaffected: NM spawns the auth-dialog binary directly from `[GNOME] auth-dialog=`.
 
-Build dependencies (Fedora package names; Debian / Ubuntu equivalents
-in parens):
+## Status
 
-    autoconf, automake, autopoint, gettext-devel (gettext)
-    libtool, pkg-config
-    glib2-devel (libglib2.0-dev)
-    gtk3-devel (libgtk-3-dev)
-    gtk4-devel (libgtk-4-dev)            — needed for --with-gtk4
-    libsecret-devel (libsecret-1-dev)
-    libnma-devel (libnma-dev)
-    libnma-gtk4-devel (libnma-gtk4-dev)  — needed for --with-gtk4
-    NetworkManager-libnm-devel (libnm-dev), libnm >= 1.52.2
+End-to-end working against openvpn3-linux v27:
 
-Build:
+- Connect / Disconnect drives the openvpn3 sessions manager and emits the `StateChanged`, `Config`, `Ip4Config`, `Failure`, `SecretsRequired`, and `LoginBanner` signals NM consumes.
+- Status poller handles the unicast `StatusChange` gap in openvpn3 v27 with a device-name fallback probe.
+- AttentionRequired listener drains `UserInputQueue`, auto-provides credentials persisted in `vpn.data` / `vpn.secrets`, asks NM for the rest via `SecretsRequired`, and feeds the reply back via `ProvideInput`.
+- Auth-dialog implements the external-UI-mode contract NM uses in every modern desktop integration — no GTK / libsecret deps.
 
-    autoreconf -fis
-    ./configure --prefix=/usr --libexecdir=/usr/libexec --sysconfdir=/etc \
-                --with-gnome --with-gtk4
-    make
-    sudo make install
+## Build + install
 
-Reload the system bus so NetworkManager picks up the new
-`.name` file and `.so` plugins:
+```sh
+cargo build --release
+bash install-test.sh
+```
 
-    sudo systemctl reload dbus
+`install-test.sh` auto-detects the NM plugin directory (`gcc -dumpmachine` for the multiarch triplet, falls back to `/usr/lib64/NetworkManager` and `/usr/lib/NetworkManager`), installs the service + auth-dialog binaries to `/usr/libexec`, renders the `.name.in` template, and reloads dbus.
 
-If you build with the default `--prefix=/usr/local`, the binaries land
-under `/usr/local/libexec/` but NetworkManager still looks for them
-under `/usr/libexec/`.  Use the prefix line above.
+Create a test connection (replace `<path>` with a real profile path):
 
-## Usage
+```sh
+nmcli connection add type vpn vpn-type openvpn3 \
+    con-name ovpn3-test \
+    vpn.data 'nm-openvpn3-profile=<path>,connection-type=tls'
+```
 
-### Via the GUI
+Activate + tail the journal:
 
-1. Open `nm-connection-editor`.
-2. **+** → **OpenVPN 3** → **Create…**
-3. **Brama**: paste your remote (host[:port[:proto]]).
-4. **OVPN profile file**: click **Browse…**, point at the `.ovpn`.
-   Keeps the file readable by the `nm-openvpn3` service uid.
-5. **Save** and activate from the NM applet.
-
-### Via nmcli
-
-    nmcli connection add type vpn vpn-type openvpn3 con-name my-vpn \
-        vpn.data 'nm-openvpn3-profile=/path/to/profile.ovpn,connection-type=tls'
-    nmcli connection up my-vpn
-
-For the legacy token-import flow:
-
-    nmcli connection import type openvpn3 file /path/to/profile.ovpn
-
-This route walks the upstream `do_import()` parser, which has known gaps
-for modern openvpn3 syntax (`peer-fingerprint`, recent `--data-cipher`
-forms).  Prefer the profile-file path above unless you specifically
-need to edit individual options through the UI.
-
-## Diagnostics
-
-    journalctl -t nm-openvpn3-service -f
-    journalctl _COMM=nm-openvpn3-ser --since '5 min ago' | grep stats
-
-Stats lines emit every 30 s under the `stats:` tag; counters are read
-from `net.openvpn.v3.sessions.statistics`.
-
-## Architecture
-
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the D-Bus topology,
-component map, and connect / disconnect / auth flows.
-
-## Roadmap
-
-The full project history lives in [docs/FORK.md](docs/FORK.md).
-At a glance:
-
-- v0.1.0 — fork skeleton
-- v0.2.0 — TLS-cert Connect/Disconnect
-- v0.3.x — DNS + routes + ACL + split-tunnel + watchdog
-- v0.4.x — UI plugin in nm-connection-editor + advanced-dialog trim
-- v0.5.x — profile file chooser, SetOverride toggles, service cleanup,
-  StatusChange signal, CI + ASAN, session statistics, auth-dialog +
-  editor.c simplifier passes
-- v0.6.0-alpha — interactive auth (AttentionRequired / UserInputQueue),
-  awaiting smoke test against a password-protected openvpn3 server.
-
-## License
-
-GPL-2.0-or-later, inherited from upstream.  See `COPYING`.
+```sh
+nmcli connection up ovpn3-test
+# TASK_COMM_LEN=16 truncates `nm-openvpn3-service` to `nm-openvpn3-ser`.
+journalctl --since '1 min ago' _COMM=nm-openvpn3-ser
+```

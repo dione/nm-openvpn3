@@ -6,138 +6,42 @@ on:
   pull_request:
     branches: [ "**" ]
 
+env:
+  CARGO_TERM_COLOR: always
+  # cargo treats every transient warning as a real diagnostic at -D warnings;
+  # explicit RUSTFLAGS keeps the CI signal sharp without burying real errors.
+  RUSTFLAGS: "-D warnings"
+
 jobs:
-  build-and-test:
-    name: Build + make check (Fedora)
+  fmt:
+    name: cargo fmt
     runs-on: ubuntu-latest
-    container:
-      # Pinned to a specific Fedora release so a downstream image bump
-      # cannot silently break the build.  Bump deliberately when the
-      # upstream package set changes (e.g. libnm SONAME, glib API).
-      image: fedora:42
     steps:
-      - name: Install build dependencies
-        # Mirrors the dependency set used by the upstream GitLab pipeline
-        # so the Fedora-based build matches what GNOME's own CI exercises.
-        run: |
-          dnf -y install \
-            autoconf \
-            automake \
-            /usr/bin/autopoint \
-            gcc \
-            gettext-devel \
-            glib2-devel \
-            gtk3-devel \
-            gtk4-devel \
-            libnma-devel \
-            libnma-gtk4-devel \
-            libsecret-devel \
-            libtool \
-            libxml2 \
-            make \
-            NetworkManager-libnm-devel \
-            pkgconfig \
-            findutils \
-            file \
-            git
-
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all -- --check
 
-      - name: Mark workspace as safe for git
-        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-
-      - name: autoreconf
-        run: autoreconf -fis
-
-      - name: configure
-        run: |
-          ./configure \
-            --with-gnome \
-            --with-gtk4 \
-            --enable-more-warnings=error \
-            --disable-silent-rules
-
-      - name: make
-        run: make -j"$(nproc)"
-
-      - name: make check
-        run: make check
-
-      - name: Show test logs on failure
-        if: failure()
-        run: |
-          find . -name 'test-suite.log' -print -exec cat {} \;
-          find . -name '*.log' -path '*/tests/*' -print -exec cat {} \;
-
-  asan:
-    name: Build + tests under AddressSanitizer (Fedora)
+  clippy:
+    name: cargo clippy
     runs-on: ubuntu-latest
-    container:
-      # Pinned to a specific Fedora release so a downstream image bump
-      # cannot silently break the build.  Bump deliberately when the
-      # upstream package set changes (e.g. libnm SONAME, glib API).
-      image: fedora:42
-    env:
-      CFLAGS: "-fsanitize=address -fsanitize=undefined -fno-omit-frame-pointer -fno-sanitize-recover=undefined -g -O1"
-      LDFLAGS: "-fsanitize=address -fsanitize=undefined"
-      # detect_leaks: report any unfreed allocation at exit.
-      # abort_on_error: turn issues into non-zero exit so CI fails loudly.
-      # halt_on_error: stop the offending test immediately, do not race forward.
-      ASAN_OPTIONS: "detect_leaks=1:abort_on_error=1:halt_on_error=1:strict_string_checks=1:detect_stack_use_after_return=1"
-      UBSAN_OPTIONS: "print_stacktrace=1:halt_on_error=1"
-      # GLib's slice allocator hides leaks from ASan; route everything
-      # through plain malloc so leak reports are accurate.
-      G_SLICE: "always-malloc"
-      G_DEBUG: "gc-friendly"
     steps:
-      - name: Install build dependencies
-        run: |
-          dnf -y install \
-            autoconf \
-            automake \
-            /usr/bin/autopoint \
-            gcc \
-            gettext-devel \
-            glib2-devel \
-            gtk3-devel \
-            gtk4-devel \
-            libasan \
-            libubsan \
-            libnma-devel \
-            libnma-gtk4-devel \
-            libsecret-devel \
-            libtool \
-            libxml2 \
-            make \
-            NetworkManager-libnm-devel \
-            pkgconfig \
-            findutils \
-            file \
-            git
-
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --all-targets --release -- -D warnings
 
-      - name: Mark workspace as safe for git
-        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-
-      - name: autoreconf
-        run: autoreconf -fis
-
-      - name: configure (asan)
-        run: |
-          ./configure \
-            --with-gnome \
-            --with-gtk4 \
-            --disable-silent-rules
-
-      - name: make
-        run: make -j"$(nproc)"
-
-      - name: make check (asan)
-        run: make check
-
-      - name: Show test logs on failure
-        if: failure()
-        run: |
-          find . -name 'test-suite.log' -print -exec cat {} \;
-          find . -name '*.log' -path '*/tests/*' -print -exec cat {} \;
+  test:
+    name: cargo build + test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo build --release
+        run: cargo build --release --all-targets
+      - name: cargo test --release
+        run: cargo test --release --all-targets

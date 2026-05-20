@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<gresources>
-	<gresource prefix="/org/freedesktop/network-manager-openvpn3">
-		<file preprocess="xml-stripblanks">nm-openvpn3-dialog.ui</file>
-	</gresource>
-</gresources>
