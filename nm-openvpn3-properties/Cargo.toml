@@ -1,0 +1,35 @@
+[package]
+name = "nm-openvpn3-properties"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "NetworkManager openvpn3 plugin properties library — .ovpn import/export + libnm discovery stub (cdylib)"
+
+[lib]
+# Two targets:
+#   * rlib  — pure-Rust API consumed by the editor cdylib + tests.
+#   * cdylib — libnm-vpn-plugin-openvpn3.so, the libnm discovery hook NM
+#              loads at editor-list time to learn the vpn-type and find
+#              the GTK editor cdylib.  Hand-rolled FFI; no libnm-sys
+#              crate exists on crates.io.
+crate-type = ["rlib", "cdylib"]
+name = "nm_vpn_plugin_openvpn3"
+
+[dependencies]
+anyhow = { workspace = true }
+tracing = { workspace = true }
+# Low-level GObject / GError FFI used by the libnm cdylib factory.
+# libnm itself is not on crates.io; the relevant struct layouts +
+# extern fns live hand-rolled in `src/libnm.rs` against libnm ≥ 1.30
+# headers.
+# Use the 0.22 train so the editor crate (which depends on gtk4 0.11
+# → glib 0.22 → glib-sys 0.22) sees one unified version of these types
+# across crate boundaries.
+glib-sys = "0.22"
+gobject-sys = "0.22"
+gio-sys = "0.22"
+
+[build-dependencies]
+pkg-config = "0.3"

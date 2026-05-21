@@ -11,6 +11,15 @@ env:
   # cargo treats every transient warning as a real diagnostic at -D warnings;
   # explicit RUSTFLAGS keeps the CI signal sharp without burying real errors.
   RUSTFLAGS: "-D warnings"
+  # System dev packages every job needs: libnm for the properties crate,
+  # gmodule for the editor cdylib loader, libgtk-4 + libadwaita for the
+  # editor widgets, gettext for the .po compilation step.
+  APT_PACKAGES: >-
+    libnm-dev
+    libgmodule-2.0-0
+    libgtk-4-dev
+    libadwaita-1-dev
+    gettext
 
 jobs:
   fmt:
@@ -28,6 +37,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y $APT_PACKAGES
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
@@ -39,9 +52,50 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y $APT_PACKAGES
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: cargo build --release
         run: cargo build --release --all-targets
       - name: cargo test --release
         run: cargo test --release --all-targets
+      - name: verify expected cdylib symbols
+        # The libnm + editor cdylibs must export their factory
+        # entrypoints; missing symbols mean NM / nm-applet would dlopen
+        # the .so and silently fail.  Cheap sanity check beats a
+        # post-merge regression in gnome-control-center.
+        run: |
+          test -f target/release/libnm_vpn_plugin_openvpn3.so
+          test -f target/release/libnm_vpn_plugin_openvpn3_editor.so
+          nm -D target/release/libnm_vpn_plugin_openvpn3.so \
+              | grep -q ' T nm_vpn_editor_plugin_factory$'
+          nm -D target/release/libnm_vpn_plugin_openvpn3_editor.so \
+              | grep -q ' T nm_vpn_editor_factory_openvpn3$'
+
+  po:
+    name: validate translations
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install gettext
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gettext
+      - name: msgfmt -c on every catalog
+        run: |
+          fail=0
+          for po in po/*.po; do
+            [ -e "$po" ] || continue
+            if ! msgfmt -c -v "$po" -o /dev/null; then
+              echo "::error file=$po::msgfmt rejected this catalog"
+              fail=1
+            fi
+          done
+          exit $fail
+      # POT-vs-source drift detection is intentionally not automated:
+      # `tr(…)` calls in the editor crate frequently span multiple
+      # source lines, which makes regex extraction unreliable.  POT
+      # maintenance lives in po/README.md as a manual checklist.

@@ -1,0 +1,1466 @@
+//! `Openvpn3Editor` — Rust GObject implementing the `NMVpnEditor`
+//! interface from libnm.
+//!
+//! Round-5 HIG sweep — every row is now a purpose-built libadwaita
+//! widget (AdwComboRow / AdwSpinRow / AdwSwitchRow / AdwEntryRow /
+//! AdwPasswordEntryRow), titles are short, hints land in subtitles or
+//! tooltips, and connection-type drives row visibility so static-key
+//! / password-only / TLS connections never see fields they cannot
+//! use.  File pickers replace bare path entries for ca / cert / key /
+//! ta / tls-crypt / tls-crypt-v2 / inline profile.
+//!
+//! Save remains additive — the initial vpn.data snapshot is replayed
+//! first and the widget state overlays only the keys this UI exposes.
+//! Anything the user typed via `nmcli` outside the editor's vocabulary
+//! survives the round-trip.
+
+use std::cell::RefCell;
+use std::ffi::CString;
+use std::path::Path;
+use std::ptr;
+use std::rc::Rc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, OnceLock};
+
+use gettextrs::gettext;
+use glib::ffi::{gboolean, gpointer, GError, GFALSE, GTRUE};
+use gobject_sys::{
+    g_object_new, g_type_add_interface_static, g_type_register_static_simple, GInterfaceInfo,
+    GObject, GTypeInstance, G_TYPE_FLAG_NONE, G_TYPE_OBJECT,
+};
+use gtk4::prelude::*;
+use gtk4::{gio, glib, StringList};
+use libadwaita::prelude::*;
+use libadwaita::{
+    ComboRow, EntryRow, ExpanderRow, PasswordEntryRow, PreferencesGroup, PreferencesPage, SpinRow,
+    SwitchRow,
+};
+
+use nm_vpn_plugin_openvpn3::bridge::connection_to_nm_data;
+use nm_vpn_plugin_openvpn3::libnm::{
+    nm_connection_get_setting_vpn, nm_setting_vpn_add_data_item, nm_vpn_editor_get_type, set_error,
+    NMConnection, NMVpnEditorInterface, NM_OPENVPN3_PLUGIN_ERROR_FAILED,
+};
+
+// ---------------------------------------------------------------------------
+// Static option vocabularies — kept as `(id, display_key)`.  Display
+// strings are wrapped in `gettext()` when consumed so locales pick up
+// translated labels once the `po/` tree lands.
+// ---------------------------------------------------------------------------
+
+const CONTYPE_TLS: &str = "tls";
+const CONTYPE_PASSWORD: &str = "password";
+const CONTYPE_PASSWORD_TLS: &str = "password-tls";
+const CONTYPE_STATIC_KEY: &str = "static-key";
+
+const CONTYPES: &[(&str, &str)] = &[
+    (CONTYPE_TLS, "TLS"),
+    (CONTYPE_PASSWORD, "Password"),
+    (CONTYPE_PASSWORD_TLS, "Password + TLS"),
+    (CONTYPE_STATIC_KEY, "Static key"),
+];
+
+const ALLOW_COMPRESSION: &[(&str, &str)] = &[
+    ("", "Default"),
+    ("no", "Disabled"),
+    ("asym", "Asymmetric"),
+    ("yes", "Enabled"),
+];
+
+const REMOTE_CERT_TLS: &[(&str, &str)] = &[
+    ("", "Not enforced"),
+    ("client", "Server must present a client certificate"),
+    ("server", "Server must present a server certificate"),
+];
+
+const NS_CERT_TYPE: &[(&str, &str)] = &[
+    ("", "Not enforced"),
+    ("client", "client"),
+    ("server", "server"),
+];
+
+const TLS_VERSIONS: &[(&str, &str)] = &[
+    ("", "Default"),
+    ("1.0", "TLS 1.0"),
+    ("1.1", "TLS 1.1"),
+    ("1.2", "TLS 1.2"),
+    ("1.3", "TLS 1.3"),
+];
+
+const PROXY_TYPES: &[(&str, &str)] = &[("", "None"), ("http", "HTTP"), ("socks", "SOCKS")];
+
+const COMP_LZO: &[(&str, &str)] = &[
+    ("", "Off"),
+    ("yes", "Enabled"),
+    ("no", "Disabled"),
+    ("adaptive", "Adaptive"),
+];
+
+const DEV_TYPES: &[(&str, &str)] = &[("", "Auto"), ("tun", "tun"), ("tap", "tap")];
+
+// ---------------------------------------------------------------------------
+// Translation helper.  Initialises gettext on first call, then
+// dispatches every subsequent lookup straight through.  Strings fall
+// back to English when no .mo catalog is installed.
+// ---------------------------------------------------------------------------
+
+fn tr(s: &str) -> String {
+    gettext(s)
+}
+
+fn gettext_init_once() {
+    static ONCE: OnceLock<()> = OnceLock::new();
+    ONCE.get_or_init(|| {
+        // setlocale honours LANG / LC_ALL from the desktop environment.
+        // bindtextdomain points at a canonical install location; absent
+        // catalogs are silently fine.
+        gettextrs::setlocale(gettextrs::LocaleCategory::LcAll, "");
+        let _ = gettextrs::bindtextdomain("nm-openvpn3", "/usr/share/locale");
+        let _ = gettextrs::textdomain("nm-openvpn3");
+    });
+}
+
+// ---------------------------------------------------------------------------
+// GObject layout.
+// ---------------------------------------------------------------------------
+
+#[repr(C)]
+struct Openvpn3Editor {
+    parent: GObject,
+    state: *mut EditorState,
+}
+
+#[repr(C)]
+struct Openvpn3EditorClass {
+    parent_class: gobject_sys::GObjectClass,
+}
+
+/// Wraps an `AdwComboRow` together with the option-id vector backing
+/// its `StringList` model.  `selected_id` translates the row's u32
+/// `selected` index back into the NM key the row's been bound to.
+struct ComboBinding {
+    row: ComboRow,
+    ids: Vec<String>,
+}
+
+impl ComboBinding {
+    fn selected_id(&self) -> &str {
+        let idx = self.row.selected() as usize;
+        self.ids.get(idx).map(String::as_str).unwrap_or("")
+    }
+}
+
+struct EditorState {
+    page: PreferencesPage,
+
+    // General
+    contype: ComboBinding,
+    remote: EntryRow,
+    port: SpinRow,
+    ca: EntryRow,
+    cert: EntryRow,
+    key: EntryRow,
+    cert_pass: PasswordEntryRow,
+    username: EntryRow,
+    password: PasswordEntryRow,
+    profile_path: EntryRow,
+    static_key: EntryRow,
+    static_key_dir: SpinRow,
+
+    // Device + Connection (was "Routing")
+    dev: EntryRow,
+    dev_type: ComboBinding,
+    proto_tcp: SwitchRow,
+    tun_mtu: SpinRow,
+    mssfix: EntryRow,
+    fragment: SpinRow,
+    keepalive_ping: SpinRow,
+    keepalive_restart: SpinRow,
+    reneg_seconds: SpinRow,
+    connect_timeout: SpinRow,
+
+    // Compression
+    allow_compression: ComboBinding,
+    comp_lzo: ComboBinding,
+    compress: EntryRow,
+
+    // Security
+    cipher: EntryRow,
+    data_ciphers: EntryRow,
+    data_ciphers_fallback: EntryRow,
+    tls_cipher: EntryRow,
+    auth: EntryRow,
+    keysize: SpinRow,
+
+    // TLS
+    tls_version_min: ComboBinding,
+    tls_version_min_or_highest: SwitchRow,
+    tls_version_max: ComboBinding,
+    verify_x509_name: EntryRow,
+    remote_cert_tls: ComboBinding,
+    ns_cert_type: ComboBinding,
+    ta: EntryRow,
+    ta_dir: SpinRow,
+    tls_crypt: EntryRow,
+    tls_crypt_v2: EntryRow,
+
+    // Proxy
+    proxy_type: ComboBinding,
+    proxy_server: EntryRow,
+    proxy_port: SpinRow,
+    proxy_user: EntryRow,
+
+    // Misc / Overrides
+    or_route_nopull: SwitchRow,
+    or_force_default_gateway: SwitchRow,
+    or_block_ipv6: SwitchRow,
+    or_dns_setup_disabled: SwitchRow,
+    or_dco: SwitchRow,
+    or_log_level: SpinRow,
+
+    initial_data: RefCell<std::collections::BTreeMap<String, String>>,
+
+    /// Lifetime gate for the closures that fire `NMVpnEditor::changed`.
+    /// Flipped to `false` at the top of `instance_finalize` so any
+    /// signal handler still on the GLib main loop at that point bails
+    /// before dereferencing the stale GObject pointer.  In practice
+    /// GTK signal emission is synchronous + main-loop-bound and
+    /// widget destruction disconnects handlers, so this flag is
+    /// belt-and-braces defence against a regression in the
+    /// destruction order.
+    alive: Arc<AtomicBool>,
+}
+
+static EDITOR_TYPE: OnceLock<glib_sys::GType> = OnceLock::new();
+
+unsafe extern "C" fn class_init(class_ptr: gpointer, _class_data: gpointer) {
+    let object_class = class_ptr.cast::<gobject_sys::GObjectClass>();
+    (*object_class).finalize = Some(instance_finalize);
+}
+
+unsafe extern "C" fn instance_init(instance: *mut GTypeInstance, _class: gpointer) {
+    let inst = instance.cast::<Openvpn3Editor>();
+    (*inst).state = ptr::null_mut();
+}
+
+unsafe extern "C" fn instance_finalize(object: *mut GObject) {
+    if object.is_null() {
+        // GObject contract says this never happens, but bailing is
+        // cheap and beats segfaulting on a future libnm regression.
+        return;
+    }
+    let inst = object.cast::<Openvpn3Editor>();
+    if !(*inst).state.is_null() {
+        // Flip the closure lifetime gate FIRST so any signal handler
+        // still scheduled on the main loop sees the editor is going
+        // away and skips the emit.  Only then drop the boxed state
+        // (which drops the widgets, which disconnect the handlers).
+        (*(*inst).state).alive.store(false, Ordering::Release);
+        drop(Box::from_raw((*inst).state));
+        (*inst).state = ptr::null_mut();
+    }
+    let object_class = gobject_sys::g_type_class_peek_parent(
+        gobject_sys::g_type_class_peek(editor_get_type()).cast(),
+    )
+    .cast::<gobject_sys::GObjectClass>();
+    if let Some(parent_finalize) = (*object_class).finalize {
+        parent_finalize(object);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// NMVpnEditor interface impl.
+// ---------------------------------------------------------------------------
+
+unsafe extern "C" fn iface_get_widget(
+    editor: *mut nm_vpn_plugin_openvpn3::libnm::NMVpnEditor,
+) -> *mut GObject {
+    let inst = editor.cast::<Openvpn3Editor>();
+    let state = (*inst).state;
+    if state.is_null() {
+        return ptr::null_mut();
+    }
+    let glib_obj = (*state).page.upcast_ref::<glib::Object>();
+    glib_obj.as_ptr().cast::<GObject>()
+}
+
+unsafe extern "C" fn iface_update_connection(
+    editor: *mut nm_vpn_plugin_openvpn3::libnm::NMVpnEditor,
+    connection: *mut NMConnection,
+    _error: *mut *mut GError,
+) -> gboolean {
+    let inst = editor.cast::<Openvpn3Editor>();
+    let state = (*inst).state;
+    if state.is_null() || connection.is_null() {
+        return GFALSE;
+    }
+    let s_vpn = nm_connection_get_setting_vpn(connection);
+    if s_vpn.is_null() {
+        return GFALSE;
+    }
+
+    let st = &*state;
+    let set = |key: &str, value: &str| {
+        if value.is_empty() {
+            return;
+        }
+        let k = CString::new(key).unwrap();
+        let v = CString::new(value).unwrap_or_default();
+        nm_setting_vpn_add_data_item(s_vpn, k.as_ptr(), v.as_ptr());
+    };
+
+    // Snapshot replay — anything outside our widget vocabulary stays.
+    for (k, v) in st.initial_data.borrow().iter() {
+        set(k, v);
+    }
+
+    let ct = st.contype.selected_id();
+    let tls_like = matches!(ct, "tls" | "password" | "password-tls");
+    let needs_user_cert = matches!(ct, "tls" | "password-tls");
+    let needs_password = matches!(ct, "password" | "password-tls");
+    let is_static_key = ct == "static-key";
+
+    set("connection-type", ct);
+    set("remote", st.remote.text().as_ref());
+    let port_val = st.port.value() as i64;
+    if port_val > 0 {
+        set("port", &port_val.to_string());
+    }
+    if tls_like {
+        set("ca", st.ca.text().as_ref());
+    }
+    if needs_user_cert {
+        set("cert", st.cert.text().as_ref());
+        set("key", st.key.text().as_ref());
+        let cert_pass: glib::GString = st.cert_pass.text();
+        let cp: &str = cert_pass.as_ref();
+        if !cp.is_empty() {
+            let k = CString::new("cert-pass").unwrap();
+            let v = CString::new(cp).unwrap_or_default();
+            nm_vpn_plugin_openvpn3::libnm::nm_setting_vpn_add_secret(s_vpn, k.as_ptr(), v.as_ptr());
+        }
+    }
+    if needs_password {
+        set("username", st.username.text().as_ref());
+        let pw: glib::GString = st.password.text();
+        let p: &str = pw.as_ref();
+        if !p.is_empty() {
+            let k = CString::new("password").unwrap();
+            let v = CString::new(p).unwrap_or_default();
+            nm_vpn_plugin_openvpn3::libnm::nm_setting_vpn_add_secret(s_vpn, k.as_ptr(), v.as_ptr());
+        }
+    }
+    if is_static_key {
+        set("static-key", st.static_key.text().as_ref());
+        let sk_dir = st.static_key_dir.value() as i64;
+        if sk_dir > 0 {
+            set("static-key-direction", &(sk_dir - 1).to_string());
+        }
+    }
+    set("nm-openvpn3-profile", st.profile_path.text().as_ref());
+
+    // Device + Connection
+    set("dev", st.dev.text().as_ref());
+    let dev_type_id = st.dev_type.selected_id();
+    if !dev_type_id.is_empty() {
+        set("dev-type", dev_type_id);
+    }
+    set(
+        "proto-tcp",
+        if st.proto_tcp.is_active() { "yes" } else { "" },
+    );
+    let mtu = st.tun_mtu.value() as i64;
+    if mtu > 0 {
+        set("tunnel-mtu", &mtu.to_string());
+    }
+    set("mssfix", st.mssfix.text().as_ref());
+    let frag = st.fragment.value() as i64;
+    if frag > 0 {
+        set("fragment-size", &frag.to_string());
+    }
+    let ping = st.keepalive_ping.value() as i64;
+    if ping > 0 {
+        set("ping", &ping.to_string());
+    }
+    let prestart = st.keepalive_restart.value() as i64;
+    if prestart > 0 {
+        set("ping-restart", &prestart.to_string());
+    }
+    let reneg = st.reneg_seconds.value() as i64;
+    if reneg > 0 {
+        set("reneg-seconds", &reneg.to_string());
+    }
+    let ct_timeout = st.connect_timeout.value() as i64;
+    if ct_timeout > 0 {
+        set("connect-timeout", &ct_timeout.to_string());
+    }
+
+    // Compression
+    let ac = st.allow_compression.selected_id();
+    if !ac.is_empty() {
+        set("allow-compression", ac);
+    }
+    let lzo = st.comp_lzo.selected_id();
+    if !lzo.is_empty() {
+        set("comp-lzo", lzo);
+    }
+    set("compress", st.compress.text().as_ref());
+
+    // Security
+    set("cipher", st.cipher.text().as_ref());
+    set("data-ciphers", st.data_ciphers.text().as_ref());
+    set(
+        "data-ciphers-fallback",
+        st.data_ciphers_fallback.text().as_ref(),
+    );
+    set("tls-cipher", st.tls_cipher.text().as_ref());
+    set("auth", st.auth.text().as_ref());
+    let ks = st.keysize.value() as i64;
+    if ks > 0 {
+        set("keysize", &ks.to_string());
+    }
+
+    // TLS
+    let tv_min = st.tls_version_min.selected_id();
+    if !tv_min.is_empty() {
+        set("tls-version-min", tv_min);
+    }
+    set(
+        "tls-version-min-or-highest",
+        if st.tls_version_min_or_highest.is_active() {
+            "yes"
+        } else {
+            ""
+        },
+    );
+    let tv_max = st.tls_version_max.selected_id();
+    if !tv_max.is_empty() {
+        set("tls-version-max", tv_max);
+    }
+    set("verify-x509-name", st.verify_x509_name.text().as_ref());
+    let rct = st.remote_cert_tls.selected_id();
+    if !rct.is_empty() {
+        set("remote-cert-tls", rct);
+    }
+    let ns = st.ns_cert_type.selected_id();
+    if !ns.is_empty() {
+        set("ns-cert-type", ns);
+    }
+    set("ta", st.ta.text().as_ref());
+    let td_idx = st.ta_dir.value() as i64;
+    if td_idx > 0 {
+        set("ta-dir", &(td_idx - 1).to_string());
+    }
+    set("tls-crypt", st.tls_crypt.text().as_ref());
+    set("tls-crypt-v2", st.tls_crypt_v2.text().as_ref());
+
+    // Proxy
+    let pt = st.proxy_type.selected_id();
+    if !pt.is_empty() {
+        set("proxy-type", pt);
+    }
+    set("proxy-server", st.proxy_server.text().as_ref());
+    let pp = st.proxy_port.value() as i64;
+    if pp > 0 {
+        set("proxy-port", &pp.to_string());
+    }
+    set("http-proxy-username", st.proxy_user.text().as_ref());
+
+    // Misc
+    set(
+        "override-route-nopull",
+        if st.or_route_nopull.is_active() {
+            "yes"
+        } else {
+            ""
+        },
+    );
+    set(
+        "override-force-default-gateway",
+        if st.or_force_default_gateway.is_active() {
+            "yes"
+        } else {
+            ""
+        },
+    );
+    set(
+        "override-block-ipv6",
+        if st.or_block_ipv6.is_active() {
+            "yes"
+        } else {
+            ""
+        },
+    );
+    set(
+        "override-dns-setup-disabled",
+        if st.or_dns_setup_disabled.is_active() {
+            "yes"
+        } else {
+            ""
+        },
+    );
+    set(
+        "override-dco",
+        if st.or_dco.is_active() { "yes" } else { "" },
+    );
+    let log_level = st.or_log_level.value() as i64;
+    if log_level > 0 {
+        set("override-log-level", &log_level.to_string());
+    }
+
+    GTRUE
+}
+
+unsafe extern "C" fn iface_init(iface_data: gpointer, _user_data: gpointer) {
+    let iface = iface_data.cast::<NMVpnEditorInterface>();
+    (*iface).get_widget = Some(iface_get_widget);
+    (*iface).update_connection = Some(iface_update_connection);
+    (*iface).changed = None;
+    (*iface).placeholder = None;
+}
+
+pub fn editor_get_type() -> glib_sys::GType {
+    *EDITOR_TYPE.get_or_init(|| unsafe {
+        let type_name = c"NMOpenvpn3Editor";
+        let g_type = g_type_register_static_simple(
+            G_TYPE_OBJECT,
+            type_name.as_ptr().cast(),
+            std::mem::size_of::<Openvpn3EditorClass>() as u32,
+            Some(class_init),
+            std::mem::size_of::<Openvpn3Editor>() as u32,
+            Some(instance_init),
+            G_TYPE_FLAG_NONE,
+        );
+        let iface_info = GInterfaceInfo {
+            interface_init: Some(iface_init),
+            interface_finalize: None,
+            interface_data: ptr::null_mut(),
+        };
+        g_type_add_interface_static(g_type, nm_vpn_editor_get_type(), &iface_info as *const _);
+        g_type
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Row construction helpers — every one returns a fully styled libadwaita
+// row that drops cleanly into a PreferencesGroup.
+// ---------------------------------------------------------------------------
+
+fn combo_row(
+    title: &str,
+    subtitle: Option<&str>,
+    choices: &[(&str, &str)],
+    initial: Option<&str>,
+) -> ComboBinding {
+    let row = ComboRow::new();
+    row.set_title(&tr(title));
+    if let Some(s) = subtitle {
+        row.set_subtitle(&tr(s));
+    }
+    let labels: Vec<String> = choices.iter().map(|(_, l)| tr(l)).collect();
+    let label_refs: Vec<&str> = labels.iter().map(String::as_str).collect();
+    let model = StringList::new(&label_refs);
+    let mut ids = Vec::with_capacity(choices.len());
+    let mut selected = 0u32;
+    for (i, (id, _)) in choices.iter().enumerate() {
+        ids.push((*id).to_string());
+        if initial == Some(*id) {
+            selected = i as u32;
+        }
+    }
+    row.set_model(Some(&model));
+    row.set_selected(selected);
+    ComboBinding { row, ids }
+}
+
+fn spin_row(title: &str, subtitle: Option<&str>, min: f64, max: f64, value: f64) -> SpinRow {
+    let row = SpinRow::with_range(min, max, 1.0);
+    row.set_title(&tr(title));
+    if let Some(s) = subtitle {
+        row.set_subtitle(&tr(s));
+    }
+    row.set_value(value);
+    row
+}
+
+fn switch_row(title: &str, subtitle: Option<&str>, initial: bool) -> SwitchRow {
+    let row = SwitchRow::new();
+    row.set_title(&tr(title));
+    if let Some(s) = subtitle {
+        row.set_subtitle(&tr(s));
+    }
+    row.set_active(initial);
+    row
+}
+
+fn entry_row(title: &str, tooltip: Option<&str>, initial: &str) -> EntryRow {
+    let r = EntryRow::new();
+    r.set_title(&tr(title));
+    r.set_text(initial);
+    if let Some(t) = tooltip {
+        r.set_tooltip_text(Some(&tr(t)));
+    }
+    r
+}
+
+/// Build an `AdwEntryRow` with a `document-open-symbolic` suffix
+/// button.  Clicking the button opens a `GtkFileDialog` rooted at the
+/// row's nearest window ancestor; selection writes the absolute path
+/// back into the entry.
+fn path_picker_row(title: &str, tooltip: Option<&str>, initial: &str) -> EntryRow {
+    let row = entry_row(title, tooltip, initial);
+    let button = gtk4::Button::from_icon_name("document-open-symbolic");
+    button.set_valign(gtk4::Align::Center);
+    button.add_css_class("flat");
+    button.set_tooltip_text(Some(&tr("Browse for file…")));
+    let row_weak = row.downgrade();
+    button.connect_clicked(move |btn| {
+        let Some(row) = row_weak.upgrade() else {
+            return;
+        };
+        let dialog = gtk4::FileDialog::new();
+        dialog.set_title(&tr("Select file"));
+        let parent_window = btn.root().and_then(|r| r.downcast::<gtk4::Window>().ok());
+        let row_weak2 = row.downgrade();
+        dialog.open(
+            parent_window.as_ref(),
+            None::<&gio::Cancellable>,
+            move |result| {
+                if let Ok(file) = result {
+                    if let Some(path) = file.path() {
+                        if let Some(s) = path.to_str() {
+                            if let Some(row) = row_weak2.upgrade() {
+                                row.set_text(s);
+                            }
+                        }
+                    }
+                }
+            },
+        );
+    });
+    row.add_suffix(&button);
+    row
+}
+
+fn password_row(title: &str) -> PasswordEntryRow {
+    let r = PasswordEntryRow::new();
+    r.set_title(&tr(title));
+    r
+}
+
+fn parse_int_default(s: Option<&String>, default: f64) -> f64 {
+    s.and_then(|v| v.parse::<f64>().ok()).unwrap_or(default)
+}
+
+// ---------------------------------------------------------------------------
+// Widget tree construction.
+// ---------------------------------------------------------------------------
+
+fn build_widget_tree(initial: &std::collections::BTreeMap<String, String>) -> EditorState {
+    let page = PreferencesPage::new();
+    page.set_title(&tr("OpenVPN 3"));
+    page.set_description(&tr("Edit the OpenVPN 3 VPN connection settings."));
+
+    // ---- General ----
+    let g_general = PreferencesGroup::new();
+    g_general.set_title(&tr("General"));
+
+    let initial_ct = initial
+        .get("connection-type")
+        .map(String::as_str)
+        .unwrap_or(CONTYPE_TLS);
+    let contype = combo_row(
+        "Connection type",
+        Some("Selects which credentials the server expects."),
+        CONTYPES,
+        Some(initial_ct),
+    );
+    g_general.add(&contype.row);
+
+    let remote = entry_row(
+        "Gateway",
+        Some("Server hostname or IP. Comma-separated entries fail over in order."),
+        initial.get("remote").map(String::as_str).unwrap_or(""),
+    );
+    g_general.add(&remote);
+
+    let port = spin_row(
+        "Port",
+        Some("0 leaves the value at openvpn's default (1194)."),
+        0.0,
+        65535.0,
+        parse_int_default(initial.get("port"), 0.0),
+    );
+    g_general.add(&port);
+
+    let ca = path_picker_row(
+        "CA certificate",
+        Some("PEM-encoded certificate authority that signs the server."),
+        initial.get("ca").map(String::as_str).unwrap_or(""),
+    );
+    g_general.add(&ca);
+
+    let cert = path_picker_row(
+        "User certificate",
+        Some("PEM-encoded client certificate."),
+        initial.get("cert").map(String::as_str).unwrap_or(""),
+    );
+    g_general.add(&cert);
+
+    let key = path_picker_row(
+        "Private key",
+        Some("PEM or PKCS#12 file matching the user certificate."),
+        initial.get("key").map(String::as_str).unwrap_or(""),
+    );
+    g_general.add(&key);
+
+    let cert_pass = password_row("Private key passphrase");
+    g_general.add(&cert_pass);
+
+    let username = entry_row(
+        "Username",
+        None,
+        initial.get("username").map(String::as_str).unwrap_or(""),
+    );
+    g_general.add(&username);
+
+    let password = password_row("Password");
+    g_general.add(&password);
+
+    let static_key = path_picker_row(
+        "Static key file",
+        Some("Pre-shared key. Only used when Connection type is Static key."),
+        initial.get("static-key").map(String::as_str).unwrap_or(""),
+    );
+    g_general.add(&static_key);
+
+    let sk_dir_initial = initial
+        .get("static-key-direction")
+        .and_then(|s| s.parse::<f64>().ok())
+        .map(|v| v + 1.0)
+        .unwrap_or(0.0);
+    let static_key_dir = spin_row(
+        "Static key direction",
+        Some("0 = none, 1 = 0, 2 = 1."),
+        0.0,
+        2.0,
+        sk_dir_initial,
+    );
+    g_general.add(&static_key_dir);
+
+    let profile_path = path_picker_row(
+        "Inline .ovpn profile",
+        Some("Optional path to a verbatim .ovpn file. When set, the file is fed straight to openvpn3 and the rest of these fields are ignored."),
+        initial
+            .get("nm-openvpn3-profile")
+            .map(String::as_str)
+            .unwrap_or(""),
+    );
+    g_general.add(&profile_path);
+    page.add(&g_general);
+
+    // Everything past General lives under collapsible AdwExpanderRows
+    // inside a single "Advanced" group.  HIG: don't nest tabs inside
+    // tabs (cc-network-panel already wraps us); use ExpanderRow to
+    // keep the page short on first open and expand on demand.
+    let g_advanced = PreferencesGroup::new();
+    g_advanced.set_title(&tr("Advanced"));
+    g_advanced.set_description(Some(&tr(
+        "Sections below collapse — open the ones you need. Empty fields keep openvpn3's defaults.",
+    )));
+
+    // ---- Device ----
+    let exp_device = ExpanderRow::new();
+    exp_device.set_title(&tr("Device"));
+    exp_device.set_subtitle(&tr("Tun / tap interface, MTU, fragmentation."));
+    let dev = entry_row(
+        "Custom device name",
+        Some("Leave empty for openvpn3's default (tun0, tun1, …)."),
+        initial.get("dev").map(String::as_str).unwrap_or(""),
+    );
+    exp_device.add_row(&dev);
+    let dev_type = combo_row(
+        "Device type",
+        Some("tun (layer 3, default) or tap (layer 2 bridge)."),
+        DEV_TYPES,
+        initial.get("dev-type").map(String::as_str),
+    );
+    exp_device.add_row(&dev_type.row);
+    let tun_mtu = spin_row(
+        "Tunnel MTU",
+        Some("0 leaves openvpn3 to negotiate."),
+        0.0,
+        65535.0,
+        parse_int_default(initial.get("tunnel-mtu"), 0.0),
+    );
+    exp_device.add_row(&tun_mtu);
+    let fragment = spin_row(
+        "Fragment size",
+        Some("0 disables fragmentation. Set when the path MTU is unstable."),
+        0.0,
+        65535.0,
+        parse_int_default(initial.get("fragment-size"), 0.0),
+    );
+    exp_device.add_row(&fragment);
+    let mssfix = entry_row(
+        "MSSfix",
+        Some("`yes` to enable, a byte count to set the value, empty to disable."),
+        initial.get("mssfix").map(String::as_str).unwrap_or(""),
+    );
+    exp_device.add_row(&mssfix);
+    g_advanced.add(&exp_device);
+
+    // ---- Connection / timing ----
+    let exp_conn = ExpanderRow::new();
+    exp_conn.set_title(&tr("Connection"));
+    exp_conn.set_subtitle(&tr("Protocol, keepalive, timeouts."));
+    let proto_tcp = switch_row(
+        "Use TCP",
+        Some("Off uses UDP (recommended). Enable only when UDP is blocked."),
+        initial.get("proto-tcp").map(String::as_str) == Some("yes"),
+    );
+    exp_conn.add_row(&proto_tcp);
+    let keepalive_ping = spin_row(
+        "Ping interval",
+        Some("Seconds between keepalive probes. 0 disables."),
+        0.0,
+        3600.0,
+        parse_int_default(initial.get("ping"), 0.0),
+    );
+    exp_conn.add_row(&keepalive_ping);
+    let keepalive_restart = spin_row(
+        "Restart after",
+        Some("Seconds without traffic before openvpn3 restarts the session."),
+        0.0,
+        3600.0,
+        parse_int_default(initial.get("ping-restart"), 0.0),
+    );
+    exp_conn.add_row(&keepalive_restart);
+    let reneg_seconds = spin_row(
+        "Renegotiate after",
+        Some("Re-key seconds. 0 leaves the default (3600)."),
+        0.0,
+        86400.0,
+        parse_int_default(initial.get("reneg-seconds"), 0.0),
+    );
+    exp_conn.add_row(&reneg_seconds);
+    let connect_timeout = spin_row(
+        "Connect timeout",
+        Some("Seconds to wait for the initial connection. 0 keeps the default."),
+        0.0,
+        3600.0,
+        parse_int_default(initial.get("connect-timeout"), 0.0),
+    );
+    exp_conn.add_row(&connect_timeout);
+    g_advanced.add(&exp_conn);
+
+    // ---- Compression ----
+    let exp_comp = ExpanderRow::new();
+    exp_comp.set_title(&tr("Compression"));
+    exp_comp.set_subtitle(&tr(
+        "Disable unless your server enforces it (modern default).",
+    ));
+    let allow_compression = combo_row(
+        "Allow compression",
+        Some("Master switch — disabling overrides the two options below."),
+        ALLOW_COMPRESSION,
+        initial.get("allow-compression").map(String::as_str),
+    );
+    exp_comp.add_row(&allow_compression.row);
+    let comp_lzo = combo_row(
+        "LZO compression (legacy)",
+        Some("Off is the modern default."),
+        COMP_LZO,
+        initial.get("comp-lzo").map(String::as_str),
+    );
+    exp_comp.add_row(&comp_lzo.row);
+    let compress = entry_row(
+        "Compression algorithm",
+        Some("`yes`, `lz4`, `lz4-v2`, or empty."),
+        initial.get("compress").map(String::as_str).unwrap_or(""),
+    );
+    exp_comp.add_row(&compress);
+    g_advanced.add(&exp_comp);
+
+    // ---- Security ----
+    let exp_sec = ExpanderRow::new();
+    exp_sec.set_title(&tr("Security"));
+    exp_sec.set_subtitle(&tr("Ciphers and HMAC algorithms."));
+    let cipher = entry_row(
+        "Legacy cipher",
+        Some("Used with older servers. Modern setups use data-ciphers."),
+        initial.get("cipher").map(String::as_str).unwrap_or(""),
+    );
+    exp_sec.add_row(&cipher);
+    let data_ciphers = entry_row(
+        "Data ciphers",
+        Some("Colon-separated list, highest preference first."),
+        initial
+            .get("data-ciphers")
+            .map(String::as_str)
+            .unwrap_or(""),
+    );
+    exp_sec.add_row(&data_ciphers);
+    let data_ciphers_fallback = entry_row(
+        "Data ciphers fallback",
+        Some("Cipher to use when negotiation fails."),
+        initial
+            .get("data-ciphers-fallback")
+            .map(String::as_str)
+            .unwrap_or(""),
+    );
+    exp_sec.add_row(&data_ciphers_fallback);
+    let tls_cipher = entry_row(
+        "TLS cipher",
+        Some("OpenSSL cipher string for the control channel."),
+        initial.get("tls-cipher").map(String::as_str).unwrap_or(""),
+    );
+    exp_sec.add_row(&tls_cipher);
+    let auth = entry_row(
+        "HMAC authentication",
+        Some("Algorithm for the packet HMAC (`SHA1`, `SHA256`, …)."),
+        initial.get("auth").map(String::as_str).unwrap_or(""),
+    );
+    exp_sec.add_row(&auth);
+    let keysize = spin_row(
+        "Key size",
+        Some("0 leaves the cipher's native key size."),
+        0.0,
+        65535.0,
+        parse_int_default(initial.get("keysize"), 0.0),
+    );
+    exp_sec.add_row(&keysize);
+    g_advanced.add(&exp_sec);
+
+    // ---- TLS ----
+    let exp_tls = ExpanderRow::new();
+    exp_tls.set_title(&tr("TLS"));
+    exp_tls.set_subtitle(&tr(
+        "TLS versions, peer verification, control-channel keys.",
+    ));
+    let tls_version_min = combo_row(
+        "Minimum TLS version",
+        None,
+        TLS_VERSIONS,
+        initial.get("tls-version-min").map(String::as_str),
+    );
+    exp_tls.add_row(&tls_version_min.row);
+    let tls_version_min_or_highest = switch_row(
+        "Use highest available if unsupported",
+        Some("Fall back to the highest TLS version the peer supports rather than refusing the connection."),
+        initial
+            .get("tls-version-min-or-highest")
+            .map(String::as_str)
+            == Some("yes"),
+    );
+    exp_tls.add_row(&tls_version_min_or_highest);
+    let tls_version_max = combo_row(
+        "Maximum TLS version",
+        None,
+        TLS_VERSIONS,
+        initial.get("tls-version-max").map(String::as_str),
+    );
+    exp_tls.add_row(&tls_version_max.row);
+    let verify_x509_name = entry_row(
+        "verify-x509-name",
+        Some("Optional `type:name` prefix (e.g. `name-prefix:server`)."),
+        initial
+            .get("verify-x509-name")
+            .map(String::as_str)
+            .unwrap_or(""),
+    );
+    exp_tls.add_row(&verify_x509_name);
+    let remote_cert_tls = combo_row(
+        "Require remote certificate type",
+        None,
+        REMOTE_CERT_TLS,
+        initial.get("remote-cert-tls").map(String::as_str),
+    );
+    exp_tls.add_row(&remote_cert_tls.row);
+    let ns_cert_type = combo_row(
+        "Legacy ns-cert-type",
+        Some("Pre-X509 v3 server check. Leave at Not enforced unless your server requires it."),
+        NS_CERT_TYPE,
+        initial.get("ns-cert-type").map(String::as_str),
+    );
+    exp_tls.add_row(&ns_cert_type.row);
+    let ta = path_picker_row(
+        "tls-auth key",
+        Some("HMAC key for the control channel."),
+        initial.get("ta").map(String::as_str).unwrap_or(""),
+    );
+    exp_tls.add_row(&ta);
+    let ta_dir_initial = initial
+        .get("ta-dir")
+        .and_then(|s| s.parse::<f64>().ok())
+        .map(|v| v + 1.0)
+        .unwrap_or(0.0);
+    let ta_dir = spin_row(
+        "tls-auth direction",
+        Some("0 = none, 1 = 0, 2 = 1. Match the server's `tls-auth … 0` or `… 1`."),
+        0.0,
+        2.0,
+        ta_dir_initial,
+    );
+    exp_tls.add_row(&ta_dir);
+    let tls_crypt = path_picker_row(
+        "tls-crypt key",
+        Some("Encrypted control channel key."),
+        initial.get("tls-crypt").map(String::as_str).unwrap_or(""),
+    );
+    exp_tls.add_row(&tls_crypt);
+    let tls_crypt_v2 = path_picker_row(
+        "tls-crypt-v2 key",
+        Some("Modern per-client control channel key."),
+        initial
+            .get("tls-crypt-v2")
+            .map(String::as_str)
+            .unwrap_or(""),
+    );
+    exp_tls.add_row(&tls_crypt_v2);
+    g_advanced.add(&exp_tls);
+
+    // ---- Proxy ----
+    let exp_proxy = ExpanderRow::new();
+    exp_proxy.set_title(&tr("Proxy"));
+    exp_proxy.set_subtitle(&tr("HTTP or SOCKS proxy in front of the VPN."));
+    let proxy_type = combo_row(
+        "Proxy type",
+        None,
+        PROXY_TYPES,
+        initial.get("proxy-type").map(String::as_str),
+    );
+    exp_proxy.add_row(&proxy_type.row);
+    let proxy_server = entry_row(
+        "Proxy server",
+        None,
+        initial
+            .get("proxy-server")
+            .map(String::as_str)
+            .unwrap_or(""),
+    );
+    exp_proxy.add_row(&proxy_server);
+    let proxy_port = spin_row(
+        "Proxy port",
+        Some("0 uses the type's default (HTTP 8080, SOCKS 1080)."),
+        0.0,
+        65535.0,
+        parse_int_default(initial.get("proxy-port"), 0.0),
+    );
+    exp_proxy.add_row(&proxy_port);
+    let proxy_user = entry_row(
+        "Proxy username",
+        None,
+        initial
+            .get("http-proxy-username")
+            .map(String::as_str)
+            .unwrap_or(""),
+    );
+    exp_proxy.add_row(&proxy_user);
+    g_advanced.add(&exp_proxy);
+
+    // ---- Misc / overrides ----
+    let exp_misc = ExpanderRow::new();
+    exp_misc.set_title(&tr("Misc"));
+    exp_misc.set_subtitle(&tr(
+        "Override flags forwarded to openvpn3's SetOverride API.",
+    ));
+    let or_route_nopull = switch_row(
+        "Don't pull routes from server",
+        Some("Useful when you only want the VPN for traffic you route yourself."),
+        initial.get("override-route-nopull").map(String::as_str) == Some("yes"),
+    );
+    exp_misc.add_row(&or_route_nopull);
+    let or_force_default_gateway = switch_row(
+        "Force default gateway",
+        Some("Forwards all traffic through the tunnel even if the server didn't push it."),
+        initial
+            .get("override-force-default-gateway")
+            .map(String::as_str)
+            == Some("yes"),
+    );
+    exp_misc.add_row(&or_force_default_gateway);
+    let or_block_ipv6 = switch_row(
+        "Block IPv6",
+        Some("Drop IPv6 traffic instead of leaking it outside the tunnel."),
+        initial.get("override-block-ipv6").map(String::as_str) == Some("yes"),
+    );
+    exp_misc.add_row(&or_block_ipv6);
+    let or_dns_setup_disabled = switch_row(
+        "Don't configure DNS",
+        Some("Leaves system resolvers alone — useful with systemd-resolved or a local resolver."),
+        initial
+            .get("override-dns-setup-disabled")
+            .map(String::as_str)
+            == Some("yes"),
+    );
+    exp_misc.add_row(&or_dns_setup_disabled);
+    let or_dco = switch_row(
+        "Data-channel offload (DCO)",
+        Some(
+            "Hands the data path to a kernel module on supported systems for big throughput gains.",
+        ),
+        initial.get("override-dco").map(String::as_str) == Some("yes"),
+    );
+    exp_misc.add_row(&or_dco);
+    let or_log_level = spin_row(
+        "Override log level",
+        Some("0 keeps the default. 1–6 raises openvpn3's verbosity."),
+        0.0,
+        6.0,
+        parse_int_default(initial.get("override-log-level"), 0.0),
+    );
+    exp_misc.add_row(&or_log_level);
+    g_advanced.add(&exp_misc);
+
+    page.add(&g_advanced);
+
+    let state = EditorState {
+        page,
+        contype,
+        remote,
+        port,
+        ca,
+        cert,
+        key,
+        cert_pass,
+        username,
+        password,
+        profile_path,
+        static_key,
+        static_key_dir,
+        dev,
+        dev_type,
+        proto_tcp,
+        tun_mtu,
+        mssfix,
+        fragment,
+        keepalive_ping,
+        keepalive_restart,
+        reneg_seconds,
+        connect_timeout,
+        allow_compression,
+        comp_lzo,
+        compress,
+        cipher,
+        data_ciphers,
+        data_ciphers_fallback,
+        tls_cipher,
+        auth,
+        keysize,
+        tls_version_min,
+        tls_version_min_or_highest,
+        tls_version_max,
+        verify_x509_name,
+        remote_cert_tls,
+        ns_cert_type,
+        ta,
+        ta_dir,
+        tls_crypt,
+        tls_crypt_v2,
+        proxy_type,
+        proxy_server,
+        proxy_port,
+        proxy_user,
+        or_route_nopull,
+        or_force_default_gateway,
+        or_block_ipv6,
+        or_dns_setup_disabled,
+        or_dco,
+        or_log_level,
+        initial_data: RefCell::new(initial.clone()),
+        alive: Arc::new(AtomicBool::new(true)),
+    };
+
+    apply_contype_visibility(&state, initial_ct);
+    wire_contype_visibility(&state);
+    state
+}
+
+/// Toggle visibility of credential/cert/static-key rows for a given
+/// connection-type.  Matches the C tree's per-type field gating.
+fn apply_contype_visibility(st: &EditorState, contype: &str) {
+    let tls_like = matches!(contype, "tls" | "password" | "password-tls");
+    let needs_user_cert = matches!(contype, "tls" | "password-tls");
+    let needs_password = matches!(contype, "password" | "password-tls");
+    let is_static_key = contype == "static-key";
+
+    st.ca.set_visible(tls_like);
+    st.cert.set_visible(needs_user_cert);
+    st.key.set_visible(needs_user_cert);
+    st.cert_pass.set_visible(needs_user_cert);
+    st.username.set_visible(needs_password);
+    st.password.set_visible(needs_password);
+    st.static_key.set_visible(is_static_key);
+    st.static_key_dir.set_visible(is_static_key);
+}
+
+/// Fire `NMVpnEditor::changed` on the editor GObject so libnma
+/// enables the dialog's Apply button.  Signal lives on the libnm
+/// interface, registered when our GType added it via
+/// g_type_add_interface_static.
+///
+/// The `alive` flag is the lifetime gate flipped in
+/// `instance_finalize`; checking it before dereferencing the
+/// GObject pointer keeps a regression in widget-destruction order
+/// from causing a use-after-free.
+fn emit_changed(editor_ptr: usize, alive: &AtomicBool) {
+    if editor_ptr == 0 || !alive.load(Ordering::Acquire) {
+        return;
+    }
+    unsafe {
+        nm_vpn_plugin_openvpn3::libnm::g_signal_emit_by_name(
+            editor_ptr as *mut std::ffi::c_void,
+            c"changed".as_ptr(),
+        );
+    }
+}
+
+/// Mark a path-picker `EntryRow` red when its current text is non-
+/// empty and the path does not resolve to a regular file.  Toggled
+/// on every `notify::text` so the indicator reflects live state.
+fn refresh_path_validity(entry: &EntryRow) {
+    let text = entry.text();
+    let path = text.as_str();
+    let ok = path.is_empty() || std::path::Path::new(path).is_file();
+    if ok {
+        entry.remove_css_class("error");
+    } else {
+        entry.add_css_class("error");
+    }
+}
+
+/// Bind path-existence validation + the editor's `changed` signal
+/// onto every path-picker entry.  Call once after building the
+/// widget tree.
+fn wire_path_validation(st: &EditorState, editor_ptr: usize) {
+    let pickers: &[&EntryRow] = &[
+        &st.ca,
+        &st.cert,
+        &st.key,
+        &st.profile_path,
+        &st.static_key,
+        &st.ta,
+        &st.tls_crypt,
+        &st.tls_crypt_v2,
+    ];
+    for p in pickers {
+        refresh_path_validity(p);
+        let weak: glib::WeakRef<EntryRow> = (*p).downgrade();
+        let alive = st.alive.clone();
+        (*p).connect_changed(move |_| {
+            if let Some(row) = weak.upgrade() {
+                refresh_path_validity(&row);
+            }
+            emit_changed(editor_ptr, &alive);
+        });
+    }
+}
+
+/// Hook every interactive widget's change signal so it fires the
+/// editor-level `changed` signal libnma listens for.  `editor_ptr`
+/// is a `usize`-erased *mut GObject (raw pointer is Copy + safely
+/// sharable with gtk4-rs's non-Send closures); the `alive` flag
+/// gates each fire against the editor still being live.
+fn wire_changed_signals(st: &EditorState, editor_ptr: usize) {
+    // ComboRow `notify::selected` fires on every drop-down pick.
+    let combos: &[&ComboRow] = &[
+        &st.contype.row,
+        &st.dev_type.row,
+        &st.allow_compression.row,
+        &st.comp_lzo.row,
+        &st.tls_version_min.row,
+        &st.tls_version_max.row,
+        &st.remote_cert_tls.row,
+        &st.ns_cert_type.row,
+        &st.proxy_type.row,
+    ];
+    for c in combos {
+        let alive = st.alive.clone();
+        (*c).connect_selected_item_notify(move |_| emit_changed(editor_ptr, &alive));
+    }
+
+    let entries: &[&EntryRow] = &[
+        &st.remote,
+        &st.username,
+        &st.dev,
+        &st.mssfix,
+        &st.compress,
+        &st.cipher,
+        &st.data_ciphers,
+        &st.data_ciphers_fallback,
+        &st.tls_cipher,
+        &st.auth,
+        &st.verify_x509_name,
+        &st.proxy_server,
+        &st.proxy_user,
+    ];
+    for e in entries {
+        let alive = st.alive.clone();
+        (*e).connect_changed(move |_| emit_changed(editor_ptr, &alive));
+    }
+
+    // Passwords are entries too, but the EntryRow path-validation
+    // helper already binds the path-picker entries; only the bare
+    // entries above are still missing.
+    let alive_cp = st.alive.clone();
+    st.cert_pass
+        .connect_changed(move |_| emit_changed(editor_ptr, &alive_cp));
+    let alive_pw = st.alive.clone();
+    st.password
+        .connect_changed(move |_| emit_changed(editor_ptr, &alive_pw));
+
+    let spins: &[&SpinRow] = &[
+        &st.port,
+        &st.static_key_dir,
+        &st.tun_mtu,
+        &st.fragment,
+        &st.keepalive_ping,
+        &st.keepalive_restart,
+        &st.reneg_seconds,
+        &st.connect_timeout,
+        &st.keysize,
+        &st.ta_dir,
+        &st.proxy_port,
+        &st.or_log_level,
+    ];
+    for s in spins {
+        let alive = st.alive.clone();
+        (*s).connect_value_notify(move |_| emit_changed(editor_ptr, &alive));
+    }
+
+    let switches: &[&SwitchRow] = &[
+        &st.proto_tcp,
+        &st.tls_version_min_or_highest,
+        &st.or_route_nopull,
+        &st.or_force_default_gateway,
+        &st.or_block_ipv6,
+        &st.or_dns_setup_disabled,
+        &st.or_dco,
+    ];
+    for sw in switches {
+        let alive = st.alive.clone();
+        (*sw).connect_active_notify(move |_| emit_changed(editor_ptr, &alive));
+    }
+}
+
+/// Wire the connection-type combo's `notify::selected` signal so the
+/// row visibility tracks live edits, not just the initial value.
+fn wire_contype_visibility(st: &EditorState) {
+    // Per-widget weak references captured into the closure.  GTK
+    // refcounts the widgets, so they live as long as their parent
+    // PreferencesGroup; once the editor dialog is destroyed each
+    // `upgrade()` here returns None and `set_visible` is skipped.
+    // The closure is owned by the combo row's signal handler — when
+    // the row dies, the closure dies, and the WeakRef payload with
+    // it.  No leak, no use-after-free.
+    struct WeakRows {
+        ca: glib::WeakRef<EntryRow>,
+        cert: glib::WeakRef<EntryRow>,
+        key: glib::WeakRef<EntryRow>,
+        cert_pass: glib::WeakRef<PasswordEntryRow>,
+        username: glib::WeakRef<EntryRow>,
+        password: glib::WeakRef<PasswordEntryRow>,
+        static_key: glib::WeakRef<EntryRow>,
+        static_key_dir: glib::WeakRef<SpinRow>,
+    }
+
+    let weak = Rc::new(WeakRows {
+        ca: st.ca.downgrade(),
+        cert: st.cert.downgrade(),
+        key: st.key.downgrade(),
+        cert_pass: st.cert_pass.downgrade(),
+        username: st.username.downgrade(),
+        password: st.password.downgrade(),
+        static_key: st.static_key.downgrade(),
+        static_key_dir: st.static_key_dir.downgrade(),
+    });
+    let ids = Rc::new(st.contype.ids.clone());
+
+    st.contype.row.connect_selected_item_notify(move |combo| {
+        let idx = combo.selected() as usize;
+        let contype = ids.get(idx).map(String::as_str).unwrap_or("");
+        let tls_like = matches!(contype, "tls" | "password" | "password-tls");
+        let needs_user_cert = matches!(contype, "tls" | "password-tls");
+        let needs_password = matches!(contype, "password" | "password-tls");
+        let is_static_key = contype == "static-key";
+
+        if let Some(w) = weak.ca.upgrade() {
+            w.set_visible(tls_like);
+        }
+        if let Some(w) = weak.cert.upgrade() {
+            w.set_visible(needs_user_cert);
+        }
+        if let Some(w) = weak.key.upgrade() {
+            w.set_visible(needs_user_cert);
+        }
+        if let Some(w) = weak.cert_pass.upgrade() {
+            w.set_visible(needs_user_cert);
+        }
+        if let Some(w) = weak.username.upgrade() {
+            w.set_visible(needs_password);
+        }
+        if let Some(w) = weak.password.upgrade() {
+            w.set_visible(needs_password);
+        }
+        if let Some(w) = weak.static_key.upgrade() {
+            w.set_visible(is_static_key);
+        }
+        if let Some(w) = weak.static_key_dir.upgrade() {
+            w.set_visible(is_static_key);
+        }
+    });
+}
+
+/// Construct a fresh editor wrapping `connection`'s state.
+pub unsafe fn new_editor(connection: *mut NMConnection, error: *mut *mut GError) -> *mut GObject {
+    // gtk4-rs / libadwaita-rs each track an INITIALIZED atomic per
+    // Rust crate instance; when NM dlopens us from a C host the host's
+    // C-level init has not touched our Rust state.  Idempotent on the
+    // C side, so calling here is cheap.
+    if !gtk4::is_initialized() {
+        if let Err(e) = gtk4::init() {
+            set_error(
+                error,
+                NM_OPENVPN3_PLUGIN_ERROR_FAILED,
+                &format!("gtk4::init failed: {e}"),
+            );
+            return ptr::null_mut();
+        }
+    }
+    let _ = libadwaita::init();
+    gettext_init_once();
+
+    let data = connection_to_nm_data(connection);
+
+    let g_type = editor_get_type();
+    let obj = g_object_new(g_type, ptr::null());
+    if obj.is_null() {
+        set_error(
+            error,
+            NM_OPENVPN3_PLUGIN_ERROR_FAILED,
+            "g_object_new(NMOpenvpn3Editor) returned NULL",
+        );
+        return ptr::null_mut();
+    }
+
+    let state = Box::into_raw(Box::new(build_widget_tree(&data)));
+    let inst = obj.cast::<Openvpn3Editor>();
+    (*inst).state = state;
+
+    // Wire signal handlers AFTER the EditorState is stashed.  Each
+    // closure captures the editor GObject pointer as `usize` so it
+    // is cheap to copy and safely shareable with non-Send signal
+    // dispatch in gtk-rs.
+    let editor_ptr = obj as usize;
+    let st = &*state;
+    wire_changed_signals(st, editor_ptr);
+    wire_path_validation(st, editor_ptr);
+
+    obj
+}
+
+// Silence the warning for unused imports brought in for traits.
+const _: fn() = || {
+    let _ = Path::new("");
+};

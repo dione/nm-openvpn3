@@ -5,23 +5,11 @@ program=@LIBEXECDIR@/nm-openvpn3-service
 supports-multiple-connections=true
 supports-safe-private-file-access=true
 
-# [libnm] / [GNOME].properties intentionally left out.
-#
-# The pre-Rust C tree shipped `libnm-vpn-plugin-openvpn3.so` (libnm
-# discovery stub) and `libnm-vpn-plugin-openvpn3-editor.so` (GTK
-# editor).  This Rust branch does not yet provide a libnm-vpn-plugin
-# cdylib equivalent, so the editor wiring is left out — pointing
-# this .name at the C tree's .so files would make
-# gnome-control-center (and nm-applet's editor) log "invalid service
-# name" on every refresh.  Until the Rust port grows its own
-# editor/properties cdylib, omit the editor wiring so the GUI cleanly
-# reports "no editor available" instead of spamming a load error.
-#
-# The runtime path (Connect / Disconnect / SecretsRequired) does not
-# need those .so files; NM dispatches the auth-dialog binary from
-# [GNOME] auth-dialog= directly.
+[libnm]
+plugin=@PLUGINDIR@/libnm-vpn-plugin-openvpn3.so
 
 [GNOME]
 auth-dialog=@LIBEXECDIR@/nm-openvpn3-auth-dialog
+properties=@PLUGINDIR@/libnm-vpn-plugin-openvpn3-editor.so
 supports-external-ui-mode=true
 supports-hints=true

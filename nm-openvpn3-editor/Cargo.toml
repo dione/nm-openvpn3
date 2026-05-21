@@ -1,0 +1,38 @@
+[package]
+name = "nm-openvpn3-editor"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "NetworkManager openvpn3 plugin GTK editor — libnm-vpn-plugin-openvpn3-editor.so (cdylib)"
+
+[lib]
+crate-type = ["cdylib"]
+name = "nm_vpn_plugin_openvpn3_editor"
+
+[dependencies]
+nm-openvpn3-properties = { path = "../nm-openvpn3-properties" }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+glib-sys = "0.22"
+gobject-sys = "0.22"
+
+# GTK4 + libadwaita pulled in unconditionally — Phase-3 ships a real
+# editor so the cdylib has nothing to do without them.  Distros that
+# do not ship libadwaita ≥ 1.4 can still build the runtime side: this
+# crate is optional in the workspace (omit it from `cargo build -p`),
+# and `install-test.sh` already handles the artifact being missing.
+gtk4 = { version = "0.11", default-features = false, features = ["v4_10"] }
+# AdwComboRow / AdwSpinRow / SwitchRow all landed by libadwaita 1.4.
+# Older distros (Ubuntu 22.04, RHEL 9) need a libadwaita backport or
+# the editor cdylib skipped at install time.
+libadwaita = { version = "0.9", default-features = false, features = ["v1_4"] }
+gettext-rs = { workspace = true }
+# Match gtk4 0.11's transitive glib (0.22) + gio (0.22) to avoid the
+# duplicate-glib-version trait import ambiguity at editor.rs.
+glib = "0.22"
+gio = "0.22"
+
+[features]
+default = []

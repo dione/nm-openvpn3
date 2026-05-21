@@ -1,0 +1,73 @@
+# Languages with a translation catalog under po/.  install-test.sh
+# picks up every po/<lang>.po regardless of this file — LINGUAS is
+# informational + used by build systems that iterate the supported
+# set explicitly (autotools' AM_LINGUAS, etc.).
+#
+# Catalogs marked (*) below are imported from upstream
+# NetworkManager-openvpn (OpenVPN 2 era) via
+# scripts/import-upstream-translations.sh — only the ~10 msgids that
+# matched our HIG-rewritten strings exactly survived the merge.
+# The rest fall back to English at runtime.  Native-speaker review
+# pass and `msginit` against the POT for missing strings welcome.
+#
+# pl is the only fully-translated catalog at the moment.
+ar
+as
+be
+bg
+bs
+ca
+cs
+da
+de
+dz
+el
+en_GB
+eo
+es
+et
+eu
+fa
+fi
+fr
+fur
+gl
+gu
+he
+hi
+hr
+hu
+id
+it
+ja
+ka
+kk
+kn
+ko
+lt
+lv
+mk
+mr
+nb
+nl
+pa
+pl
+ps
+pt
+pt_BR
+ro
+ru
+sk
+sl
+sr
+sv
+ta
+te
+th
+tr
+ug
+uk
+vi
+zh_CN
+zh_HK
+zh_TW

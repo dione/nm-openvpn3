@@ -16,9 +16,13 @@ pub struct Route {
     pub dest_be: u32,
     /// Prefix length derived from the row's Mask column.
     pub prefix: u32,
-    /// Next-hop / gateway, big-endian; 0 for on-link routes.
+    /// Next-hop / gateway, big-endian; 0 for on-link routes.  Read but
+    /// not currently emitted to NM (netcfg owns the route table — see
+    /// `ip4::emit`).
+    #[allow(dead_code)]
     pub next_hop_be: u32,
-    /// Metric column.
+    /// Metric column.  Same caveat as `next_hop_be`.
+    #[allow(dead_code)]
     pub metric: u32,
 }
 

@@ -39,6 +39,12 @@ const NM_KEY_IP4_PRESERVE_ROUTES: &str = "preserve-routes";
 const NM_KEY_IP4_NEVER_DEFAULT: &str = "never-default";
 const NM_KEY_IP4_DNS: &str = "dns";
 const NM_KEY_IP4_DOMAINS: &str = "domains";
+// `NM_KEY_IP4_ROUTES` is intentionally unused — see the comment in
+// `emit()` explaining why we let openvpn3-netcfg own the route table
+// and don't re-push the same routes through NM.  Kept as a Cargo
+// `#[allow(dead_code)]` so the constant is on hand if a future
+// version of openvpn3-netcfg changes that contract.
+#[allow(dead_code)]
 const NM_KEY_IP4_ROUTES: &str = "routes";
 
 /// Look up the IPv4 address + prefix openvpn3's netcfg installed on
@@ -60,6 +66,9 @@ fn lookup_tun_ipv4(tundev: &str) -> Option<(u32, u32)> {
 }
 
 /// Build the routes array NM consumes (`aau` of `[dest, prefix, next, metric]`).
+/// Currently unused — see emit() — but kept available for the day we
+/// need to override netcfg's choices from inside the service.
+#[allow(dead_code)]
 fn build_routes_array(routes: &[Route], addr_be: u32, prefix: u32) -> Result<OwnedValue> {
     let mut emitted: Vec<Value<'static>> = Vec::with_capacity(routes.len());
     let mask_be = if prefix == 0 {
@@ -258,15 +267,21 @@ pub async fn emit(
         ip4.insert(NM_KEY_IP4_NEVER_DEFAULT.into(), owned_bool(true));
         debug!("split-tunnel: emit never-default=TRUE (no 0.0.0.0/0 on tun)");
     }
-    if !routes.is_empty() {
-        ip4.insert(
-            NM_KEY_IP4_ROUTES.into(),
-            build_routes_array(&routes, addr_be, prefix)?,
-        );
-    }
+    // Deliberately NOT emitting `routes` to NM.  openvpn3-netcfg has
+    // already installed the routes via netlink; combining that with
+    // `preserve-routes=true` (set above) means NM leaves them alone
+    // and we get a single kernel entry per route.  Previously we also
+    // pushed the same routes through the NM `routes` array, which made
+    // NM re-install each one with `metric 50` — net effect was two
+    // kernel entries per route (one no-metric from netcfg, one
+    // metric-50 from NM).  Cosmetic but confusing in `ip route`.
+    //
+    // We still read the route table (above) to decide
+    // `never-default` — that's a one-shot computation that doesn't
+    // depend on emitting the routes to NM.
     emitter.ip4_config(ip4).await?;
     debug!(
-        "emitted Ip4Config (have_ip={have_ip}, routes={}, never_default={})",
+        "emitted Ip4Config (have_ip={have_ip}, netcfg_routes={}, never_default={}, NM-route-emit-suppressed)",
         routes.len(),
         !has_default
     );

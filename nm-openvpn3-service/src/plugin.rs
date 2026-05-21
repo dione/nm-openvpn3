@@ -289,32 +289,47 @@ impl Plugin {
         let ip4_emitted = Arc::new(AtomicBool::new(false));
 
         let data = vpn_data(&connection).context("parsing vpn.data")?;
-        let profile_path = data
-            .get(KEY_PROFILE)
-            .ok_or_else(|| anyhow!("vpn.data['{KEY_PROFILE}'] is required in Phase 2"))?;
-        debug!("profile path: {profile_path}");
+        // Split secrets out early — build_profile may need them and we
+        // want to stash the same Zeroizing'd map on session state below
+        // either way.
+        let (data_map, secret_map) = crate::secrets::split_vpn(&connection);
 
-        let md = tokio::fs::metadata(Path::new(profile_path))
-            .await
-            .with_context(|| format!("stat'ing profile file {profile_path}"))?;
-        if !md.is_file() {
-            return Err(anyhow!("profile path {profile_path} is not a regular file"));
-        }
-        if md.len() > MAX_PROFILE_BYTES {
-            return Err(anyhow!(
-                "profile {profile_path} is {} bytes; refusing (cap {MAX_PROFILE_BYTES})",
-                md.len()
-            ));
-        }
-        let profile = tokio::fs::read_to_string(Path::new(profile_path))
-            .await
-            .with_context(|| format!("reading profile file {profile_path}"))?;
-        if profile.len() as u64 > MAX_PROFILE_BYTES {
-            // TOCTOU guard: file grew between metadata and read.
-            return Err(anyhow!(
-                "profile {profile_path} grew past {MAX_PROFILE_BYTES} bytes during read"
-            ));
-        }
+        // Two profile paths, matching the C tree's `build_profile_string`:
+        //   1. `vpn.data['nm-openvpn3-profile']` set → read a verbatim
+        //      .ovpn file off disk (preserves modern openvpn3 syntax the
+        //      legacy exporter cannot reproduce — tls-crypt-v2,
+        //      peer-fingerprint, etc.).
+        //   2. Key absent → emit the .ovpn text from the settings dict
+        //      via `build_profile::build_profile_string`.
+        let profile = if let Some(profile_path) = data.get(KEY_PROFILE) {
+            debug!("profile path: {profile_path}");
+            let md = tokio::fs::metadata(Path::new(profile_path))
+                .await
+                .with_context(|| format!("stat'ing profile file {profile_path}"))?;
+            if !md.is_file() {
+                return Err(anyhow!("profile path {profile_path} is not a regular file"));
+            }
+            if md.len() > MAX_PROFILE_BYTES {
+                return Err(anyhow!(
+                    "profile {profile_path} is {} bytes; refusing (cap {MAX_PROFILE_BYTES})",
+                    md.len()
+                ));
+            }
+            let buf = tokio::fs::read_to_string(Path::new(profile_path))
+                .await
+                .with_context(|| format!("reading profile file {profile_path}"))?;
+            if buf.len() as u64 > MAX_PROFILE_BYTES {
+                // TOCTOU guard: file grew between metadata and read.
+                return Err(anyhow!(
+                    "profile {profile_path} grew past {MAX_PROFILE_BYTES} bytes during read"
+                ));
+            }
+            buf
+        } else {
+            debug!("no profile path; building config from vpn.data");
+            crate::build_profile::build_profile_string(&data_map, &secret_map)
+                .context("building profile from vpn.data")?
+        };
 
         self.set_state(emitter, NMVpnServiceState::Starting).await;
 
@@ -343,12 +358,11 @@ impl Plugin {
         // Stash the session immediately so any subsequent failure can
         // tear it down — otherwise the openvpn3 daemon keeps a dangling
         // session around until process exit (it survives both NM's
-        // failure dispatch and a fresh activation attempt).  Pre-split
-        // the Settings dict into (data, Zeroizing<secrets>) before
-        // stashing so we never hold the raw `Settings` clone — the
-        // OwnedValue inside that map carries plaintext credentials and
-        // would otherwise sit in process memory for the whole session.
-        let (data_map, secret_map) = crate::secrets::split_vpn(&connection);
+        // failure dispatch and a fresh activation attempt).  The
+        // pre-split (data, Zeroizing<secrets>) pair was taken at the
+        // top of do_connect (so build_profile could see it without a
+        // second clone of the OwnedValue secrets); just hand it to the
+        // session here.  The raw `Settings` clone is no longer needed.
         drop(connection);
         {
             let mut s = self.session.lock().await;

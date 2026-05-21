@@ -4,6 +4,8 @@ members = [
     "ovpn3-client",
     "nm-openvpn3-service",
     "nm-openvpn3-auth-dialog",
+    "nm-openvpn3-properties",
+    "nm-openvpn3-editor",
 ]
 
 [workspace.package]
@@ -27,6 +29,12 @@ clap = { version = "4", features = ["derive"] }
 # Zero plaintext credentials out of process memory before drop so a
 # core dump / swap page cannot leak them.
 zeroize = { version = "1", features = ["zeroize_derive"] }
+
+# gettext bindings used by the editor crate.  Runtime-only — strings
+# fall back to English when the binary's `textdomain` is unset or no
+# .mo files are installed, which is exactly what a missing po/ tree
+# gives us.  Extracting + shipping .po files is round 5 work.
+gettext-rs = { version = "0.7", features = ["gettext-system"] }
 
 # Local crate
 ovpn3-client = { path = "ovpn3-client" }

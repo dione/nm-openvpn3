@@ -1,46 +1,55 @@
-# nm-openvpn3 fork notes
+# Fork notes
 
-This repository is a fork of GNOME/NetworkManager-openvpn (1.12.5,
-upstream commit 9514bde) adapted to act as a NetworkManager VPN
-plugin for the OpenVPN 3 Linux D-Bus stack (net.openvpn.v3.*).
+This repository is a fork of [GNOME/NetworkManager-openvpn](https://gitlab.gnome.org/GNOME/NetworkManager-openvpn) (1.12.5, upstream commit `9514bde`), adapted to drive the OpenVPN 3 Linux D-Bus stack (`net.openvpn.v3.*`) instead of fork+exec'ing the legacy `openvpn` v2 binary.
+
+## Branch layout
+
+Two sibling branches diverge from the upstream baseline:
+
+| Branch | Language | Purpose |
+|---|---|---|
+| [`fork/openvpn3-skeleton`](../../tree/fork/openvpn3-skeleton) | C (GLib + GTK3/4) | Original C plugin adapted to openvpn3-linux. Autotools build, full editor with GtkBuilder UI, 60+ gettext catalogs. |
+| `rust/main` (**this branch**) | Rust | From-scratch port of the C plugin. Cargo workspace, libadwaita + GTK4 editor, hand-rolled libnm FFI, async zbus client. |
+
+Pick the branch matching the language you want to work on. They are not meant to merge; they are alternative implementations.
 
 ## Differences from upstream
 
-- Plugin D-Bus name: `org.freedesktop.NetworkManager.openvpn3`
-- Binaries: `nm-openvpn3-service`, `nm-openvpn3-auth-dialog`,
-  `libnm-vpn-plugin-openvpn3.so`, `libnm-openvpn3-properties.so`
-- System user: `nm-openvpn3` (chroot under `/var/lib/openvpn3/chroot`)
-- Connect path: proxies to `net.openvpn.v3.sessions` via D-Bus
-  instead of fork+exec'ing the `openvpn` v2 binary
+| | Upstream | `rust/main` |
+|---|---|---|
+| Backend | fork/exec `/usr/sbin/openvpn` | openvpn3-linux D-Bus (`net.openvpn.v3.*`) |
+| Service bus name | `org.freedesktop.NetworkManager.openvpn` | `org.freedesktop.NetworkManager.openvpn3` |
+| System user | `nm-openvpn` | `nm-openvpn3` |
+| Service language | C + GLib | async Rust + zbus |
+| Editor language | C + GTK3 | Rust + GTK4 + libadwaita |
+| .ovpn parser | hand-rolled C | hand-rolled Rust (`nm-openvpn3-properties` rlib) |
+| Build system | autotools | Cargo workspace |
+| Translations | 60+ catalogs (full coverage) | Polish complete + 59 partial (msgmerge from upstream) |
+
+## Workspace layout (this branch)
+
+```
+.
+├── Cargo.toml                workspace root
+├── ovpn3-client/             async zbus client for openvpn3-linux
+├── nm-openvpn3-service/      NMVpnServicePlugin D-Bus service
+├── nm-openvpn3-auth-dialog/  external-UI-mode auth-dialog binary
+├── nm-openvpn3-properties/   libnm cdylib (libnm-vpn-plugin-openvpn3.so) +
+│                             pure-Rust .ovpn parser/emitter rlib
+├── nm-openvpn3-editor/       GTK editor cdylib
+│                             (libnm-vpn-plugin-openvpn3-editor.so)
+├── data/                     .name template, dbus policy, sysusers, tmpfiles
+├── docs/                     ARCHITECTURE, FORK, UI-PORT
+├── po/                       translations (POT + 60 catalogs)
+└── install-test.sh           local smoke-test installer
+```
 
 ## Maintaining against upstream
 
-`upstream` remote tracks `gitlab.gnome.org/GNOME/NetworkManager-openvpn`.
-To pull future upstream fixes:
+The `upstream` remote tracks `gitlab.gnome.org/GNOME/NetworkManager-openvpn`.  Upstream changes to the C plugin can be cherry-picked into `fork/openvpn3-skeleton`; they rarely apply directly to `rust/main` because the layout and language differ.
 
-    git fetch upstream
-    git merge upstream/master   # or rebase; expect conflicts in rename hot spots
+For translations, `scripts/import-upstream-translations.sh` re-merges upstream's `.po` catalogs against this tree's POT (exact-match only — fuzzy gets dropped). Run after upstream gains new translations or our POT grows.
 
-Renames live in `git log --diff-filter=R` and are easy to follow because
-the openvpn3 prefix is applied uniformly.
+## Status
 
-## Roadmap
-
-- Plan 0 (done, v0.1.0-skeleton) — fork skeleton, Connect stubbed
-- Plan 1 (done, v0.2.0-mvp) — TLS-cert Connect/Disconnect happy path via net.openvpn.v3.*
-- Plan 1b (done, v0.3.0) — DNS + search domains via netcfg device
-- Plan 1c (done, v0.3.1) — VPN routes forwarded to NM for display
-- Plan 1d/1e (done, v0.3.2/v0.3.3) — D-Bus retry, session ACL, split-tunnel, watchdog
-- Plan 3 (done, v0.4.0) — UI plugin appears in nm-connection-editor (libdir multiarch + GObject type rename)
-- Plan 3b (done, v0.4.1) — UI plugin: hide openvpn2-only advanced-dialog widgets (LZO compress, legacy keysize, cipher-fallback / no-cipher-nego, ns-cert-type, TLS cipher string, push-peer-info)
-- Plan 3c (done, v0.4.2) — UI plugin: excise openvpn2-only widget code paths + .ui defs (read/write paths in advanced_dialog_new(), 13 widget defs from nm-openvpn3-dialog.ui, dead helpers); vpn.data keys + service args + import-export round-trip retained for raw .ovpn compat
-- Plan 3d (done, v0.5.0) — UI plugin: OVPN profile file chooser on main VPN tab (entry + Browse… → GtkFileChooserNative) wired to vpn.data nm-openvpn3-profile, which build_profile_string() passes verbatim to net.openvpn.v3.configuration.Import; validator relaxes gateway/CA/auth requirements when profile path is set
-- Plan 3e (done, v0.5.1) — UI plugin: five SetOverride toggles in Misc tab (route-nopull, force-default-gateway, block-ipv6, dns-setup-disabled, dco); editor stores them as override-* vpn.data keys; service dispatches each via net.openvpn.v3.configuration.SetOverride after Import. New ovpn3_config_set_override_bool() in ovpn3-client
-- Plan 3f (done, v0.5.2) — service hygiene: rip ~2.2k lines of dead openvpn2 fork+exec path from src/nm-openvpn3-service.c (start_openvpn_binary, _connect_common, args_* helpers, valid_properties/secrets validator tables, pids_pending_* SIGTERM machinery, management socket auth loop, openvpn binary version detection, chroot helpers, get_connection_permission_user). real_new_secrets reduced to a TODO stub for Plan 2; plugin_state_changed is now a no-op. Build shrank from ~3.1k LOC to ~975 LOC, 4/4 tests still pass.
-- Plan 3g (done, v0.5.3) — subscribe net.openvpn.v3.sessions StatusChange signal in real_connect so STARTED → SetIp4Config fires within milliseconds instead of waiting up to one 500 ms poll tick. Polling stays as fallback. emit_started_ip4_config() / status_handle_state() / status_change_signal_cb() extracted from poll_status_cb so both code paths share one idempotent emit (priv->ip4_emitted gate).
-- Plan 3h (done, v0.5.4) — code-simplifier pass on Plan 1/3 hot paths in src/nm-openvpn3-service.c.  Twelve helpers extracted: lookup_tun_ipv4, lookup_ext_gateway_be, emit_set_config, add_dns_servers, add_dns_search, add_routes, routes_have_default, poll_fail, apply_config_overrides, grant_access_for_connection, grant_access_run_user_fallback, cleanup_session_state.  real_connect and emit_started_ip4_config now read linearly.  Build clean, 4/4 tests pass, ovpn3-oversee-eu smoke test passes.
-- Plan CI (done, v0.5.5) — GitHub Actions workflow (.github/workflows/ci.yml) with two jobs running on fedora:latest: a regular build + `make check`, and a parallel job rebuilding with `-fsanitize=address -fsanitize=undefined` and matching ASAN/UBSAN options.  G_SLICE=always-malloc routes GLib allocations through plain malloc so the leak checker actually sees them.  TODO: 95 pre-existing upstream warnings still block `--enable-more-warnings=error`.
-- Plan stats (done, v0.5.6 + v0.5.7 hotfix + v0.5.8 hotfix + v0.5.11) — periodic openvpn3 session.statistics fetch in the service.  Every 30 s a dedicated stats timer reads BYTES_IN/OUT, PACKETS_IN/OUT plus TUN_BYTES_IN/OUT (in-clear payload, exposes encryption overhead) and emits a journal line with absolute counters and per-tick rate.  v0.5.7 hotfix: switched from _LOGI to ovpn3_trace because the LOG_NOTICE gate was -1 by default.  v0.5.8 hotfix: openvpn3's statistic keys are UPPERCASE.  v0.5.11: add TUN_BYTES_*.
-- Plan ovpn3-status (done, v0.5.13) — drop the deprecated NMVpnConnectionStateReason out-param from ovpn3_status_to_nm_state.  The reason was never read back by the service caller, so removing it deletes the only remaining wrapped GLib deprecation and shrinks tests by 5 redundant assertions.
-- Plan multi-remote-surface (done, v0.5.13) — add a small "N gateways (failover)" dim-label under the Brama entry and a more descriptive placeholder, so multi-remote configurations imported from .ovpn (comma-separated values in vpn.data[remote]) are no longer invisible after the entry truncates.
-- Plan 2 (code-complete, v0.6.0-alpha, UNTESTED END-TO-END) — auth-dialog around AttentionRequired / UserInputQueue. Service subscribes AttentionRequired, fetches UserInputQueue slots, auto-provides values already known from connection (vpn.data username, persistent vpn.secrets), and forwards the remainder to NM via nm_vpn_service_plugin_secrets_required(). real_new_secrets pushes returned credentials back via UserInputProvide. New ovpn3_session_subscribe_attention / fetch_input_slots / provide_input in ovpn3-client. Slot.name → vpn-key mapping is heuristic (password / cert-pass / challenge-response / http-proxy-*). Smoke test pending: no password-protected openvpn3 server available locally; need ProtonVPN-free or test-server validation before tag bumps to v0.6.0.
+`rust/main` carries the runtime + editor + import/export end-to-end against openvpn3-linux v27 / libnm 1.54. Runtime-tested under gnome-control-center v49.  Deferred for future rounds: IPv6 emit, NMSettingIPConfig route emission in `build_profile`, HTTP-proxy authfile, native-speaker translation review.
