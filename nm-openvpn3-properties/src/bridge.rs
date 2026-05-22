@@ -6,15 +6,61 @@
 
 use std::collections::BTreeMap;
 use std::ffi::{CStr, CString};
+use std::io::Write;
 use std::os::raw::c_char;
-use std::path::Path;
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+use std::path::{Path, PathBuf};
 use std::ptr;
 
+use base64::engine::general_purpose::STANDARD as BASE64;
+use base64::Engine as _;
 use glib_sys::{gboolean, gpointer, GFALSE, GTRUE};
 use gobject_sys::{g_object_set, GObject};
 
 use crate::import_export::{Directive, OvpnConfig};
 use crate::libnm::*;
+
+/// Locate (creating if absent) the per-user cert directory under
+/// `$HOME/.cert/nm-openvpn3` and force its mode to 0700.  Mirrors the
+/// C tree's `nm_vpn_plugin_utils_get_cert_path("nm-openvpn3")`.
+fn secure_cert_dir() -> std::io::Result<PathBuf> {
+    let home = std::env::var_os("HOME").ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "HOME environment variable unset",
+        )
+    })?;
+    let dir = PathBuf::from(home).join(".cert").join("nm-openvpn3");
+    std::fs::create_dir_all(&dir)?;
+    // Best-effort tighten — if the dir already existed with looser
+    // perms, this brings it back to user-only.  set_permissions follows
+    // symlinks; a malicious actor who can sit on $HOME/.cert/nm-openvpn3
+    // already has access to the parent dir, so we accept that.
+    let _ = std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700));
+    Ok(dir)
+}
+
+/// Write `body` to `path` with `O_NOFOLLOW | O_CREAT | O_EXCL`, mode
+/// 0600.  Existing target is removed first so a re-import overwrites
+/// stale state, but the O_EXCL after that point fails closed if a
+/// concurrent process raced us to plant a symlink between the unlink
+/// and the open.  Returns the path on success.
+fn write_blob_securely(path: &Path, body: &[u8]) -> std::io::Result<()> {
+    // Tolerate "not present" — we want create-new on the open below.
+    if let Err(e) = std::fs::remove_file(path) {
+        if e.kind() != std::io::ErrorKind::NotFound {
+            return Err(e);
+        }
+    }
+    let mut file = std::fs::OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .mode(0o600)
+        .custom_flags(libc::O_NOFOLLOW)
+        .open(path)?;
+    file.write_all(body)?;
+    file.sync_all()
+}
 
 /// Build a fresh `NMConnection` from an `.ovpn` text + the connection
 /// id derived from the file's basename.  Returns NULL + populated
@@ -29,7 +75,7 @@ pub unsafe fn ovpn_text_to_connection(
     text: &str,
 ) -> Result<*mut NMConnection, String> {
     let cfg = OvpnConfig::parse(text).map_err(|e| format!("parse: {e}"))?;
-    let data = cfg.as_nm_data();
+    let mut data = cfg.as_nm_data();
 
     let connection = nm_simple_connection_new();
     if connection.is_null() {
@@ -46,7 +92,7 @@ pub unsafe fn ovpn_text_to_connection(
         .and_then(|s| s.to_str())
         .unwrap_or("openvpn3");
     let id_c = CString::new(id).unwrap_or_else(|_| CString::new("openvpn3").unwrap());
-    let type_c = CString::new("vpn").unwrap();
+    let type_c = CString::new("vpn").expect("static string");
     g_object_set(
         s_con.cast::<GObject>(),
         NM_SETTING_CONNECTION_ID.as_ptr().cast(),
@@ -63,7 +109,7 @@ pub unsafe fn ovpn_text_to_connection(
     // IP4 — auto, matches the C importer.
     let s_ip4 = nm_setting_ip4_config_new();
     nm_connection_add_setting(connection, s_ip4);
-    let auto_c = CString::new("auto").unwrap();
+    let auto_c = CString::new("auto").expect("static string");
     g_object_set(
         s_ip4.cast::<GObject>(),
         NM_SETTING_IP_CONFIG_METHOD.as_ptr().cast(),
@@ -83,39 +129,129 @@ pub unsafe fn ovpn_text_to_connection(
         ptr::null::<u8>(),
     );
     let s_vpn_cast = s_vpn.cast::<NMSettingVpn>();
+
+    // HTTP-proxy authfile resolution — the .ovpn import preserved the
+    // path verbatim under "http-proxy-auth-file".  Resolve against
+    // this .ovpn's parent dir, read the first two lines, populate
+    // vpn.data['http-proxy-username'] + vpn.secrets['http-proxy-
+    // password'] (AGENT_OWNED).  Mirrors C `parse_http_proxy_auth`.
+    let parent_dir = path.parent().unwrap_or_else(|| Path::new("."));
+    if let Some(authfile) = data.remove("http-proxy-auth-file") {
+        let af_path = if Path::new(&authfile).is_absolute() {
+            PathBuf::from(&authfile)
+        } else {
+            parent_dir.join(&authfile)
+        };
+        if let Ok(contents) = std::fs::read_to_string(&af_path) {
+            let mut iter = contents.lines();
+            let user = iter.next().unwrap_or("").trim().to_string();
+            let pass = iter.next().unwrap_or("").trim().to_string();
+            if !user.is_empty() {
+                data.insert("http-proxy-username".into(), user);
+            }
+            if !pass.is_empty() {
+                if let (Ok(k), Ok(v)) = (
+                    CString::new("http-proxy-password"),
+                    CString::new(pass.as_str()),
+                ) {
+                    nm_setting_vpn_add_secret(s_vpn_cast, k.as_ptr(), v.as_ptr());
+                    let _ = nm_setting_set_secret_flags(
+                        s_vpn.cast::<NMSetting>(),
+                        k.as_ptr(),
+                        NM_SETTING_SECRET_FLAG_AGENT_OWNED,
+                        ptr::null_mut(),
+                    );
+                }
+            }
+        }
+        // Authfile may carry a NUL or be unreadable; either way it
+        // shouldn't survive in vpn.data as a key NM doesn't recognise.
+    }
+
     for (k, v) in &data {
-        let k_c = CString::new(k.as_str()).unwrap();
-        let v_c = CString::new(v.as_str()).unwrap_or_default();
+        let Ok(k_c) = CString::new(k.as_str()) else {
+            // NUL in a key name is a programmer error in our parsers;
+            // skip rather than corrupt vpn.data.
+            continue;
+        };
+        let Ok(v_c) = CString::new(v.as_str()) else {
+            // NUL in a value means the .ovpn produced a malformed
+            // token (or the field is a binary blob misclassified).
+            // Skip the value entirely — better than silently
+            // truncating to empty, which would let blank passwords
+            // through.
+            continue;
+        };
         nm_setting_vpn_add_data_item(s_vpn_cast, k_c.as_ptr(), v_c.as_ptr());
     }
 
-    // Inline blobs (<ca>, <cert>, etc.) — write to disk in a sibling
-    // directory of the .ovpn file and store the path in vpn.data.
-    // openvpn3's import is happy to consume `ca /path/to/ca.pem` so
-    // long as the file exists at activation time.
+    // Inline blobs (<ca>, <cert>, <key>, <pkcs12>, …) — write to a
+    // per-user cert dir (`~/.cert/nm-openvpn3/`) with mode 0600 and
+    // `O_NOFOLLOW | O_EXCL`, so the resulting file is never world-
+    // readable and a symlink-race cannot redirect the write into an
+    // attacker-controlled target.  Files in the parent of the source
+    // .ovpn used to be the destination; that was unsafe on /tmp, USB
+    // mounts, and Flatpak host-files mounts.
     //
-    // We keep doing this even though `nm-openvpn3-profile` below pins
-    // the service to the verbatim .ovpn file — the editor reads these
-    // path keys to pre-fill its widgets, so without them the user
-    // would see empty CA / cert / key fields on an imported
-    // connection and might think the import lost the cert chain.
-    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    // Inline `<pkcs12>` bodies are base64-encoded DER per openvpn —
+    // decode before writing or openvpn3 will refuse the bundle.  Any
+    // other blob is written raw.
+    let id_safe: String = id
+        .chars()
+        .map(|c| if c.is_alphanumeric() { c } else { '_' })
+        .collect();
+    let blob_dir_result = secure_cert_dir();
     for d in &cfg.directives {
-        if let Directive::Blob { name, body } = d {
-            let id_safe: String = id
-                .chars()
-                .map(|c| if c.is_alphanumeric() { c } else { '_' })
-                .collect();
-            let filename = format!("{id_safe}-{name}.pem");
-            let blob_path = parent.join(&filename);
-            // Best-effort write; if the directory isn't writable, we
-            // still emit the key (pointing at a non-existent file) so
-            // the editor surfaces the issue clearly rather than
-            // dropping the inline data on the floor.
-            let _ = std::fs::write(&blob_path, body);
-            let key_c = CString::new(name.as_str()).unwrap();
-            let path_c = CString::new(blob_path.to_string_lossy().as_ref()).unwrap();
-            nm_setting_vpn_add_data_item(s_vpn_cast, key_c.as_ptr(), path_c.as_ptr());
+        let Directive::Blob { name, body } = d else {
+            continue;
+        };
+        let filename = format!("{id_safe}-{name}.pem");
+        let blob_path = match &blob_dir_result {
+            Ok(dir) => dir.join(&filename),
+            // Cert dir lookup failed — fall back to next-to-.ovpn but
+            // still respect the secure-write helper.  Worst case the
+            // write fails and the editor's path-validity indicator
+            // flags the empty value on next edit.
+            Err(_) => parent_dir.join(&filename),
+        };
+        let bytes: Vec<u8> = if name == "pkcs12" {
+            // openvpn wraps inline pkcs12 in line-broken base64
+            // ("-----BEGIN PKCS12-----"-style wrapping, ~64 cols).
+            // base64::engine::general_purpose::STANDARD is strict and
+            // rejects embedded whitespace, so strip every whitespace
+            // char before decoding.  This matches what C g_base64_decode
+            // does on the same body.
+            let cleaned: String = body.chars().filter(|c| !c.is_whitespace()).collect();
+            match BASE64.decode(cleaned.as_bytes()) {
+                Ok(b) => b,
+                // Base64 garbage — fall through to writing the raw text
+                // so the user still sees *something* and the editor
+                // flags the file; matches C's "import succeeds, fails
+                // at activation" failure mode rather than dropping the
+                // blob silently.
+                Err(_) => body.as_bytes().to_vec(),
+            }
+        } else {
+            body.as_bytes().to_vec()
+        };
+        let _ = write_blob_securely(&blob_path, &bytes);
+        let Ok(key_c) = CString::new(name.as_str()) else {
+            continue;
+        };
+        let Ok(path_c) = CString::new(blob_path.to_string_lossy().as_ref()) else {
+            continue;
+        };
+        nm_setting_vpn_add_data_item(s_vpn_cast, key_c.as_ptr(), path_c.as_ptr());
+        // PKCS#12 collapse — C tree stores the bundle path under all
+        // three of ca/cert/key.  Mirror that so the inferred
+        // connection-type ("password-tls"/"tls"/etc.) lines up with
+        // the file the editor will surface.
+        if name == "pkcs12" {
+            for triple in ["ca", "cert", "key"] {
+                if let Ok(k) = CString::new(triple) {
+                    nm_setting_vpn_add_data_item(s_vpn_cast, k.as_ptr(), path_c.as_ptr());
+                }
+            }
         }
     }
 
@@ -127,16 +263,10 @@ pub unsafe fn ovpn_text_to_connection(
     // ordering) that our synthesizer can lose.  The per-key vpn.data
     // values written above remain so the editor still has structured
     // state to render.
-    //
-    // Caveat: if the user later deletes the original .ovpn, activation
-    // will fail at the file-read step in plugin.rs::do_connect.  The
-    // editor's file-existence indicator (red `error` CSS class)
-    // surfaces the missing path on next edit — see editor.rs's
-    // `refresh_path_validity`.
     if let Some(p) = path.to_str() {
-        let key_c = CString::new("nm-openvpn3-profile").unwrap();
-        let path_c = CString::new(p).unwrap();
-        nm_setting_vpn_add_data_item(s_vpn_cast, key_c.as_ptr(), path_c.as_ptr());
+        if let (Ok(k), Ok(v)) = (CString::new("nm-openvpn3-profile"), CString::new(p)) {
+            nm_setting_vpn_add_data_item(s_vpn_cast, k.as_ptr(), v.as_ptr());
+        }
     }
 
     Ok(connection)
@@ -174,18 +304,43 @@ pub unsafe fn connection_to_nm_data(connection: *mut NMConnection) -> BTreeMap<S
     out
 }
 
-/// Serialise an `NMConnection` to `.ovpn` text via [`OvpnConfig::from_nm_data`].
+/// Serialise an `NMConnection` to `.ovpn` text.  Prefers the verbatim
+/// content of the file pinned in `vpn.data['nm-openvpn3-profile']`
+/// (matches what the service feeds openvpn3 at activation, so the
+/// re-exported file describes the *real* connection — including any
+/// tls-crypt-v2 / peer-fingerprint / inline-blob syntax the structured
+/// projection cannot reconstruct).  Falls back to a structured emit
+/// from vpn.data when the profile path is unset or unreadable; in the
+/// fallback case a one-line warning is prepended so the recipient is
+/// aware the export is lossy.
 ///
 /// # Safety
 /// `connection` must be a live libnm `NMConnection`.
 pub unsafe fn connection_to_ovpn_text(connection: *mut NMConnection) -> String {
     let data = connection_to_nm_data(connection);
-    OvpnConfig::from_nm_data(&data).emit()
+
+    if let Some(profile_path) = data.get("nm-openvpn3-profile") {
+        if !profile_path.is_empty() {
+            if let Ok(text) = std::fs::read_to_string(profile_path) {
+                return text;
+            }
+        }
+    }
+
+    let body = OvpnConfig::from_nm_data(&data).emit();
+    format!(
+        "# Exported by NetworkManager-openvpn3 from vpn.data — modern\n\
+         # openvpn3 options stored only in the original .ovpn (tls-crypt-v2,\n\
+         # peer-fingerprint, inline blobs) cannot be reconstructed and are\n\
+         # NOT included in this file.\n\
+         {body}"
+    )
 }
 
-/// Write `.ovpn` text to `path`.  Returns `GTRUE` / `GFALSE` for the
-/// NM `export_to_file` interface hook.  Errors are reported through
-/// `err_out` (typed as glib_sys::GError).
+/// Write `.ovpn` text to `path` atomically (temp + rename) so an ENOSPC
+/// or signal cannot leave the caller's previous file half-written.
+/// Returns `GTRUE` / `GFALSE` for the NM `export_to_file` interface
+/// hook.  Errors are reported through `err_out`.
 ///
 /// # Safety
 /// `err_out` follows the standard GError contract — NULL or a pointer
@@ -196,9 +351,17 @@ pub unsafe fn export_connection_to_path(
     err_out: *mut *mut glib_sys::GError,
 ) -> gboolean {
     let text = connection_to_ovpn_text(connection);
-    match std::fs::write(path, text.as_bytes()) {
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let tmp_name = match path.file_name() {
+        Some(n) => format!(".{}.tmp", n.to_string_lossy()),
+        None => ".export.tmp".to_string(),
+    };
+    let tmp_path = parent.join(&tmp_name);
+    match std::fs::write(&tmp_path, text.as_bytes()).and_then(|_| std::fs::rename(&tmp_path, path))
+    {
         Ok(()) => GTRUE,
         Err(e) => {
+            let _ = std::fs::remove_file(&tmp_path);
             set_error(
                 err_out,
                 NM_OPENVPN3_PLUGIN_ERROR_FAILED,

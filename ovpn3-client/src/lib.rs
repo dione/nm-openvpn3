@@ -47,9 +47,15 @@ impl Client {
         &self.connection
     }
 
-    /// `net.openvpn.v3.configuration.Import` with retry on transient
-    /// auto-activation errors.  Returns the new configuration's object
-    /// path.
+    /// `net.openvpn.v3.configuration.Import` — stateful, so retries
+    /// are limited to errors the bus daemon raises BEFORE the call
+    /// reaches openvpn3 (`ServiceUnknown` from a cold auto-activation,
+    /// `SpawnChildExited` from a failed first launch).  `NoReply` /
+    /// `Disconnected` are NOT retried: those can mean the import
+    /// already completed but the reply was lost, and a blind retry
+    /// would leave a duplicate config object in
+    /// `openvpn3 configs-list`.  Returns the new configuration's
+    /// object path.
     pub async fn import_config(
         &self,
         name: &str,
@@ -57,20 +63,23 @@ impl Client {
         single_use: bool,
     ) -> anyhow::Result<OwnedObjectPath> {
         let proxy = ConfigurationManagerProxy::new(&self.connection).await?;
-        retry::with_transient_retry(3, Duration::from_millis(200), || async {
+        retry::with_activation_retry(3, Duration::from_millis(200), || async {
             proxy.import(name, ovpn_profile, single_use, false).await
         })
         .await
     }
 
-    /// `net.openvpn.v3.sessions.NewTunnel(config_path)`.
+    /// `net.openvpn.v3.sessions.NewTunnel(config_path)` — stateful;
+    /// see `import_config` for the retry policy rationale (only
+    /// pre-dispatch errors are retried so a lost reply can't produce
+    /// a duplicate session).
     pub async fn new_tunnel(
         &self,
         config_path: &OwnedObjectPath,
     ) -> anyhow::Result<OwnedObjectPath> {
         let proxy = SessionsManagerProxy::new(&self.connection).await?;
         let path_ref: &zbus::zvariant::ObjectPath<'_> = config_path;
-        retry::with_transient_retry(3, Duration::from_millis(200), || async {
+        retry::with_activation_retry(3, Duration::from_millis(200), || async {
             proxy.new_tunnel(path_ref).await
         })
         .await

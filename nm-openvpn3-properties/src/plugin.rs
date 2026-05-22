@@ -97,9 +97,12 @@ unsafe extern "C" fn get_property(
 // --- NMVpnEditorPlugin interface implementation ---------------------------
 
 unsafe extern "C" fn iface_get_capabilities(_plugin: *mut NMVpnEditorPlugin) -> u32 {
-    NM_VPN_EDITOR_PLUGIN_CAPABILITY_IMPORT
-        | NM_VPN_EDITOR_PLUGIN_CAPABILITY_EXPORT
-        | NM_VPN_EDITOR_PLUGIN_CAPABILITY_IPV6
+    // IPV6 capability is intentionally NOT advertised — the service
+    // currently emits only Ip4Config (has_ip6=false, no SetIp6Config
+    // path).  Advertising IPV6 here would let NM accept v6-only
+    // profiles whose tunnel then has no routable v6 address.  Add the
+    // flag back when the service grows an Ip6Config emitter.
+    NM_VPN_EDITOR_PLUGIN_CAPABILITY_IMPORT | NM_VPN_EDITOR_PLUGIN_CAPABILITY_EXPORT
 }
 
 unsafe extern "C" fn iface_import_from_file(
@@ -123,9 +126,67 @@ unsafe extern "C" fn iface_import_from_file(
         }
     };
     let p = Path::new(path_str);
-    let text = match std::fs::read_to_string(p) {
-        Ok(s) => s,
-        Err(e) => {
+    // Hard cap on the .ovpn we'll read.  NM hands us an attacker-
+    // controllable path; an oversized or special file (/dev/zero, a
+    // FUSE-backed pipe, a 2 GiB log) would otherwise freeze the host
+    // GUI.  1 MiB matches the service-side MAX_PROFILE_BYTES.  Open
+    // first (O_NOFOLLOW + O_CLOEXEC), fstat the fd (so the size check
+    // operates on the same inode the read will consume — no TOCTOU
+    // between stat and open), then read through a `take()` cap so a
+    // mid-read growth still aborts at the same byte budget.
+    const MAX_IMPORT_BYTES: u64 = 1 << 20;
+    let text = {
+        use std::io::Read;
+        use std::os::unix::fs::OpenOptionsExt;
+        let file = match std::fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
+            .open(p)
+        {
+            Ok(f) => f,
+            Err(e) => {
+                set_error(
+                    error,
+                    NM_OPENVPN3_PLUGIN_ERROR_FAILED,
+                    &format!("open {path_str}: {e}"),
+                );
+                return ptr::null_mut();
+            }
+        };
+        let md = match file.metadata() {
+            Ok(m) => m,
+            Err(e) => {
+                set_error(
+                    error,
+                    NM_OPENVPN3_PLUGIN_ERROR_FAILED,
+                    &format!("fstat {path_str}: {e}"),
+                );
+                return ptr::null_mut();
+            }
+        };
+        if !md.is_file() {
+            set_error(
+                error,
+                NM_OPENVPN3_PLUGIN_ERROR_FAILED,
+                &format!("import {path_str}: not a regular file"),
+            );
+            return ptr::null_mut();
+        }
+        if md.len() > MAX_IMPORT_BYTES {
+            set_error(
+                error,
+                NM_OPENVPN3_PLUGIN_ERROR_FAILED,
+                &format!(
+                    "import {path_str}: {} bytes exceeds {MAX_IMPORT_BYTES}-byte cap",
+                    md.len()
+                ),
+            );
+            return ptr::null_mut();
+        }
+        let cap = (md.len() as usize).saturating_add(1);
+        let mut buf = String::with_capacity(cap);
+        let mut limited = (&file).take(MAX_IMPORT_BYTES + 1);
+        if let Err(e) = limited.read_to_string(&mut buf) {
             set_error(
                 error,
                 NM_OPENVPN3_PLUGIN_ERROR_FAILED,
@@ -133,6 +194,15 @@ unsafe extern "C" fn iface_import_from_file(
             );
             return ptr::null_mut();
         }
+        if buf.len() as u64 > MAX_IMPORT_BYTES {
+            set_error(
+                error,
+                NM_OPENVPN3_PLUGIN_ERROR_FAILED,
+                &format!("import {path_str}: grew past {MAX_IMPORT_BYTES} bytes during read"),
+            );
+            return ptr::null_mut();
+        }
+        buf
     };
     match ovpn_text_to_connection(p, &text) {
         Ok(c) => c,
@@ -215,13 +285,20 @@ unsafe fn locate_editor_module() -> Option<CString> {
     let fname = CStr::from_ptr(info.dli_fname)
         .to_string_lossy()
         .into_owned();
-    let parent = Path::new(&fname).parent()?;
+    // Path::parent() returns Some("") for a bare basename (no slash),
+    // which would silently produce a CWD-relative editor path and let
+    // g_module_open resolve against whatever the process happens to be
+    // sitting in.  Reject that case explicitly so we fall through to
+    // the loader-search basename form.
+    let parent = Path::new(&fname)
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())?;
     let editor = parent.join("libnm-vpn-plugin-openvpn3-editor.so");
     CString::new(editor.to_string_lossy().as_ref()).ok()
 }
 
 unsafe extern "C" fn iface_get_editor(
-    _plugin: *mut NMVpnEditorPlugin,
+    plugin: *mut NMVpnEditorPlugin,
     connection: *mut NMConnection,
     error: *mut *mut GError,
 ) -> *mut NMVpnEditor {
@@ -233,15 +310,20 @@ unsafe extern "C" fn iface_get_editor(
     // the bare basename (handles dev installs where LD_LIBRARY_PATH is
     // set).  g_module_open with a path component only searches that
     // path; with bare basename it consults the loader search list.
+    // BIND_LOCAL keeps the editor cdylib's gtk4-rs / libadwaita-rs
+    // symbol duplicates out of the host process's global namespace —
+    // matters when the host (gnome-control-center, nm-applet) is
+    // upgraded to a slightly different GTK4 ABI while our compiled .so
+    // still references the older one.
     let abs_path = locate_editor_module();
     let module = match &abs_path {
-        Some(p) => crate::libnm::g_module_open(p.as_ptr(), crate::libnm::G_MODULE_BIND_LAZY),
+        Some(p) => crate::libnm::g_module_open(p.as_ptr(), crate::libnm::G_MODULE_BIND_LAZY_LOCAL),
         None => ptr::null_mut(),
     };
     let module = if module.is_null() {
         crate::libnm::g_module_open(
             module_name_default.as_ptr(),
-            crate::libnm::G_MODULE_BIND_LAZY,
+            crate::libnm::G_MODULE_BIND_LAZY_LOCAL,
         )
     } else {
         module
@@ -283,7 +365,10 @@ unsafe extern "C" fn iface_get_editor(
         error: *mut *mut GError,
     ) -> *mut NMVpnEditor;
     let factory: EditorFactory = std::mem::transmute(sym);
-    factory(ptr::null_mut(), connection, error)
+    // Forward the caller's NMVpnEditorPlugin pointer instead of NULL —
+    // matches the libnm contract and lets the editor read plugin-info
+    // metadata if a future version of the editor needs it.
+    factory(plugin, connection, error)
 }
 
 /// Fill the libnm-supplied interface vtable with our methods.  Called

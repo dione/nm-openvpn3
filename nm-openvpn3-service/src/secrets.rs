@@ -18,12 +18,16 @@ use zeroize::Zeroizing;
 pub const KEY_USERNAME: &str = "username";
 pub const KEY_PASSWORD: &str = "password";
 pub const KEY_CERTPASS: &str = "cert-pass";
+pub const KEY_HTTP_PROXY_USERNAME: &str = "http-proxy-username";
 pub const KEY_HTTP_PROXY_PASSWORD: &str = "http-proxy-password";
 pub const KEY_CHALLENGE_RESPONSE: &str = "challenge-response";
 
-/// Heuristic map openvpn3 slot name → NM vpn-secrets key.  Mirrors C
+/// Heuristic map openvpn3 slot name → NM vpn key.  Mirrors C
 /// `slot_name_to_vpn_key()`; unknown names fall back to PASSWORD so the
-/// user still gets a generic prompt.
+/// user still gets a generic prompt.  Both proxy slots map to their
+/// dedicated keys — the username key lives in vpn.data per
+/// `shared/nm-service-defines.h`, so [`lookup_value`] routes it
+/// accordingly.
 pub fn slot_to_vpn_key(slot: &InputSlot) -> &'static str {
     let n = slot.name.as_str();
     if n == "username" {
@@ -35,9 +39,7 @@ pub fn slot_to_vpn_key(slot: &InputSlot) -> &'static str {
     } else if n.contains("private_key") || n.contains("key_pass") {
         KEY_CERTPASS
     } else if n.contains("http_proxy_user") {
-        // No first-class NM key for the proxy username — we surface it
-        // through the proxy-password slot so NM still prompts.
-        KEY_HTTP_PROXY_PASSWORD
+        KEY_HTTP_PROXY_USERNAME
     } else if n.contains("http_proxy_pass") {
         KEY_HTTP_PROXY_PASSWORD
     } else {
@@ -50,15 +52,16 @@ pub fn slot_to_vpn_key(slot: &InputSlot) -> &'static str {
 /// `data` half is a plain HashMap; everything in `secrets` is wrapped.
 pub type SecretsMap = HashMap<String, Zeroizing<String>>;
 
-/// Read the value backing @vkey: username lives in vpn.data, every
-/// other secrets-style key in vpn.secrets.  Returns `None` when unset.
+/// Read the value backing @vkey: usernames (regular + proxy) live in
+/// vpn.data, every other secrets-style key in vpn.secrets.  Returns
+/// `None` when unset.
 pub fn lookup_value<'a>(
     vkey: &str,
     data: &'a HashMap<String, String>,
     secrets: &'a SecretsMap,
 ) -> Option<&'a str> {
-    if vkey == KEY_USERNAME {
-        data.get(KEY_USERNAME).map(String::as_str)
+    if vkey == KEY_USERNAME || vkey == KEY_HTTP_PROXY_USERNAME {
+        data.get(vkey).map(String::as_str)
     } else {
         secrets.get(vkey).map(|z| z.as_str())
     }

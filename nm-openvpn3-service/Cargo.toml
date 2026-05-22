@@ -19,3 +19,5 @@ tokio.workspace = true
 futures-util.workspace = true
 if-addrs.workspace = true
 zeroize.workspace = true
+# O_NOFOLLOW + fstat on the profile open path (TOCTOU-resistant load).
+libc = "0.2"

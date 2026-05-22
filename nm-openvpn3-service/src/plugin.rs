@@ -16,7 +16,6 @@
 //! backend"; full NM wire-up is a Phase 3 task.
 
 use std::collections::HashMap;
-use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -303,27 +302,52 @@ impl Plugin {
         //      via `build_profile::build_profile_string`.
         let profile = if let Some(profile_path) = data.get(KEY_PROFILE) {
             debug!("profile path: {profile_path}");
-            let md = tokio::fs::metadata(Path::new(profile_path))
-                .await
-                .with_context(|| format!("stat'ing profile file {profile_path}"))?;
-            if !md.is_file() {
-                return Err(anyhow!("profile path {profile_path} is not a regular file"));
-            }
-            if md.len() > MAX_PROFILE_BYTES {
-                return Err(anyhow!(
-                    "profile {profile_path} is {} bytes; refusing (cap {MAX_PROFILE_BYTES})",
-                    md.len()
-                ));
-            }
-            let buf = tokio::fs::read_to_string(Path::new(profile_path))
-                .await
-                .with_context(|| format!("reading profile file {profile_path}"))?;
-            if buf.len() as u64 > MAX_PROFILE_BYTES {
-                // TOCTOU guard: file grew between metadata and read.
-                return Err(anyhow!(
-                    "profile {profile_path} grew past {MAX_PROFILE_BYTES} bytes during read"
-                ));
-            }
+            let path_owned = profile_path.clone();
+            // Open with O_NOFOLLOW so a symlink-swap between the stat
+            // and the read can't redirect us into /etc/shadow or a
+            // FIFO; then fstat the FD (no second namespace lookup) so
+            // size + file-type checks operate on the same inode the
+            // read will consume.
+            let buf = tokio::task::spawn_blocking(move || -> anyhow::Result<String> {
+                use std::io::Read;
+                use std::os::unix::fs::OpenOptionsExt;
+                let file = std::fs::OpenOptions::new()
+                    .read(true)
+                    .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
+                    .open(&path_owned)
+                    .with_context(|| format!("opening profile file {path_owned}"))?;
+                let md = file
+                    .metadata()
+                    .with_context(|| format!("fstat profile file {path_owned}"))?;
+                if !md.is_file() {
+                    return Err(anyhow!("profile path {path_owned} is not a regular file"));
+                }
+                if md.len() > MAX_PROFILE_BYTES {
+                    return Err(anyhow!(
+                        "profile {path_owned} is {} bytes; refusing (cap {MAX_PROFILE_BYTES})",
+                        md.len()
+                    ));
+                }
+                let cap = (md.len() as usize).saturating_add(1);
+                let mut buf = String::with_capacity(cap);
+                // read_to_string enforces UTF-8.  Cap the read at
+                // MAX_PROFILE_BYTES+1 — a shrink-then-grow race can't
+                // produce more bytes than the file's current size on
+                // disk before EOF, but we still want a deterministic
+                // ceiling.
+                let mut limited = (&file).take(MAX_PROFILE_BYTES + 1);
+                limited
+                    .read_to_string(&mut buf)
+                    .with_context(|| format!("reading profile file {path_owned}"))?;
+                if buf.len() as u64 > MAX_PROFILE_BYTES {
+                    return Err(anyhow!(
+                        "profile {path_owned} grew past {MAX_PROFILE_BYTES} bytes during read"
+                    ));
+                }
+                Ok(buf)
+            })
+            .await
+            .context("profile-read task join")??;
             buf
         } else {
             debug!("no profile path; building config from vpn.data");
@@ -373,76 +397,89 @@ impl Plugin {
             s.ip4_emitted = ip4_emitted.clone();
         }
 
-        let bring_up: anyhow::Result<()> = async {
-            self.client
-                .session_wait_ready(&session_path, Duration::from_secs(5))
-                .await
-                .context("waiting for session")?;
-            self.grant_access(&session_path).await;
-            self.client
-                .session_connect(&session_path)
-                .await
-                .context("session.Connect")?;
-            Ok(())
-        }
-        .await;
-
-        if let Err(e) = bring_up {
-            warn!("activation failed after NewTunnel; tearing down session {session_path}");
-            // openvpn3 drops sessions whose backend has yet to register;
-            // an in-flight tear-down can return ObjectNotFound (handled
-            // here) or transient bus errors that succeed on retry.  One
-            // retry is enough — if openvpn3 still rejects the call the
-            // session was probably already gone.
-            if let Err(de) = self.client.session_disconnect(&session_path).await {
-                warn!("cleanup session.Disconnect {session_path} failed: {de}; retrying once");
-                if let Err(de2) = self.client.session_disconnect(&session_path).await {
-                    warn!(
-                        "cleanup session.Disconnect {session_path} failed twice ({de2}); leaving orphan session for openvpn3 to GC"
-                    );
-                }
-            }
-            let mut s = self.session.lock().await;
-            s.config_path = None;
-            s.session_path = None;
-            s.current_data.clear();
-            s.current_secrets.clear();
+        // Wait for the session manager to publish the session, then
+        // subscribe to the StatusChange + AttentionRequired signals
+        // BEFORE session.Connect runs.  Without this the backend can
+        // race us to CONNECTED and the first transition fires before
+        // our subscription is live — we'd then wait up to the 500 ms
+        // polling tick for the device_name fallback to spot the tun
+        // device, and DNS shows up that much later in NM.  Matches the
+        // C tree's commit "subscribe StatusChange signal to cut
+        // activation latency".
+        if let Err(e) = self
+            .client
+            .session_wait_ready(&session_path, Duration::from_secs(5))
+            .await
+            .context("waiting for session")
+        {
+            // wait_ready failed → no listeners to clean up yet.
+            warn!("session_wait_ready failed; tearing down {session_path}");
+            self.cleanup_session(&session_path).await;
             return Err(e);
         }
-        info!("session.Connect ok");
-
-        // Attach the StatusChange listener so the activation FSM (and
-        // any subsequent backend failure) reaches NM.  openvpn3-linux
-        // historically unicasts StatusChange to subscribers that
-        // existed *before* the backend client registered (the C tree
-        // documented this as the reason it kept a polling watchdog
-        // alongside the signal), so we run a polling loop in parallel
-        // as the source of truth and treat the signal stream as a
-        // bonus low-latency path when it works.
-        //
-        // Spawn under the session lock so a Disconnect arriving between
-        // the first spawn and the tasks.push can't drop a fresh
-        // listener on the floor (signal-driven listeners may otherwise
-        // race state updates against an in-flight tear-down).
         {
             let mut s = self.session.lock().await;
             let h1 =
                 self.spawn_status_listener(conn.clone(), session_path.clone(), ip4_emitted.clone());
-            let h2 =
+            let h2 = self.spawn_attention_listener(conn.clone(), session_path.clone());
+            s.tasks.extend([h1, h2]);
+        }
+        self.grant_access(&session_path).await;
+
+        if let Err(e) = self
+            .client
+            .session_connect(&session_path)
+            .await
+            .context("session.Connect")
+        {
+            warn!("session.Connect failed; tearing down {session_path}");
+            // Listeners spawned above hold session_path Arcs and exit
+            // on the Disconnect path; cleanup_session below aborts
+            // their handles via SessionState::tasks.
+            self.cleanup_session(&session_path).await;
+            return Err(e);
+        }
+        info!("session.Connect ok");
+
+        // Now arm the poller (fallback for missed signals) and stats
+        // timer.  Both are post-Connect because they only watch for
+        // state we explicitly drove.
+        {
+            let mut s = self.session.lock().await;
+            let h3 =
                 self.spawn_status_poller(conn.clone(), session_path.clone(), ip4_emitted.clone());
-            // Periodic statistics dump.
-            let h3 = self.spawn_stats_timer(session_path.clone());
-            // Plan 2: openvpn3 fires AttentionRequired whenever the
-            // backend needs another credential slot filled (initial
-            // password, dynamic challenge, 2FA code …).  We auto-
-            // provide whatever is already in vpn.data/vpn.secrets and
-            // ask NM (via SecretsRequired) for the rest.
-            let h4 = self.spawn_attention_listener(conn.clone(), session_path);
-            s.tasks.extend([h1, h2, h3, h4]);
+            let h4 = self.spawn_stats_timer(session_path);
+            s.tasks.extend([h3, h4]);
         }
 
         info!("Connect dispatched; backend handshake in progress");
         Ok(())
+    }
+
+    /// Abort all spawned tasks for the current session, clear cached
+    /// state, and best-effort tear down the openvpn3 session.  Used by
+    /// the activation-failure paths so a half-attached listener can't
+    /// keep referencing a dead session.
+    async fn cleanup_session(&self, session_path: &OwnedObjectPath) {
+        // openvpn3 drops sessions whose backend has yet to register;
+        // an in-flight tear-down can return ObjectNotFound or a
+        // transient bus error.  One retry is enough.
+        if let Err(de) = self.client.session_disconnect(session_path).await {
+            warn!("cleanup session.Disconnect {session_path} failed: {de}; retrying once");
+            if let Err(de2) = self.client.session_disconnect(session_path).await {
+                warn!(
+                    "cleanup session.Disconnect {session_path} failed twice ({de2}); leaving orphan session for openvpn3 to GC"
+                );
+            }
+        }
+        let mut s = self.session.lock().await;
+        for h in s.tasks.drain(..) {
+            h.abort();
+        }
+        s.config_path = None;
+        s.session_path = None;
+        s.current_data.clear();
+        s.current_secrets.clear();
     }
 
     /// Open the session up for the user's CLI (`openvpn3 sessions-list`)
@@ -505,8 +542,16 @@ impl Plugin {
             // fail NM if the session is *persistently* unreachable.
             let post_started_err_budget: u32 = 6; // ~30s at the 5s post-Started tick
             let mut post_started_errs: u32 = 0;
+            // Poll immediately on entry — the signal listener spawned
+            // alongside us may already have missed a CONNECTED event
+            // from a fast handshake (cached creds, instant tunnel).
+            // Subsequent iterations sleep first per the cadence below.
+            let mut first_pass = true;
             loop {
-                tokio::time::sleep(tick_interval).await;
+                if !first_pass {
+                    tokio::time::sleep(tick_interval).await;
+                }
+                first_pass = false;
                 ticks += 1;
                 // Hard cap on pre-Started polling.  Without this the
                 // loop would sit happily on Ok(non-Started) status

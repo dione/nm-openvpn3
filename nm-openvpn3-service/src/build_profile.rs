@@ -89,6 +89,10 @@ const KEY_PROXY_SERVER: &str = "proxy-server";
 const KEY_PROXY_PORT: &str = "proxy-port";
 const KEY_PROXY_RETRY: &str = "proxy-retry";
 const KEY_HTTP_PROXY_USERNAME: &str = "http-proxy-username";
+/// Newline-joined extra `route …` lines that survive a round-trip from
+/// the importer's directive vector (the editor has no UI for routes,
+/// so we preserve them as raw text in vpn.data and re-emit verbatim).
+const KEY_EXTRA_ROUTES: &str = "nm-openvpn3-extra-routes";
 
 const CONTYPE_TLS: &str = "tls";
 const CONTYPE_PASSWORD: &str = "password";
@@ -250,10 +254,12 @@ pub fn build_profile_string(
     line_int(&mut w, "connect-timeout", get(KEY_CONNECT_TIMEOUT));
     line_int(&mut w, "fragment", get(KEY_FRAGMENT_SIZE));
 
-    if let Some(file) = get(KEY_CRL_VERIFY_FILE) {
-        w.line(&["crl-verify", file]);
-    } else if let Some(dir) = get(KEY_CRL_VERIFY_DIR) {
-        w.line(&["crl-verify", dir, "dir"]);
+    if is_tls_like {
+        if let Some(file) = get(KEY_CRL_VERIFY_FILE) {
+            w.line(&["crl-verify", file]);
+        } else if let Some(dir) = get(KEY_CRL_VERIFY_DIR) {
+            w.line(&["crl-verify", dir, "dir"]);
+        }
     }
 
     // dev / dev-type — pick first non-empty of:
@@ -287,6 +293,19 @@ pub fn build_profile_string(
 
     if let (Some(local), Some(remote)) = (get(KEY_LOCAL_IP), get(KEY_REMOTE_IP)) {
         w.line(&["ifconfig", local, remote]);
+    }
+
+    // Extra static routes preserved from the imported .ovpn.  Each
+    // entry is a verbatim "route …" line — pre-tokenised, already
+    // escape_arg'd as needed by the parser.  Re-emit as raw text so we
+    // don't double-quote.
+    if let Some(routes) = get(KEY_EXTRA_ROUTES) {
+        for line in routes.lines() {
+            let line = line.trim();
+            if !line.is_empty() {
+                w.raw_line(line);
+            }
+        }
     }
 
     if is_tls_like {
@@ -398,6 +417,21 @@ fn is_pkcs12_path(path: &str) -> bool {
 /// Import time, so anything we mis-split here gets rejected with a clear
 /// error rather than silently misbehaving.
 fn parse_remote(input: &str) -> (&str, Option<&str>, Option<&str>) {
+    // Bracketed IPv6 literal: `[2001:db8::1]:1194:tcp` — split host from
+    // the trailing `:port[:proto]` after the closing bracket.  Treat
+    // anything outside the brackets as the colon-separated tail.
+    if let Some(rest) = input.strip_prefix('[') {
+        if let Some((host, tail)) = rest.split_once(']') {
+            let mut tail_it = tail.strip_prefix(':').unwrap_or(tail).splitn(2, ':');
+            let port = tail_it.next().filter(|s| !s.is_empty());
+            let proto = tail_it.next().filter(|s| !s.is_empty());
+            return (host, port, proto);
+        }
+    }
+    // Bare colon-separated form: `host:port[:proto]`.  IPv6 literals
+    // without brackets are ambiguous (`fe80::1` has 2 colons but so
+    // does `host:port:proto`); the user is expected to bracket IPv6 if
+    // they want it parsed correctly, matching C nmovpn_remote_parse.
     let mut it = input.splitn(3, ':');
     let host = it.next().unwrap_or("");
     // Empty port (e.g. `host::tcp`) is treated as unset so the caller
@@ -471,6 +505,14 @@ impl Writer {
             first = false;
             push_escaped(&mut self.buf, a);
         }
+        self.buf.push('\n');
+    }
+
+    /// Append a verbatim line.  Caller is responsible for any escaping;
+    /// used only for already-shaped text we preserved from the source
+    /// .ovpn (e.g. extra `route` lines).
+    fn raw_line(&mut self, line: &str) {
+        self.buf.push_str(line);
         self.buf.push('\n');
     }
 }
@@ -826,5 +868,41 @@ mod tests {
         let out = build_profile_string(&data, &secrets).expect("build");
         // 1.2 contains '.', not in benign set, so it gets single-quoted.
         assert_contains(&out, "tls-version-min '1.2' or-highest");
+    }
+
+    /// Bracketed IPv6 remote splits into host + port + proto without
+    /// colons leaking into the host slot.
+    #[test]
+    fn remote_bracketed_ipv6_splits_correctly() {
+        let (host, port, proto) = parse_remote("[2001:db8::1]:1194:tcp");
+        assert_eq!(host, "2001:db8::1");
+        assert_eq!(port, Some("1194"));
+        assert_eq!(proto, Some("tcp"));
+    }
+
+    #[test]
+    fn remote_bracketed_ipv6_no_port() {
+        let (host, port, proto) = parse_remote("[fe80::1]");
+        assert_eq!(host, "fe80::1");
+        assert_eq!(port, None);
+        assert_eq!(proto, None);
+    }
+
+    /// Extra `route` directives stashed in vpn.data round-trip into the
+    /// emitted profile verbatim.
+    #[test]
+    fn extra_routes_emit_verbatim() {
+        let secrets = SecretsMap::new();
+        let data = dict(&[
+            ("connection-type", "tls"),
+            ("remote", "v"),
+            (
+                "nm-openvpn3-extra-routes",
+                "route 10.0.0.0 255.0.0.0\nroute 192.168.1.0 255.255.255.0 10.0.0.1",
+            ),
+        ]);
+        let out = build_profile_string(&data, &secrets).expect("build");
+        assert_contains(&out, "route 10.0.0.0 255.0.0.0");
+        assert_contains(&out, "route 192.168.1.0 255.255.255.0 10.0.0.1");
     }
 }

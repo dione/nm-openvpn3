@@ -19,10 +19,10 @@ use std::ffi::CString;
 use std::path::Path;
 use std::ptr;
 use std::rc::Rc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
 use std::sync::{Arc, OnceLock};
 
-use gettextrs::gettext;
+use gettextrs::dgettext;
 use glib::ffi::{gboolean, gpointer, GError, GFALSE, GTRUE};
 use gobject_sys::{
     g_object_new, g_type_add_interface_static, g_type_register_static_simple, GInterfaceInfo,
@@ -38,8 +38,10 @@ use libadwaita::{
 
 use nm_vpn_plugin_openvpn3::bridge::connection_to_nm_data;
 use nm_vpn_plugin_openvpn3::libnm::{
-    nm_connection_get_setting_vpn, nm_setting_vpn_add_data_item, nm_vpn_editor_get_type, set_error,
-    NMConnection, NMVpnEditorInterface, NM_OPENVPN3_PLUGIN_ERROR_FAILED,
+    nm_connection_get_setting_vpn, nm_setting_set_secret_flags, nm_setting_vpn_add_data_item,
+    nm_setting_vpn_add_secret, nm_setting_vpn_remove_data_item, nm_setting_vpn_remove_secret,
+    nm_vpn_editor_get_type, set_error, NMConnection, NMVpnEditorInterface,
+    NM_OPENVPN3_PLUGIN_ERROR_FAILED, NM_SETTING_SECRET_FLAG_AGENT_OWNED,
 };
 
 // ---------------------------------------------------------------------------
@@ -98,25 +100,84 @@ const COMP_LZO: &[(&str, &str)] = &[
 
 const DEV_TYPES: &[(&str, &str)] = &[("", "Auto"), ("tun", "tun"), ("tap", "tap")];
 
+/// vpn.data keys this editor owns.  Anything in the imported snapshot
+/// that is NOT in this list is replayed verbatim on Save so nmcli-set
+/// values outside our vocabulary survive a round-trip; anything that IS
+/// in this list is set or removed strictly from widget state.
+const WIDGET_DATA_KEYS: &[&str] = &[
+    "connection-type",
+    "remote",
+    "port",
+    "ca",
+    "cert",
+    "key",
+    "static-key",
+    "static-key-direction",
+    "username",
+    "nm-openvpn3-profile",
+    "dev",
+    "dev-type",
+    "proto-tcp",
+    "tunnel-mtu",
+    "mssfix",
+    "fragment-size",
+    "ping",
+    "ping-restart",
+    "reneg-seconds",
+    "connect-timeout",
+    "allow-compression",
+    "comp-lzo",
+    "compress",
+    "cipher",
+    "data-ciphers",
+    "data-ciphers-fallback",
+    "tls-cipher",
+    "auth",
+    "keysize",
+    "tls-version-min",
+    "tls-version-min-or-highest",
+    "tls-version-max",
+    "verify-x509-name",
+    "remote-cert-tls",
+    "ns-cert-type",
+    "ta",
+    "ta-dir",
+    "tls-crypt",
+    "tls-crypt-v2",
+    "proxy-type",
+    "proxy-server",
+    "proxy-port",
+    "http-proxy-username",
+    "override-route-nopull",
+    "override-force-default-gateway",
+    "override-block-ipv6",
+    "override-dns-setup-disabled",
+    "override-dco",
+    "override-log-level",
+];
+
 // ---------------------------------------------------------------------------
 // Translation helper.  Initialises gettext on first call, then
 // dispatches every subsequent lookup straight through.  Strings fall
 // back to English when no .mo catalog is installed.
 // ---------------------------------------------------------------------------
 
+/// Look the string up in OUR catalog only — never touch the process-
+/// wide default domain, otherwise the host (gnome-control-center,
+/// nm-applet) loses access to its own translations after we load.
 fn tr(s: &str) -> String {
-    gettext(s)
+    dgettext("nm-openvpn3", s)
 }
 
 fn gettext_init_once() {
     static ONCE: OnceLock<()> = OnceLock::new();
     ONCE.get_or_init(|| {
         // setlocale honours LANG / LC_ALL from the desktop environment.
-        // bindtextdomain points at a canonical install location; absent
-        // catalogs are silently fine.
+        // bindtextdomain registers our catalog; we deliberately do NOT
+        // call textdomain() because that would override the host's
+        // default domain.  dgettext() in tr() above is domain-scoped.
         gettextrs::setlocale(gettextrs::LocaleCategory::LcAll, "");
         let _ = gettextrs::bindtextdomain("nm-openvpn3", "/usr/share/locale");
-        let _ = gettextrs::textdomain("nm-openvpn3");
     });
 }
 
@@ -233,9 +294,20 @@ struct EditorState {
 
 static EDITOR_TYPE: OnceLock<glib_sys::GType> = OnceLock::new();
 
+/// Pointer to the GObjectClass of our type's *parent* (GObject itself).
+/// Captured during `class_init` while the class structure is live and
+/// fully realised; safe to read from any thread because we only ever
+/// write it once.  Used by `instance_finalize` to chain up — avoids
+/// re-querying `g_type_class_peek` during teardown, which can race
+/// against module-unload ordering and return NULL.
+static PARENT_CLASS: AtomicPtr<gobject_sys::GObjectClass> = AtomicPtr::new(ptr::null_mut());
+
 unsafe extern "C" fn class_init(class_ptr: gpointer, _class_data: gpointer) {
     let object_class = class_ptr.cast::<gobject_sys::GObjectClass>();
     (*object_class).finalize = Some(instance_finalize);
+    let parent =
+        gobject_sys::g_type_class_peek_parent(class_ptr).cast::<gobject_sys::GObjectClass>();
+    PARENT_CLASS.store(parent, Ordering::Release);
 }
 
 unsafe extern "C" fn instance_init(instance: *mut GTypeInstance, _class: gpointer) {
@@ -259,12 +331,11 @@ unsafe extern "C" fn instance_finalize(object: *mut GObject) {
         drop(Box::from_raw((*inst).state));
         (*inst).state = ptr::null_mut();
     }
-    let object_class = gobject_sys::g_type_class_peek_parent(
-        gobject_sys::g_type_class_peek(editor_get_type()).cast(),
-    )
-    .cast::<gobject_sys::GObjectClass>();
-    if let Some(parent_finalize) = (*object_class).finalize {
-        parent_finalize(object);
+    let parent_class = PARENT_CLASS.load(Ordering::Acquire);
+    if !parent_class.is_null() {
+        if let Some(parent_finalize) = (*parent_class).finalize {
+            parent_finalize(object);
+        }
     }
 }
 
@@ -275,6 +346,17 @@ unsafe extern "C" fn instance_finalize(object: *mut GObject) {
 unsafe extern "C" fn iface_get_widget(
     editor: *mut nm_vpn_plugin_openvpn3::libnm::NMVpnEditor,
 ) -> *mut GObject {
+    // libnm contract: returns the editor's primary widget as a
+    // borrowed GObject* (transfer none).  Lifetime is tied to the
+    // NMVpnEditor itself — libnma keeps a strong ref on the editor
+    // for as long as it holds the widget pointer, so the page stays
+    // alive via our EditorState (which owns a strong gtk4-rs ref) +
+    // any container ref libnma adds when packing the page.  When the
+    // dialog drops its ref and libnma finally unrefs the editor,
+    // instance_finalize runs, the Box<EditorState> drops, and the
+    // page's last strong ref disappears — at which point GTK frees
+    // the GObject.  Do NOT g_object_ref here: libnma would not unref
+    // and the page would leak.
     let inst = editor.cast::<Openvpn3Editor>();
     let state = (*inst).state;
     if state.is_null() {
@@ -287,7 +369,7 @@ unsafe extern "C" fn iface_get_widget(
 unsafe extern "C" fn iface_update_connection(
     editor: *mut nm_vpn_plugin_openvpn3::libnm::NMVpnEditor,
     connection: *mut NMConnection,
-    _error: *mut *mut GError,
+    error: *mut *mut GError,
 ) -> gboolean {
     let inst = editor.cast::<Openvpn3Editor>();
     let state = (*inst).state;
@@ -300,110 +382,183 @@ unsafe extern "C" fn iface_update_connection(
     }
 
     let st = &*state;
-    let set = |key: &str, value: &str| {
-        if value.is_empty() {
-            return;
-        }
-        let k = CString::new(key).unwrap();
-        let v = CString::new(value).unwrap_or_default();
-        nm_setting_vpn_add_data_item(s_vpn, k.as_ptr(), v.as_ptr());
-    };
 
-    // Snapshot replay — anything outside our widget vocabulary stays.
-    for (k, v) in st.initial_data.borrow().iter() {
-        set(k, v);
+    // check_validity gate — matches C nm-openvpn-editor's update_connection
+    // refusing to save until the minimum-viable field set is filled in.
+    // Catching this here (instead of letting build_profile error at
+    // activation) means the user sees a clear "Apply rejected" hint in
+    // libnma's dialog rather than an opaque red banner on Connect.
+    let ct = st.contype.selected_id();
+    let remote_text = st.remote.text();
+    let remote_str = remote_text.as_str();
+    let validity_err = if remote_str.is_empty() {
+        Some("missing gateway address".to_string())
+    } else if matches!(ct, "tls" | "password-tls") && st.ca.text().is_empty() {
+        Some("TLS connection requires a CA certificate".to_string())
+    } else if ct == "tls" && (st.cert.text().is_empty() || st.key.text().is_empty()) {
+        Some("TLS connection requires both client certificate and private key".to_string())
+    } else if matches!(ct, "password" | "password-tls") && st.username.text().is_empty() {
+        Some("password authentication requires a user name".to_string())
+    } else if ct == "static-key" && st.static_key.text().is_empty() {
+        Some("static-key connection requires a key file".to_string())
+    } else {
+        None
+    };
+    if let Some(msg) = validity_err {
+        set_error(error, NM_OPENVPN3_PLUGIN_ERROR_FAILED, &msg);
+        return GFALSE;
     }
 
-    let ct = st.contype.selected_id();
+    // Empty value → remove the key entirely so cleared widgets actually
+    // wipe state.  Non-empty value → add (libnm overwrites).  NUL in
+    // the value is treated as remove rather than silently truncating —
+    // the editor's path-validity indicator already flags the bad input
+    // visually.
+    let set = |key: &str, value: &str| {
+        let k = match CString::new(key) {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+        if value.is_empty() {
+            let _ = nm_setting_vpn_remove_data_item(s_vpn, k.as_ptr());
+            return;
+        }
+        match CString::new(value) {
+            Ok(v) => nm_setting_vpn_add_data_item(s_vpn, k.as_ptr(), v.as_ptr()),
+            Err(_) => {
+                let _ = nm_setting_vpn_remove_data_item(s_vpn, k.as_ptr());
+            }
+        }
+    };
+
+    // Secrets follow the same pattern; after add we tag the key
+    // AGENT_OWNED so libnm routes it through the user keyring instead
+    // of the on-disk system-connections file.
+    let s_setting = s_vpn.cast::<nm_vpn_plugin_openvpn3::libnm::NMSetting>();
+    let set_secret = |key: &str, value: &str| {
+        let k = match CString::new(key) {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+        if value.is_empty() {
+            let _ = nm_setting_vpn_remove_secret(s_vpn, k.as_ptr());
+            return;
+        }
+        match CString::new(value) {
+            Ok(v) => {
+                nm_setting_vpn_add_secret(s_vpn, k.as_ptr(), v.as_ptr());
+                let _ = nm_setting_set_secret_flags(
+                    s_setting,
+                    k.as_ptr(),
+                    NM_SETTING_SECRET_FLAG_AGENT_OWNED,
+                    ptr::null_mut(),
+                );
+            }
+            Err(_) => {
+                let _ = nm_setting_vpn_remove_secret(s_vpn, k.as_ptr());
+            }
+        }
+    };
+
+    // Replay only the imported keys we do NOT own — preserves nmcli-set
+    // entries outside the editor's vocabulary across a round-trip.  In-
+    // vocabulary keys land below from widget state, including explicit
+    // removal when the user cleared a field.
+    for (k, v) in st.initial_data.borrow().iter() {
+        if WIDGET_DATA_KEYS.contains(&k.as_str()) {
+            continue;
+        }
+        let kc = match CString::new(k.as_str()) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+        let vc = match CString::new(v.as_str()) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+        nm_setting_vpn_add_data_item(s_vpn, kc.as_ptr(), vc.as_ptr());
+    }
+
     let tls_like = matches!(ct, "tls" | "password" | "password-tls");
     let needs_user_cert = matches!(ct, "tls" | "password-tls");
     let needs_password = matches!(ct, "password" | "password-tls");
     let is_static_key = ct == "static-key";
 
+    // Helpers — empty value clears the key, so non-applicable widgets
+    // and zeroed spin rows both round-trip as a remove.
+    let cond = |b: bool, s: &str| -> String {
+        if b {
+            s.to_string()
+        } else {
+            String::new()
+        }
+    };
+    let int_or_empty = |v: i64| -> String {
+        if v > 0 {
+            v.to_string()
+        } else {
+            String::new()
+        }
+    };
+
     set("connection-type", ct);
     set("remote", st.remote.text().as_ref());
-    let port_val = st.port.value() as i64;
-    if port_val > 0 {
-        set("port", &port_val.to_string());
-    }
-    if tls_like {
-        set("ca", st.ca.text().as_ref());
-    }
-    if needs_user_cert {
-        set("cert", st.cert.text().as_ref());
-        set("key", st.key.text().as_ref());
-        let cert_pass: glib::GString = st.cert_pass.text();
-        let cp: &str = cert_pass.as_ref();
-        if !cp.is_empty() {
-            let k = CString::new("cert-pass").unwrap();
-            let v = CString::new(cp).unwrap_or_default();
-            nm_vpn_plugin_openvpn3::libnm::nm_setting_vpn_add_secret(s_vpn, k.as_ptr(), v.as_ptr());
-        }
-    }
-    if needs_password {
-        set("username", st.username.text().as_ref());
-        let pw: glib::GString = st.password.text();
-        let p: &str = pw.as_ref();
-        if !p.is_empty() {
-            let k = CString::new("password").unwrap();
-            let v = CString::new(p).unwrap_or_default();
-            nm_vpn_plugin_openvpn3::libnm::nm_setting_vpn_add_secret(s_vpn, k.as_ptr(), v.as_ptr());
-        }
-    }
-    if is_static_key {
-        set("static-key", st.static_key.text().as_ref());
-        let sk_dir = st.static_key_dir.value() as i64;
-        if sk_dir > 0 {
-            set("static-key-direction", &(sk_dir - 1).to_string());
-        }
-    }
+    set("port", &int_or_empty(st.port.value() as i64));
+
+    set("ca", &cond(tls_like, st.ca.text().as_ref()));
+    set("cert", &cond(needs_user_cert, st.cert.text().as_ref()));
+    set("key", &cond(needs_user_cert, st.key.text().as_ref()));
+    let cert_pass: glib::GString = st.cert_pass.text();
+    set_secret("cert-pass", &cond(needs_user_cert, cert_pass.as_ref()));
+
+    set(
+        "username",
+        &cond(needs_password, st.username.text().as_ref()),
+    );
+    let pw: glib::GString = st.password.text();
+    set_secret("password", &cond(needs_password, pw.as_ref()));
+
+    set(
+        "static-key",
+        &cond(is_static_key, st.static_key.text().as_ref()),
+    );
+    let sk_dir = st.static_key_dir.value() as i64;
+    let static_key_direction = if is_static_key && sk_dir > 0 {
+        (sk_dir - 1).to_string()
+    } else {
+        String::new()
+    };
+    set("static-key-direction", &static_key_direction);
+
     set("nm-openvpn3-profile", st.profile_path.text().as_ref());
 
     // Device + Connection
     set("dev", st.dev.text().as_ref());
-    let dev_type_id = st.dev_type.selected_id();
-    if !dev_type_id.is_empty() {
-        set("dev-type", dev_type_id);
-    }
+    set("dev-type", st.dev_type.selected_id());
     set(
         "proto-tcp",
         if st.proto_tcp.is_active() { "yes" } else { "" },
     );
-    let mtu = st.tun_mtu.value() as i64;
-    if mtu > 0 {
-        set("tunnel-mtu", &mtu.to_string());
-    }
+    set("tunnel-mtu", &int_or_empty(st.tun_mtu.value() as i64));
     set("mssfix", st.mssfix.text().as_ref());
-    let frag = st.fragment.value() as i64;
-    if frag > 0 {
-        set("fragment-size", &frag.to_string());
-    }
-    let ping = st.keepalive_ping.value() as i64;
-    if ping > 0 {
-        set("ping", &ping.to_string());
-    }
-    let prestart = st.keepalive_restart.value() as i64;
-    if prestart > 0 {
-        set("ping-restart", &prestart.to_string());
-    }
-    let reneg = st.reneg_seconds.value() as i64;
-    if reneg > 0 {
-        set("reneg-seconds", &reneg.to_string());
-    }
-    let ct_timeout = st.connect_timeout.value() as i64;
-    if ct_timeout > 0 {
-        set("connect-timeout", &ct_timeout.to_string());
-    }
+    set("fragment-size", &int_or_empty(st.fragment.value() as i64));
+    set("ping", &int_or_empty(st.keepalive_ping.value() as i64));
+    set(
+        "ping-restart",
+        &int_or_empty(st.keepalive_restart.value() as i64),
+    );
+    set(
+        "reneg-seconds",
+        &int_or_empty(st.reneg_seconds.value() as i64),
+    );
+    set(
+        "connect-timeout",
+        &int_or_empty(st.connect_timeout.value() as i64),
+    );
 
     // Compression
-    let ac = st.allow_compression.selected_id();
-    if !ac.is_empty() {
-        set("allow-compression", ac);
-    }
-    let lzo = st.comp_lzo.selected_id();
-    if !lzo.is_empty() {
-        set("comp-lzo", lzo);
-    }
+    set("allow-compression", st.allow_compression.selected_id());
+    set("comp-lzo", st.comp_lzo.selected_id());
     set("compress", st.compress.text().as_ref());
 
     // Security
@@ -415,16 +570,10 @@ unsafe extern "C" fn iface_update_connection(
     );
     set("tls-cipher", st.tls_cipher.text().as_ref());
     set("auth", st.auth.text().as_ref());
-    let ks = st.keysize.value() as i64;
-    if ks > 0 {
-        set("keysize", &ks.to_string());
-    }
+    set("keysize", &int_or_empty(st.keysize.value() as i64));
 
     // TLS
-    let tv_min = st.tls_version_min.selected_id();
-    if !tv_min.is_empty() {
-        set("tls-version-min", tv_min);
-    }
+    set("tls-version-min", st.tls_version_min.selected_id());
     set(
         "tls-version-min-or-highest",
         if st.tls_version_min_or_highest.is_active() {
@@ -433,37 +582,25 @@ unsafe extern "C" fn iface_update_connection(
             ""
         },
     );
-    let tv_max = st.tls_version_max.selected_id();
-    if !tv_max.is_empty() {
-        set("tls-version-max", tv_max);
-    }
+    set("tls-version-max", st.tls_version_max.selected_id());
     set("verify-x509-name", st.verify_x509_name.text().as_ref());
-    let rct = st.remote_cert_tls.selected_id();
-    if !rct.is_empty() {
-        set("remote-cert-tls", rct);
-    }
-    let ns = st.ns_cert_type.selected_id();
-    if !ns.is_empty() {
-        set("ns-cert-type", ns);
-    }
+    set("remote-cert-tls", st.remote_cert_tls.selected_id());
+    set("ns-cert-type", st.ns_cert_type.selected_id());
     set("ta", st.ta.text().as_ref());
     let td_idx = st.ta_dir.value() as i64;
-    if td_idx > 0 {
-        set("ta-dir", &(td_idx - 1).to_string());
-    }
+    let ta_dir = if td_idx > 0 {
+        (td_idx - 1).to_string()
+    } else {
+        String::new()
+    };
+    set("ta-dir", &ta_dir);
     set("tls-crypt", st.tls_crypt.text().as_ref());
     set("tls-crypt-v2", st.tls_crypt_v2.text().as_ref());
 
     // Proxy
-    let pt = st.proxy_type.selected_id();
-    if !pt.is_empty() {
-        set("proxy-type", pt);
-    }
+    set("proxy-type", st.proxy_type.selected_id());
     set("proxy-server", st.proxy_server.text().as_ref());
-    let pp = st.proxy_port.value() as i64;
-    if pp > 0 {
-        set("proxy-port", &pp.to_string());
-    }
+    set("proxy-port", &int_or_empty(st.proxy_port.value() as i64));
     set("http-proxy-username", st.proxy_user.text().as_ref());
 
     // Misc
@@ -503,10 +640,10 @@ unsafe extern "C" fn iface_update_connection(
         "override-dco",
         if st.or_dco.is_active() { "yes" } else { "" },
     );
-    let log_level = st.or_log_level.value() as i64;
-    if log_level > 0 {
-        set("override-log-level", &log_level.to_string());
-    }
+    set(
+        "override-log-level",
+        &int_or_empty(st.or_log_level.value() as i64),
+    );
 
     GTRUE
 }
@@ -1428,7 +1565,19 @@ pub unsafe fn new_editor(connection: *mut NMConnection, error: *mut *mut GError)
             return ptr::null_mut();
         }
     }
-    let _ = libadwaita::init();
+    // libadwaita::init is idempotent on the C side, but if it ever
+    // fails (no display, missing schemas) widget construction below
+    // will panic with "Gtk has to be initialized before using
+    // libadwaita".  Surface a clean GError instead of letting the
+    // panic cross the C ABI.
+    if let Err(e) = libadwaita::init() {
+        set_error(
+            error,
+            NM_OPENVPN3_PLUGIN_ERROR_FAILED,
+            &format!("libadwaita::init failed: {e}"),
+        );
+        return ptr::null_mut();
+    }
     gettext_init_once();
 
     let data = connection_to_nm_data(connection);

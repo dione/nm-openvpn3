@@ -37,6 +37,15 @@ pub enum NMVpnEditorPlugin {}
 pub enum NMVpnEditor {}
 pub enum NMVpnPluginInfo {}
 
+// NMSettingSecretFlags (libnm/nm-setting.h).  AGENT_OWNED keeps the
+// secret out of the on-disk system-connections file; NOT_SAVED forces
+// libnma to prompt on every activation; NOT_REQUIRED lets activation
+// proceed without the secret.
+pub const NM_SETTING_SECRET_FLAG_NONE: u32 = 0;
+pub const NM_SETTING_SECRET_FLAG_AGENT_OWNED: u32 = 0x01;
+pub const NM_SETTING_SECRET_FLAG_NOT_SAVED: u32 = 0x02;
+pub const NM_SETTING_SECRET_FLAG_NOT_REQUIRED: u32 = 0x04;
+
 // NMVpnEditorPluginCapability (bitflags from libnm/nm-vpn-editor-plugin.h).
 pub const NM_VPN_EDITOR_PLUGIN_CAPABILITY_NONE: u32 = 0x00;
 pub const NM_VPN_EDITOR_PLUGIN_CAPABILITY_IMPORT: u32 = 0x01;
@@ -149,6 +158,7 @@ pub type GModule = std::ffi::c_void;
 pub struct GModuleFlags(pub u32);
 pub const G_MODULE_BIND_LAZY: GModuleFlags = GModuleFlags(1);
 pub const G_MODULE_BIND_LOCAL: GModuleFlags = GModuleFlags(2);
+pub const G_MODULE_BIND_LAZY_LOCAL: GModuleFlags = GModuleFlags(1 | 2);
 
 extern "C" {
     pub fn g_module_open(file_name: *const c_char, flags: GModuleFlags) -> *mut GModule;
@@ -226,6 +236,18 @@ extern "C" {
         func: unsafe extern "C" fn(key: *const c_char, value: *const c_char, user_data: gpointer),
         user_data: gpointer,
     );
+    pub fn nm_setting_vpn_remove_data_item(s: *mut NMSettingVpn, key: *const c_char) -> gboolean;
+    pub fn nm_setting_vpn_remove_secret(s: *mut NMSettingVpn, key: *const c_char) -> gboolean;
+
+    /// `nm_setting_set_secret_flags` — stable since libnm 1.0.  Sets
+    /// per-key secret-flag bits (AGENT_OWNED, NOT_SAVED, NOT_REQUIRED).
+    /// Returns FALSE iff the key doesn't exist on the setting.
+    pub fn nm_setting_set_secret_flags(
+        setting: *mut NMSetting,
+        secret_name: *const c_char,
+        flags: u32,
+        error: *mut *mut GError,
+    ) -> gboolean;
 
     pub fn nm_setting_ip4_config_new() -> *mut NMSetting;
 

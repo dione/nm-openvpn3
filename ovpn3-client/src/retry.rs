@@ -66,3 +66,138 @@ fn is_transient(e: &zbus::Error) -> bool {
     ) || matches!(&fdo_err, fdo::Error::UnknownMethod(msg)
         if msg.contains("Object does not exist at path"))
 }
+
+/// Activation-only retry — only the errors the bus daemon itself
+/// generates BEFORE the call reaches openvpn3 are considered transient.
+/// Use this for stateful operations (Import, NewTunnel) where a
+/// NoReply or Disconnect can mean the call already took effect on the
+/// other side and a blind retry would create a duplicate config /
+/// session object.
+pub async fn with_activation_retry<F, Fut, T>(
+    attempts: u32,
+    backoff: Duration,
+    mut op: F,
+) -> anyhow::Result<T>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = zbus::Result<T>>,
+{
+    if attempts == 0 {
+        return Err(anyhow::anyhow!(
+            "with_activation_retry called with attempts=0; nothing tried"
+        ));
+    }
+    let mut last_err: Option<zbus::Error> = None;
+    for i in 0..attempts {
+        match op().await {
+            Ok(t) => return Ok(t),
+            Err(e) => {
+                if !is_pre_dispatch_transient(&e) {
+                    return Err(anyhow::Error::from(e));
+                }
+                debug!(
+                    "activation attempt {} hit pre-dispatch error: {e}; retrying",
+                    i + 1
+                );
+                last_err = Some(e);
+                if i + 1 < attempts {
+                    tokio::time::sleep(backoff).await;
+                }
+            }
+        }
+    }
+    Err(anyhow::Error::from(
+        last_err.expect("attempts > 0 guarantees we recorded an error"),
+    ))
+}
+
+/// Errors that arise BEFORE the destination method handler runs — safe
+/// to retry for stateful operations because the receiver never saw the
+/// message, so no side-effect can have leaked through:
+///
+///   * `ServiceUnknown` — bus daemon doesn't know the service name yet.
+///   * `SpawnChildExited` — bus-activation child died before owning the
+///     name.
+///   * `UnknownObject` — service is alive, but the object path the
+///     call targets isn't registered yet (openvpn3-linux config /
+///     sessions managers register their objects a few ms after the
+///     service claims its bus name on cold start).
+///   * `UnknownMethod ("Object does not exist at path …")` — same
+///     thing, openvpn3 raises this variant on some builds when the
+///     object exists in the manifest but the live registration hasn't
+///     happened yet.
+///
+/// Deliberately excluded: `NoReply`, `Timeout`, `Disconnected` — those
+/// can mean the call already executed on the receiver and the reply
+/// was lost in transit, so a blind retry would leave a duplicate
+/// config / session object behind.
+fn is_pre_dispatch_transient(e: &zbus::Error) -> bool {
+    let fdo_err = fdo::Error::from(e.clone());
+    matches!(
+        fdo_err,
+        fdo::Error::ServiceUnknown(_)
+            | fdo::Error::SpawnChildExited(_)
+            | fdo::Error::UnknownObject(_)
+    ) || matches!(&fdo_err, fdo::Error::UnknownMethod(msg)
+        if msg.contains("Object does not exist at path"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Regression for the openvpn3-linux cold-start race: the
+    /// configuration-manager registers its object path a few ms after
+    /// it claims the bus name.  The first Import call after a cold
+    /// boot can hit `UnknownObject` or `UnknownMethod ("Object does
+    /// not exist at path …")` even though the service is alive.  Both
+    /// MUST be retried by `with_activation_retry` so the user's first
+    /// `nmcli connection up` doesn't surface a raw D-Bus error.
+    #[test]
+    fn cold_start_object_not_yet_registered_is_pre_dispatch() {
+        let unknown_object =
+            zbus::Error::from(fdo::Error::UnknownObject("no such object".to_string()));
+        assert!(
+            is_pre_dispatch_transient(&unknown_object),
+            "UnknownObject must be retried (config manager cold-start race)"
+        );
+
+        let unknown_method = zbus::Error::from(fdo::Error::UnknownMethod(
+            "Object does not exist at path /net/openvpn/v3/configuration".to_string(),
+        ));
+        assert!(
+            is_pre_dispatch_transient(&unknown_method),
+            "UnknownMethod with 'Object does not exist at path' must be retried"
+        );
+
+        let service_unknown = zbus::Error::from(fdo::Error::ServiceUnknown(
+            "net.openvpn.v3.configuration".to_string(),
+        ));
+        assert!(is_pre_dispatch_transient(&service_unknown));
+    }
+
+    /// Stateful retries must NOT cover errors that can mean the call
+    /// already executed on the other side.  Retrying NoReply / Timeout
+    /// / Disconnected on Import would leave an orphan config object.
+    #[test]
+    fn ambiguous_failures_are_not_pre_dispatch() {
+        let no_reply = zbus::Error::from(fdo::Error::NoReply("timeout".to_string()));
+        assert!(!is_pre_dispatch_transient(&no_reply));
+
+        let timeout = zbus::Error::from(fdo::Error::Timeout("hung".to_string()));
+        assert!(!is_pre_dispatch_transient(&timeout));
+
+        let disconnected = zbus::Error::from(fdo::Error::Disconnected("bus".to_string()));
+        assert!(!is_pre_dispatch_transient(&disconnected));
+    }
+
+    /// An unrelated UnknownMethod (e.g. "Method 'Foo' not implemented")
+    /// is a permanent error and must NOT be retried.
+    #[test]
+    fn unknown_method_without_object_marker_is_permanent() {
+        let no_such_method = zbus::Error::from(fdo::Error::UnknownMethod(
+            "Method 'Foo' not implemented".to_string(),
+        ));
+        assert!(!is_pre_dispatch_transient(&no_such_method));
+    }
+}

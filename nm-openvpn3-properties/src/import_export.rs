@@ -27,6 +27,13 @@ use std::collections::BTreeMap;
 
 use anyhow::{anyhow, Result};
 
+/// Heuristic match of the C tree's `is_pkcs12()` — file extension
+/// only.  Matches `nm-openvpn3-service/src/build_profile.rs`.
+pub fn is_pkcs12_path(path: &str) -> bool {
+    let lower = path.to_ascii_lowercase();
+    lower.ends_with(".p12") || lower.ends_with(".pfx")
+}
+
 /// Set of inline-blob option names we recognise.  Matches the
 /// `INLINE_BLOB_*` defines in the C tree.
 const INLINE_BLOB_NAMES: &[&str] = &[
@@ -117,7 +124,132 @@ impl OvpnConfig {
             let args = tokens.into_iter().skip(1).collect();
             directives.push(Directive::Option { name, args });
         }
-        Ok(OvpnConfig { directives })
+        let cfg = OvpnConfig { directives };
+        cfg.validate()?;
+        Ok(cfg)
+    }
+
+    /// Per-option validation to match C `do_import`'s sanity gates.
+    /// Errors here surface to the caller (the libnm import hook) and
+    /// reach the user as a clear "configuration error in <file>" dialog
+    /// instead of an opaque openvpn3 Import failure at activation time.
+    fn validate(&self) -> Result<()> {
+        for d in &self.directives {
+            let Directive::Option { name, args } = d else {
+                continue;
+            };
+            match name.as_str() {
+                "port" => {
+                    let v = args
+                        .first()
+                        .ok_or_else(|| anyhow!("port requires a value"))?;
+                    let n: u32 = v
+                        .parse()
+                        .map_err(|_| anyhow!("port '{v}' is not numeric"))?;
+                    if !(1..=65535).contains(&n) {
+                        return Err(anyhow!("port {n} out of range 1-65535"));
+                    }
+                }
+                "proxy-port" => {
+                    let v = args
+                        .first()
+                        .ok_or_else(|| anyhow!("proxy-port requires a value"))?;
+                    let n: u32 = v
+                        .parse()
+                        .map_err(|_| anyhow!("proxy-port '{v}' is not numeric"))?;
+                    if !(1..=65535).contains(&n) {
+                        return Err(anyhow!("proxy-port {n} out of range 1-65535"));
+                    }
+                }
+                "key-direction" | "static-key-direction" => {
+                    let v = args
+                        .first()
+                        .ok_or_else(|| anyhow!("{name} requires a value"))?;
+                    if !matches!(v.as_str(), "0" | "1") {
+                        return Err(anyhow!("{name} must be 0 or 1, got '{v}'"));
+                    }
+                }
+                "remote-cert-tls" => {
+                    let v = args
+                        .first()
+                        .ok_or_else(|| anyhow!("remote-cert-tls requires a value"))?;
+                    if !matches!(v.as_str(), "client" | "server") {
+                        return Err(anyhow!("remote-cert-tls must be client|server, got '{v}'"));
+                    }
+                }
+                "ns-cert-type" => {
+                    let v = args
+                        .first()
+                        .ok_or_else(|| anyhow!("ns-cert-type requires a value"))?;
+                    if !matches!(v.as_str(), "client" | "server") {
+                        return Err(anyhow!("ns-cert-type must be client|server, got '{v}'"));
+                    }
+                }
+                "mtu-disc" => {
+                    let v = args
+                        .first()
+                        .ok_or_else(|| anyhow!("mtu-disc requires a value"))?;
+                    if !matches!(v.as_str(), "no" | "maybe" | "yes") {
+                        return Err(anyhow!("mtu-disc must be no|maybe|yes, got '{v}'"));
+                    }
+                }
+                "comp-lzo" => {
+                    if let Some(v) = args.first() {
+                        if !matches!(v.as_str(), "yes" | "no" | "adaptive") {
+                            return Err(anyhow!("comp-lzo must be yes|no|adaptive, got '{v}'"));
+                        }
+                    }
+                }
+                "proto" => {
+                    let v = args
+                        .first()
+                        .ok_or_else(|| anyhow!("proto requires a value"))?;
+                    if !matches!(
+                        v.as_str(),
+                        "udp"
+                            | "tcp"
+                            | "udp4"
+                            | "udp6"
+                            | "tcp4"
+                            | "tcp6"
+                            | "tcp-client"
+                            | "tcp-server"
+                            | "udp-client"
+                            | "udp-server"
+                            | "tcp4-client"
+                            | "tcp6-client"
+                            | "udp4-client"
+                            | "udp6-client"
+                    ) {
+                        return Err(anyhow!("proto '{v}' is not recognised"));
+                    }
+                }
+                "tls-version-min" | "tls-version-max" => {
+                    let v = args
+                        .first()
+                        .ok_or_else(|| anyhow!("{name} requires a value"))?;
+                    let base = v.strip_suffix(" or-highest").unwrap_or(v);
+                    if !matches!(base, "1.0" | "1.1" | "1.2" | "1.3") {
+                        return Err(anyhow!("{name} '{v}' is not a recognised TLS version"));
+                    }
+                }
+                "keepalive" => {
+                    if args.len() < 2 {
+                        return Err(anyhow!("keepalive requires two integers"));
+                    }
+                    for (i, arg) in args.iter().take(2).enumerate() {
+                        if arg.parse::<u32>().is_err() {
+                            return Err(anyhow!(
+                                "keepalive arg {} must be a non-negative integer, got '{arg}'",
+                                i + 1
+                            ));
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        Ok(())
     }
 
     /// Emit the config back to `.ovpn` text.  Regular options are
@@ -249,16 +381,35 @@ impl OvpnConfig {
             push_flag(&mut directives, "push-peer-info");
         }
 
-        if is_tls_like {
-            if let Some(ca) = get("ca") {
+        // PKCS#12 collapse — when ca == cert == key and the path ends
+        // in .p12 / .pfx, emit a single `pkcs12 <path>` directive (the
+        // bundle carries all three).  Mirrors `build_profile.rs` and
+        // the C exporter; without this, an editor save of an imported
+        // PKCS#12 profile emits three separate ca/cert/key lines that
+        // openvpn3 refuses to parse against a binary bundle.
+        let cert = if needs_user_cert { get("cert") } else { None };
+        let key = if needs_user_cert { get("key") } else { None };
+        let ca = if is_tls_like { get("ca") } else { None };
+        let pkcs12_collapse = matches!(
+            (ca, cert, key),
+            (Some(a), Some(c), Some(k)) if a == c && c == k && is_pkcs12_path(c)
+        );
+        if pkcs12_collapse {
+            // unwrap_or_default is unreachable — pkcs12_collapse implies
+            // cert is Some — but keep it defensive.
+            push_opt(
+                &mut directives,
+                "pkcs12",
+                vec![cert.unwrap_or_default().into()],
+            );
+        } else {
+            if let Some(ca) = ca {
                 push_opt(&mut directives, "ca", vec![ca.into()]);
             }
-        }
-        if needs_user_cert {
-            if let Some(cert) = get("cert") {
+            if let Some(cert) = cert {
                 push_opt(&mut directives, "cert", vec![cert.into()]);
             }
-            if let Some(key) = get("key") {
+            if let Some(key) = key {
                 push_opt(&mut directives, "key", vec![key.into()]);
             }
         }
@@ -337,6 +488,26 @@ impl OvpnConfig {
                 "ifconfig",
                 vec![local.into(), remote.into()],
             );
+        }
+
+        // Extra static routes preserved from the imported .ovpn.  Each
+        // line is `route <args…>`; tokenise and push as Directive::Option
+        // so the emitter re-applies `push_escaped` per arg.  Failure to
+        // tokenise (a malformed line we shouldn't have stored) is
+        // skipped silently rather than failing the whole emit.
+        if let Some(routes) = get("nm-openvpn3-extra-routes") {
+            for line in routes.lines() {
+                let line = line.trim();
+                if line.is_empty() {
+                    continue;
+                }
+                let toks = match tokenize(line) {
+                    Ok(t) if !t.is_empty() => t,
+                    _ => continue,
+                };
+                let (name, rest) = toks.split_first().expect("non-empty per filter above");
+                push_opt(&mut directives, name, rest.to_vec());
+            }
         }
 
         if is_tls_like {
@@ -581,7 +752,15 @@ impl OvpnConfig {
                             }
                         }
                         "comp-lzo" => {
-                            data.insert("comp-lzo".into(), a0.unwrap_or("yes").into());
+                            // Legacy `comp-lzo no` arrives as "no";
+                            // remap to the internal "no-by-default"
+                            // sentinel the build_profile emitter knows
+                            // to translate back to plain "no" (bgo
+                            // #769177 workaround — plasma-nm wrote
+                            // "no" for the unset state).
+                            let v = a0.unwrap_or("yes");
+                            let normalised = if v == "no" { "no-by-default" } else { v };
+                            data.insert("comp-lzo".into(), normalised.into());
                         }
                         "compress" => {
                             data.insert("compress".into(), a0.unwrap_or("yes").into());
@@ -728,6 +907,21 @@ impl OvpnConfig {
                                 if let Some(port) = args.get(1) {
                                     data.insert("proxy-port".into(), port.clone());
                                 }
+                                // params[3] = path to auth file
+                                // (user/password, two lines).  Captured
+                                // verbatim here; the path is resolved
+                                // against the .ovpn dir and read into
+                                // vpn.data['http-proxy-username'] +
+                                // vpn.secrets['http-proxy-password'] in
+                                // `bridge.rs` (which is the only call
+                                // site with the source path).
+                                // params (after stripping the option
+                                // name) are: host, port, authfile,
+                                // [retry|auth-method].  Capture the
+                                // authfile for bridge.rs to resolve.
+                                if let Some(authfile) = args.get(2) {
+                                    data.insert("http-proxy-auth-file".into(), authfile.clone());
+                                }
                             }
                         }
                         "socks-proxy" => {
@@ -739,10 +933,49 @@ impl OvpnConfig {
                                 }
                             }
                         }
+                        "ifconfig" => {
+                            // Static-key mode requires `ifconfig <local>
+                            // <remote>`.  Splitting into the two NM keys
+                            // matches the C importer.
+                            if let (Some(local), Some(remote)) = (a0, args.get(1)) {
+                                data.insert("local-ip".into(), local.into());
+                                data.insert("remote-ip".into(), remote.clone());
+                            }
+                        }
+                        "route" => {
+                            // Routes have no NM-vocabulary key on this
+                            // plugin (C tree pushed them into
+                            // NMSettingIPConfig directly, which would
+                            // require additional libnm FFI we haven't
+                            // bound here).  Preserve them in a
+                            // newline-joined extras key so the editor
+                            // round-trips them via the out-of-vocab
+                            // replay path and `build_profile` re-emits
+                            // them at activation.
+                            let line = std::iter::once("route")
+                                .chain(args.iter().map(String::as_str))
+                                .collect::<Vec<&str>>()
+                                .join(" ");
+                            let entry: &mut String = data
+                                .entry("nm-openvpn3-extra-routes".to_string())
+                                .or_default();
+                            if !entry.is_empty() {
+                                entry.push('\n');
+                            }
+                            entry.push_str(&line);
+                        }
+                        "keepalive" => {
+                            // `keepalive A B` → ping=A, ping-restart=B
+                            // (matches C `do_import` ~L1395-1406).
+                            if let (Some(a), Some(b)) = (a0, args.get(1)) {
+                                data.insert("ping".into(), a.into());
+                                data.insert("ping-restart".into(), b.clone());
+                            }
+                        }
                         // Hard-coded options the exporter emits but
                         // doesn't need to round-trip into vpn.data.
                         "nobind" | "auth-nocache" | "persist-key" | "persist-tun"
-                        | "script-security" | "user" | "group" | "keepalive" => {}
+                        | "script-security" | "user" | "group" => {}
                         _ => {} // Unknown — survives via Directive only.
                     }
                 }
@@ -796,77 +1029,70 @@ impl OvpnConfig {
 
 /// Tokenize a single non-empty input line into shell-style words,
 /// honouring `'…'`, `"…"`, and `\<ch>` escapes as openvpn does.
+/// Iterates over `chars`, not raw bytes, so multi-byte UTF-8 codepoints
+/// land in the token as a single `char` rather than being split into
+/// Latin-1 fragments (the regression that mangled `verify-x509-name
+/// "CN=Müller"` into `CN=MÃ¼ller`).
 fn tokenize(line: &str) -> Result<Vec<String>> {
     let mut tokens = Vec::new();
-    let bytes = line.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() {
-        // Skip whitespace between tokens.
-        while i < bytes.len() && (bytes[i] as char).is_ascii_whitespace() {
-            i += 1;
+    let mut it = line.chars().peekable();
+    while let Some(&c) = it.peek() {
+        if c.is_ascii_whitespace() {
+            it.next();
+            continue;
         }
-        if i >= bytes.len() {
-            break;
-        }
-        // Comment terminates the line per openvpn parsing rules.
-        if bytes[i] == b';' || bytes[i] == b'#' {
+        if c == ';' || c == '#' {
+            // Comments terminate the line per openvpn parsing rules.
             break;
         }
         let mut token = String::new();
-        let first = bytes[i] as char;
-        if first == '"' || first == '\'' {
+        if c == '"' || c == '\'' {
             // Quoted token.  Double-quotes honour backslash escapes;
             // single quotes are literal.  After the closing quote
             // openvpn stops parsing for the current word — concatenated
-            // `'a'b` yields `a`, `b` (matches the C `args_parse_line`
-            // comment).
-            let quote = bytes[i];
-            i += 1;
-            while i < bytes.len() && bytes[i] != quote {
-                if quote == b'"' && bytes[i] == b'\\' && i + 1 < bytes.len() {
-                    i += 1;
-                    let escaped = bytes[i] as char;
-                    let mapped = match escaped {
+            // `'a'b` yields `a`, `b` (matches C `args_parse_line`).
+            let quote = c;
+            it.next(); // consume opening quote
+            loop {
+                let ch = it.next().ok_or_else(|| {
+                    anyhow!(
+                        "unterminated {} quote",
+                        if quote == '"' { "double" } else { "single" }
+                    )
+                })?;
+                if ch == quote {
+                    break;
+                }
+                if quote == '"' && ch == '\\' {
+                    let esc = it.next().ok_or_else(|| {
+                        anyhow!("trailing escape backslash inside double-quoted token")
+                    })?;
+                    let mapped = match esc {
                         'n' => '\n',
                         't' => '\t',
                         other => other,
                     };
                     token.push(mapped);
-                    i += 1;
                     continue;
                 }
-                token.push(bytes[i] as char);
-                i += 1;
+                token.push(ch);
             }
-            if i >= bytes.len() {
-                return Err(anyhow!(
-                    "unterminated {} quote",
-                    if quote == b'"' { "double" } else { "single" }
-                ));
-            }
-            i += 1; // consume closing quote
         } else {
             // Unquoted token.  Backslash escapes the next character;
             // whitespace ends the token.
-            loop {
-                if i >= bytes.len() {
+            while let Some(&ch) = it.peek() {
+                if ch.is_ascii_whitespace() {
                     break;
                 }
-                let c = bytes[i];
-                if (c as char).is_ascii_whitespace() {
-                    break;
-                }
-                if c == b'\\' {
-                    if i + 1 >= bytes.len() {
-                        return Err(anyhow!("trailing escape backslash"));
-                    }
-                    i += 1;
-                    token.push(bytes[i] as char);
-                    i += 1;
+                it.next();
+                if ch == '\\' {
+                    let esc = it
+                        .next()
+                        .ok_or_else(|| anyhow!("trailing escape backslash"))?;
+                    token.push(esc);
                     continue;
                 }
-                token.push(c as char);
-                i += 1;
+                token.push(ch);
             }
         }
         tokens.push(token);
@@ -1169,5 +1395,145 @@ key /etc/ovpn/c.key
         let cfg = OvpnConfig::parse(input).unwrap();
         let out = cfg.emit();
         assert!(out.contains("my-custom-option foo"));
+    }
+
+    /// Regression for the bytes-as-char tokenizer that mangled multi-
+    /// byte UTF-8 sequences into Latin-1 mojibake.  An x509 name
+    /// containing `ü` (UTF-8 `0xC3 0xBC`) must round-trip as a single
+    /// codepoint.
+    #[test]
+    fn tokenize_preserves_utf8_codepoints() {
+        let input = "verify-x509-name \"CN=Müller\"\n";
+        let cfg = OvpnConfig::parse(input).unwrap();
+        let nm = cfg.as_nm_data();
+        assert_eq!(
+            nm.get("verify-x509-name").map(String::as_str),
+            Some("CN=Müller")
+        );
+    }
+
+    /// Regression: from_nm_data must collapse ca == cert == key == .p12
+    /// back into a single `pkcs12` directive.  Without this, the editor
+    /// emit path produced three separate ca/cert/key lines openvpn3
+    /// refuses to parse against a binary PKCS#12 bundle.
+    #[test]
+    fn from_nm_data_collapses_pkcs12() {
+        let mut data = BTreeMap::new();
+        data.insert("connection-type".into(), "tls".into());
+        data.insert("remote".into(), "vpn.example".into());
+        data.insert("ca".into(), "/etc/vpn/bundle.p12".into());
+        data.insert("cert".into(), "/etc/vpn/bundle.p12".into());
+        data.insert("key".into(), "/etc/vpn/bundle.p12".into());
+        let out = OvpnConfig::from_nm_data(&data).emit();
+        // push_escaped single-quotes paths that contain non-benign
+        // characters (here `/` and `.`), so accept either form.
+        let pkcs12_present = out
+            .lines()
+            .any(|l| l.starts_with("pkcs12 ") && l.contains("/etc/vpn/bundle.p12"));
+        assert!(pkcs12_present, "no pkcs12 line in emit");
+        // Confirm we did NOT emit the split form alongside it.
+        for line in out.lines() {
+            assert!(
+                !(line.starts_with("ca ") && line.contains(".p12")),
+                "unexpected separate ca line: {line}"
+            );
+            assert!(
+                !(line.starts_with("cert ") && line.contains(".p12")),
+                "unexpected separate cert line: {line}"
+            );
+        }
+    }
+
+    /// Regression: bare `ifconfig <local> <remote>` lands as the NM
+    /// keys the static-key build_profile path expects.
+    #[test]
+    fn import_ifconfig_populates_local_remote_ip() {
+        let input = "ifconfig 10.0.0.2 10.0.0.1\n";
+        let cfg = OvpnConfig::parse(input).unwrap();
+        let nm = cfg.as_nm_data();
+        assert_eq!(nm.get("local-ip").map(String::as_str), Some("10.0.0.2"));
+        assert_eq!(nm.get("remote-ip").map(String::as_str), Some("10.0.0.1"));
+    }
+
+    /// Regression: `keepalive A B` splits into ping=A, ping-restart=B
+    /// instead of silently being dropped.
+    #[test]
+    fn import_keepalive_populates_ping_keys() {
+        let input = "remote v\nkeepalive 10 60\n";
+        let cfg = OvpnConfig::parse(input).unwrap();
+        let nm = cfg.as_nm_data();
+        assert_eq!(nm.get("ping").map(String::as_str), Some("10"));
+        assert_eq!(nm.get("ping-restart").map(String::as_str), Some("60"));
+    }
+
+    /// Regression: validation rejects out-of-range port.
+    #[test]
+    fn validate_rejects_port_overflow() {
+        let input = "remote v\nport 99999\n";
+        let err = OvpnConfig::parse(input).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("port"), "expected port error, got: {msg}");
+    }
+
+    /// Regression: validation rejects bogus key-direction.
+    #[test]
+    fn validate_rejects_bad_key_direction() {
+        let input = "remote v\nkey-direction 2\n";
+        let err = OvpnConfig::parse(input).unwrap_err();
+        assert!(err.to_string().contains("key-direction"));
+    }
+
+    /// Regression: validation rejects unknown remote-cert-tls value.
+    #[test]
+    fn validate_rejects_bad_remote_cert_tls() {
+        let input = "remote v\nremote-cert-tls maybe\n";
+        let err = OvpnConfig::parse(input).unwrap_err();
+        assert!(err.to_string().contains("remote-cert-tls"));
+    }
+
+    /// Regression: `route` directives that don't have a first-class
+    /// NM key are preserved verbatim under `nm-openvpn3-extra-routes`
+    /// so a Save-Save round-trip doesn't drop split-tunnel routes.
+    #[test]
+    fn import_route_preserves_extras() {
+        let input =
+            "remote v\nroute 10.0.0.0 255.0.0.0\nroute 192.168.1.0 255.255.255.0 10.0.0.1\n";
+        let cfg = OvpnConfig::parse(input).unwrap();
+        let nm = cfg.as_nm_data();
+        let extras = nm
+            .get("nm-openvpn3-extra-routes")
+            .expect("routes preserved");
+        assert!(extras.contains("route 10.0.0.0 255.0.0.0"));
+        assert!(extras.contains("route 192.168.1.0 255.255.255.0 10.0.0.1"));
+    }
+
+    /// Regression: extra routes round-trip through from_nm_data as
+    /// `route …` directives.
+    #[test]
+    fn from_nm_data_emits_extra_routes() {
+        let mut data = BTreeMap::new();
+        data.insert("connection-type".into(), "tls".into());
+        data.insert("remote".into(), "v".into());
+        data.insert(
+            "nm-openvpn3-extra-routes".into(),
+            "route 10.0.0.0 255.0.0.0".into(),
+        );
+        let out = OvpnConfig::from_nm_data(&data).emit();
+        assert!(out
+            .lines()
+            .any(|l| l.starts_with("route ") && l.contains("10.0.0.0") && l.contains("255.0.0.0")));
+    }
+
+    /// Regression: http-proxy with authfile preserves the path as
+    /// `http-proxy-auth-file` so bridge.rs can read it.
+    #[test]
+    fn import_http_proxy_preserves_authfile() {
+        let input = "remote v\nhttp-proxy 10.1.1.1 8080 auth.txt\n";
+        let cfg = OvpnConfig::parse(input).unwrap();
+        let nm = cfg.as_nm_data();
+        assert_eq!(
+            nm.get("http-proxy-auth-file").map(String::as_str),
+            Some("auth.txt")
+        );
     }
 }
