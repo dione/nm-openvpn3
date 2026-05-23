@@ -47,7 +47,9 @@ use nm_vpn_plugin_openvpn3::libnm::{
 // ---------------------------------------------------------------------------
 // Static option vocabularies — kept as `(id, display_key)`.  Display
 // strings are wrapped in `gettext()` when consumed so locales pick up
-// translated labels once the `po/` tree lands.
+// translated labels; pure acronyms / numerals route through
+// `passthrough_label` so translators are not asked to "translate" tokens
+// like "TLS" or "tun".
 // ---------------------------------------------------------------------------
 
 const CONTYPE_TLS: &str = "tls";
@@ -99,6 +101,96 @@ const COMP_LZO: &[(&str, &str)] = &[
 ];
 
 const DEV_TYPES: &[(&str, &str)] = &[("", "Auto"), ("tun", "tun"), ("tap", "tap")];
+
+/// `compress` (modern openvpn) accepts a finite enum of algorithm
+/// names; the ID is the literal token openvpn3 expects on the wire.
+/// "lzo" matches the legacy `compress yes` shorthand.
+const COMPRESS: &[(&str, &str)] = &[
+    ("", "Default"),
+    ("lzo", "LZO"),
+    ("lz4", "LZ4"),
+    ("lz4-v2", "LZ4 v2"),
+];
+
+/// Legacy `cipher` and modern `data-ciphers-fallback` share the same
+/// single-cipher vocabulary.  IDs are the literal cipher names openvpn3
+/// hands to OpenSSL.  Empty leaves openvpn3's negotiated default in
+/// place.  GCM modes ordered first because that is what every modern
+/// peer prefers.  `cipher=none` and DES-EDE3-CBC are intentionally
+/// omitted — anyone who needs the no-encryption mode or 3DES for a
+/// test rig can set them via nmcli; surfacing them at parity with
+/// AES-256-GCM invites a misclick that ships traffic in cleartext.
+const CIPHERS: &[(&str, &str)] = &[
+    ("", "Default"),
+    ("AES-256-GCM", "AES-256-GCM"),
+    ("AES-192-GCM", "AES-192-GCM"),
+    ("AES-128-GCM", "AES-128-GCM"),
+    ("CHACHA20-POLY1305", "CHACHA20-POLY1305"),
+    ("AES-256-CBC", "AES-256-CBC"),
+    ("AES-192-CBC", "AES-192-CBC"),
+    ("AES-128-CBC", "AES-128-CBC"),
+    ("BF-CBC", "BF-CBC"),
+];
+
+/// HMAC algorithms for the openvpn `auth` directive.  IDs match the
+/// OpenSSL digest names openvpn3 forwards verbatim.  `auth=none` is
+/// intentionally omitted (see CIPHERS); MD5 stays because some legacy
+/// tunnels still rely on it as the HMAC even when the data cipher is
+/// modern.
+const AUTH_ALGS: &[(&str, &str)] = &[
+    ("", "Default"),
+    ("SHA1", "SHA1"),
+    ("SHA224", "SHA224"),
+    ("SHA256", "SHA256"),
+    ("SHA384", "SHA384"),
+    ("SHA512", "SHA512"),
+    ("RIPEMD160", "RIPEMD160"),
+    ("MD5", "MD5"),
+];
+
+/// Tri-state key-direction vocabulary used by both `static-key-direction`
+/// and `ta-dir`.  IDs are the literal `--key-direction` values openvpn
+/// expects ("" for unset, "0", "1"); labels expose the OpenVPN convention
+/// (server uses 0, client uses 1) so users don't have to memorise the
+/// numbering.
+const KEY_DIR: &[(&str, &str)] = &[("", "None"), ("0", "Server"), ("1", "Client")];
+
+/// Labels that must not be sent through `gettext()` — openvpn protocol
+/// tokens and TLS version strings.  Translators get an easier life and
+/// shipping `tun` as `msgid "tun"` in a fresh locale won't accidentally
+/// render as something different.
+fn passthrough_label(s: &str) -> bool {
+    matches!(
+        s,
+        "TLS"
+            | "HTTP"
+            | "SOCKS"
+            | "TLS 1.0"
+            | "TLS 1.1"
+            | "TLS 1.2"
+            | "TLS 1.3"
+            | "tun"
+            | "tap"
+            | "LZO"
+            | "LZ4"
+            | "LZ4 v2"
+            | "AES-128-CBC"
+            | "AES-192-CBC"
+            | "AES-256-CBC"
+            | "AES-128-GCM"
+            | "AES-192-GCM"
+            | "AES-256-GCM"
+            | "CHACHA20-POLY1305"
+            | "BF-CBC"
+            | "SHA1"
+            | "SHA224"
+            | "SHA256"
+            | "SHA384"
+            | "SHA512"
+            | "RIPEMD160"
+            | "MD5"
+    )
+}
 
 /// vpn.data keys this editor owns.  Anything in the imported snapshot
 /// that is NOT in this list is replayed verbatim on Save so nmcli-set
@@ -226,14 +318,15 @@ struct EditorState {
     password: PasswordEntryRow,
     profile_path: EntryRow,
     static_key: EntryRow,
-    static_key_dir: SpinRow,
+    static_key_dir: ComboBinding,
 
     // Device + Connection (was "Routing")
     dev: EntryRow,
     dev_type: ComboBinding,
     proto_tcp: SwitchRow,
     tun_mtu: SpinRow,
-    mssfix: EntryRow,
+    mssfix_enabled: SwitchRow,
+    mssfix_bytes: SpinRow,
     fragment: SpinRow,
     keepalive_ping: SpinRow,
     keepalive_restart: SpinRow,
@@ -243,14 +336,14 @@ struct EditorState {
     // Compression
     allow_compression: ComboBinding,
     comp_lzo: ComboBinding,
-    compress: EntryRow,
+    compress: ComboBinding,
 
     // Security
-    cipher: EntryRow,
+    cipher: ComboBinding,
     data_ciphers: EntryRow,
-    data_ciphers_fallback: EntryRow,
+    data_ciphers_fallback: ComboBinding,
     tls_cipher: EntryRow,
-    auth: EntryRow,
+    auth: ComboBinding,
     keysize: SpinRow,
 
     // TLS
@@ -261,7 +354,7 @@ struct EditorState {
     remote_cert_tls: ComboBinding,
     ns_cert_type: ComboBinding,
     ta: EntryRow,
-    ta_dir: SpinRow,
+    ta_dir: ComboBinding,
     tls_crypt: EntryRow,
     tls_crypt_v2: EntryRow,
 
@@ -522,13 +615,10 @@ unsafe extern "C" fn iface_update_connection(
         "static-key",
         &cond(is_static_key, st.static_key.text().as_ref()),
     );
-    let sk_dir = st.static_key_dir.value() as i64;
-    let static_key_direction = if is_static_key && sk_dir > 0 {
-        (sk_dir - 1).to_string()
-    } else {
-        String::new()
-    };
-    set("static-key-direction", &static_key_direction);
+    set(
+        "static-key-direction",
+        &cond(is_static_key, st.static_key_dir.selected_id()),
+    );
 
     set("nm-openvpn3-profile", st.profile_path.text().as_ref());
 
@@ -540,7 +630,20 @@ unsafe extern "C" fn iface_update_connection(
         if st.proto_tcp.is_active() { "yes" } else { "" },
     );
     set("tunnel-mtu", &int_or_empty(st.tun_mtu.value() as i64));
-    set("mssfix", st.mssfix.text().as_ref());
+    // Switch off → drop the key (empty string clears).  Switch on with
+    // byte count 0 → "yes" (openvpn3 picks).  Switch on with explicit
+    // byte count → numeric string.
+    let mssfix_value = if !st.mssfix_enabled.is_active() {
+        String::new()
+    } else {
+        let bytes = st.mssfix_bytes.value() as i64;
+        if bytes > 0 {
+            bytes.to_string()
+        } else {
+            "yes".to_string()
+        }
+    };
+    set("mssfix", &mssfix_value);
     set("fragment-size", &int_or_empty(st.fragment.value() as i64));
     set("ping", &int_or_empty(st.keepalive_ping.value() as i64));
     set(
@@ -559,17 +662,17 @@ unsafe extern "C" fn iface_update_connection(
     // Compression
     set("allow-compression", st.allow_compression.selected_id());
     set("comp-lzo", st.comp_lzo.selected_id());
-    set("compress", st.compress.text().as_ref());
+    set("compress", st.compress.selected_id());
 
     // Security
-    set("cipher", st.cipher.text().as_ref());
+    set("cipher", st.cipher.selected_id());
     set("data-ciphers", st.data_ciphers.text().as_ref());
     set(
         "data-ciphers-fallback",
-        st.data_ciphers_fallback.text().as_ref(),
+        st.data_ciphers_fallback.selected_id(),
     );
     set("tls-cipher", st.tls_cipher.text().as_ref());
-    set("auth", st.auth.text().as_ref());
+    set("auth", st.auth.selected_id());
     set("keysize", &int_or_empty(st.keysize.value() as i64));
 
     // TLS
@@ -587,13 +690,7 @@ unsafe extern "C" fn iface_update_connection(
     set("remote-cert-tls", st.remote_cert_tls.selected_id());
     set("ns-cert-type", st.ns_cert_type.selected_id());
     set("ta", st.ta.text().as_ref());
-    let td_idx = st.ta_dir.value() as i64;
-    let ta_dir = if td_idx > 0 {
-        (td_idx - 1).to_string()
-    } else {
-        String::new()
-    };
-    set("ta-dir", &ta_dir);
+    set("ta-dir", st.ta_dir.selected_id());
     set("tls-crypt", st.tls_crypt.text().as_ref());
     set("tls-crypt-v2", st.tls_crypt_v2.text().as_ref());
 
@@ -694,7 +791,16 @@ fn combo_row(
     if let Some(s) = subtitle {
         row.set_subtitle(&tr(s));
     }
-    let labels: Vec<String> = choices.iter().map(|(_, l)| tr(l)).collect();
+    let labels: Vec<String> = choices
+        .iter()
+        .map(|(_, l)| {
+            if passthrough_label(l) {
+                (*l).to_string()
+            } else {
+                tr(l)
+            }
+        })
+        .collect();
     let label_refs: Vec<&str> = labels.iter().map(String::as_str).collect();
     let model = StringList::new(&label_refs);
     let mut ids = Vec::with_capacity(choices.len());
@@ -740,16 +846,42 @@ fn entry_row(title: &str, tooltip: Option<&str>, initial: &str) -> EntryRow {
     r
 }
 
+/// File-filter spec for a picker row.  Each entry pairs a translatable
+/// human-readable name with a list of glob patterns; the row builder
+/// always appends an "All files" wildcard so users can fall through if
+/// a peer ships a profile with an unusual extension.
+type PickerFilters = &'static [(&'static str, &'static [&'static str])];
+
+const FILTER_CERT: PickerFilters =
+    &[("Certificates (PEM, CRT, CER)", &["*.pem", "*.crt", "*.cer"])];
+const FILTER_KEY: PickerFilters = &[
+    ("Keys (PEM, KEY)", &["*.pem", "*.key"]),
+    ("PKCS#12 bundles (P12, PFX)", &["*.p12", "*.pfx"]),
+];
+const FILTER_PROFILE: PickerFilters = &[("OpenVPN profiles (OVPN, CONF)", &["*.ovpn", "*.conf"])];
+const FILTER_KEY_MATERIAL: PickerFilters =
+    &[("Key material (KEY, PEM, TXT)", &["*.key", "*.pem", "*.txt"])];
+
 /// Build an `AdwEntryRow` with a `document-open-symbolic` suffix
 /// button.  Clicking the button opens a `GtkFileDialog` rooted at the
-/// row's nearest window ancestor; selection writes the absolute path
-/// back into the entry.
-fn path_picker_row(title: &str, tooltip: Option<&str>, initial: &str) -> EntryRow {
+/// row's nearest window ancestor with the supplied filters applied;
+/// selection writes the absolute path back into the entry.
+fn path_picker_row(
+    title: &str,
+    tooltip: Option<&str>,
+    initial: &str,
+    filters: PickerFilters,
+) -> EntryRow {
     let row = entry_row(title, tooltip, initial);
     let button = gtk4::Button::from_icon_name("document-open-symbolic");
     button.set_valign(gtk4::Align::Center);
     button.add_css_class("flat");
-    button.set_tooltip_text(Some(&tr("Browse for file…")));
+    let browse_label = tr("Browse for file…");
+    button.set_tooltip_text(Some(&browse_label));
+    // Screen readers that ignore tooltips still need an accessible name
+    // — the symbolic icon button has no visible text.
+    button.update_property(&[gtk4::accessible::Property::Label(&browse_label)]);
+
     let row_weak = row.downgrade();
     button.connect_clicked(move |btn| {
         let Some(row) = row_weak.upgrade() else {
@@ -757,6 +889,31 @@ fn path_picker_row(title: &str, tooltip: Option<&str>, initial: &str) -> EntryRo
         };
         let dialog = gtk4::FileDialog::new();
         dialog.set_title(&tr("Select file"));
+
+        // tr() runs every click so a host that flipped locale mid-
+        // session (gnome-control-center → Region & Language) sees fresh
+        // filter names without rebuilding the editor.  Filters are
+        // re-materialised per click anyway because FileDialog::filters
+        // wants a fresh ListStore.
+        if !filters.is_empty() {
+            let store = gio::ListStore::new::<gtk4::FileFilter>();
+            for (name, patterns) in filters {
+                let f = gtk4::FileFilter::new();
+                f.set_name(Some(&tr(name)));
+                for p in *patterns {
+                    f.add_pattern(p);
+                }
+                store.append(&f);
+            }
+            // Always offer a wildcard fallback — drops out the moment a
+            // user hits a profile with `.txt` or no extension at all.
+            let all = gtk4::FileFilter::new();
+            all.set_name(Some(&tr("All files")));
+            all.add_pattern("*");
+            store.append(&all);
+            dialog.set_filters(Some(&store));
+        }
+
         let parent_window = btn.root().and_then(|r| r.downcast::<gtk4::Window>().ok());
         let row_weak2 = row.downgrade();
         dialog.open(
@@ -796,11 +953,13 @@ fn parse_int_default(s: Option<&String>, default: f64) -> f64 {
 fn build_widget_tree(initial: &std::collections::BTreeMap<String, String>) -> EditorState {
     let page = PreferencesPage::new();
     page.set_title(&tr("OpenVPN 3"));
-    page.set_description(&tr("Edit the OpenVPN 3 VPN connection settings."));
 
     // ---- General ----
     let g_general = PreferencesGroup::new();
     g_general.set_title(&tr("General"));
+    g_general.set_description(Some(&tr(
+        "Server and credentials. Advanced settings collapse below.",
+    )));
 
     let initial_ct = initial
         .get("connection-type")
@@ -834,6 +993,7 @@ fn build_widget_tree(initial: &std::collections::BTreeMap<String, String>) -> Ed
         "CA certificate",
         Some("PEM-encoded certificate authority that signs the server."),
         initial.get("ca").map(String::as_str).unwrap_or(""),
+        FILTER_CERT,
     );
     g_general.add(&ca);
 
@@ -841,6 +1001,7 @@ fn build_widget_tree(initial: &std::collections::BTreeMap<String, String>) -> Ed
         "User certificate",
         Some("PEM-encoded client certificate."),
         initial.get("cert").map(String::as_str).unwrap_or(""),
+        FILTER_CERT,
     );
     g_general.add(&cert);
 
@@ -848,6 +1009,7 @@ fn build_widget_tree(initial: &std::collections::BTreeMap<String, String>) -> Ed
         "Private key",
         Some("PEM or PKCS#12 file matching the user certificate."),
         initial.get("key").map(String::as_str).unwrap_or(""),
+        FILTER_KEY,
     );
     g_general.add(&key);
 
@@ -868,22 +1030,17 @@ fn build_widget_tree(initial: &std::collections::BTreeMap<String, String>) -> Ed
         "Static key file",
         Some("Pre-shared key. Only used when Connection type is Static key."),
         initial.get("static-key").map(String::as_str).unwrap_or(""),
+        FILTER_KEY_MATERIAL,
     );
     g_general.add(&static_key);
 
-    let sk_dir_initial = initial
-        .get("static-key-direction")
-        .and_then(|s| s.parse::<f64>().ok())
-        .map(|v| v + 1.0)
-        .unwrap_or(0.0);
-    let static_key_dir = spin_row(
+    let static_key_dir = combo_row(
         "Static key direction",
-        Some("0 = none, 1 = 0, 2 = 1."),
-        0.0,
-        2.0,
-        sk_dir_initial,
+        None,
+        KEY_DIR,
+        initial.get("static-key-direction").map(String::as_str),
     );
-    g_general.add(&static_key_dir);
+    g_general.add(&static_key_dir.row);
 
     let profile_path = path_picker_row(
         "Inline .ovpn profile",
@@ -892,6 +1049,7 @@ fn build_widget_tree(initial: &std::collections::BTreeMap<String, String>) -> Ed
             .get("nm-openvpn3-profile")
             .map(String::as_str)
             .unwrap_or(""),
+        FILTER_PROFILE,
     );
     g_general.add(&profile_path);
     page.add(&g_general);
@@ -939,12 +1097,31 @@ fn build_widget_tree(initial: &std::collections::BTreeMap<String, String>) -> Ed
         parse_int_default(initial.get("fragment-size"), 0.0),
     );
     exp_device.add_row(&fragment);
-    let mssfix = entry_row(
+    // mssfix is "" (default / disabled), "yes" (enabled, auto byte count),
+    // "no" (disabled), or a positive integer (enabled, explicit bytes).
+    // Surface as a switch + companion spin; the spin only meaningfully
+    // applies when the switch is on (0 ≙ "yes", >0 ≙ explicit value).
+    let mssfix_raw = initial.get("mssfix").map(String::as_str).unwrap_or("");
+    // Clamp at parse so a hostile vpn.data ("mssfix=-1") cannot land a
+    // negative spin value that would survive a switch-off / switch-on
+    // round-trip if the user never touches the spin.
+    let mssfix_bytes_initial: f64 = mssfix_raw.parse::<f64>().unwrap_or(0.0).max(0.0);
+    let mssfix_on = matches!(mssfix_raw, "yes") || mssfix_bytes_initial > 0.0;
+    let mssfix_enabled = switch_row(
         "MSSfix",
-        Some("`yes` to enable, a byte count to set the value, empty to disable."),
-        initial.get("mssfix").map(String::as_str).unwrap_or(""),
+        Some("Cap TCP payload to fit inside the tunnel MTU."),
+        mssfix_on,
     );
-    exp_device.add_row(&mssfix);
+    exp_device.add_row(&mssfix_enabled);
+    let mssfix_bytes = spin_row(
+        "MSSfix byte count",
+        Some("0 lets openvpn3 pick the value automatically."),
+        0.0,
+        65535.0,
+        mssfix_bytes_initial,
+    );
+    mssfix_bytes.set_visible(mssfix_on);
+    exp_device.add_row(&mssfix_bytes);
     g_advanced.add(&exp_device);
 
     // ---- Connection / timing ----
@@ -1011,24 +1188,26 @@ fn build_widget_tree(initial: &std::collections::BTreeMap<String, String>) -> Ed
         initial.get("comp-lzo").map(String::as_str),
     );
     exp_comp.add_row(&comp_lzo.row);
-    let compress = entry_row(
+    let compress = combo_row(
         "Compression algorithm",
-        Some("`yes`, `lz4`, `lz4-v2`, or empty."),
-        initial.get("compress").map(String::as_str).unwrap_or(""),
+        None,
+        COMPRESS,
+        initial.get("compress").map(String::as_str),
     );
-    exp_comp.add_row(&compress);
+    exp_comp.add_row(&compress.row);
     g_advanced.add(&exp_comp);
 
     // ---- Security ----
     let exp_sec = ExpanderRow::new();
     exp_sec.set_title(&tr("Security"));
     exp_sec.set_subtitle(&tr("Ciphers and HMAC algorithms."));
-    let cipher = entry_row(
+    let cipher = combo_row(
         "Legacy cipher",
         Some("Used with older servers. Modern setups use data-ciphers."),
-        initial.get("cipher").map(String::as_str).unwrap_or(""),
+        CIPHERS,
+        initial.get("cipher").map(String::as_str),
     );
-    exp_sec.add_row(&cipher);
+    exp_sec.add_row(&cipher.row);
     let data_ciphers = entry_row(
         "Data ciphers",
         Some("Colon-separated list, highest preference first."),
@@ -1038,27 +1217,26 @@ fn build_widget_tree(initial: &std::collections::BTreeMap<String, String>) -> Ed
             .unwrap_or(""),
     );
     exp_sec.add_row(&data_ciphers);
-    let data_ciphers_fallback = entry_row(
+    let data_ciphers_fallback = combo_row(
         "Data ciphers fallback",
         Some("Cipher to use when negotiation fails."),
-        initial
-            .get("data-ciphers-fallback")
-            .map(String::as_str)
-            .unwrap_or(""),
+        CIPHERS,
+        initial.get("data-ciphers-fallback").map(String::as_str),
     );
-    exp_sec.add_row(&data_ciphers_fallback);
+    exp_sec.add_row(&data_ciphers_fallback.row);
     let tls_cipher = entry_row(
         "TLS cipher",
         Some("OpenSSL cipher string for the control channel."),
         initial.get("tls-cipher").map(String::as_str).unwrap_or(""),
     );
     exp_sec.add_row(&tls_cipher);
-    let auth = entry_row(
+    let auth = combo_row(
         "HMAC authentication",
-        Some("Algorithm for the packet HMAC (`SHA1`, `SHA256`, …)."),
-        initial.get("auth").map(String::as_str).unwrap_or(""),
+        None,
+        AUTH_ALGS,
+        initial.get("auth").map(String::as_str),
     );
-    exp_sec.add_row(&auth);
+    exp_sec.add_row(&auth.row);
     let keysize = spin_row(
         "Key size",
         Some("0 leaves the cipher's native key size."),
@@ -1099,8 +1277,8 @@ fn build_widget_tree(initial: &std::collections::BTreeMap<String, String>) -> Ed
     );
     exp_tls.add_row(&tls_version_max.row);
     let verify_x509_name = entry_row(
-        "verify-x509-name",
-        Some("Optional `type:name` prefix (e.g. `name-prefix:server`)."),
+        "Verify X.509 name",
+        Some("Optional type:name prefix, for example name-prefix:server."),
         initial
             .get("verify-x509-name")
             .map(String::as_str)
@@ -1115,44 +1293,41 @@ fn build_widget_tree(initial: &std::collections::BTreeMap<String, String>) -> Ed
     );
     exp_tls.add_row(&remote_cert_tls.row);
     let ns_cert_type = combo_row(
-        "Legacy ns-cert-type",
+        "Legacy NS certificate type",
         Some("Pre-X509 v3 server check. Leave at Not enforced unless your server requires it."),
         NS_CERT_TYPE,
         initial.get("ns-cert-type").map(String::as_str),
     );
     exp_tls.add_row(&ns_cert_type.row);
     let ta = path_picker_row(
-        "tls-auth key",
+        "TLS-auth key",
         Some("HMAC key for the control channel."),
         initial.get("ta").map(String::as_str).unwrap_or(""),
+        FILTER_KEY_MATERIAL,
     );
     exp_tls.add_row(&ta);
-    let ta_dir_initial = initial
-        .get("ta-dir")
-        .and_then(|s| s.parse::<f64>().ok())
-        .map(|v| v + 1.0)
-        .unwrap_or(0.0);
-    let ta_dir = spin_row(
-        "tls-auth direction",
-        Some("0 = none, 1 = 0, 2 = 1. Match the server's `tls-auth … 0` or `… 1`."),
-        0.0,
-        2.0,
-        ta_dir_initial,
+    let ta_dir = combo_row(
+        "TLS-auth direction",
+        None,
+        KEY_DIR,
+        initial.get("ta-dir").map(String::as_str),
     );
-    exp_tls.add_row(&ta_dir);
+    exp_tls.add_row(&ta_dir.row);
     let tls_crypt = path_picker_row(
-        "tls-crypt key",
+        "TLS-crypt key",
         Some("Encrypted control channel key."),
         initial.get("tls-crypt").map(String::as_str).unwrap_or(""),
+        FILTER_KEY_MATERIAL,
     );
     exp_tls.add_row(&tls_crypt);
     let tls_crypt_v2 = path_picker_row(
-        "tls-crypt-v2 key",
+        "TLS-crypt-v2 key",
         Some("Modern per-client control channel key."),
         initial
             .get("tls-crypt-v2")
             .map(String::as_str)
             .unwrap_or(""),
+        FILTER_KEY_MATERIAL,
     );
     exp_tls.add_row(&tls_crypt_v2);
     g_advanced.add(&exp_tls);
@@ -1270,7 +1445,8 @@ fn build_widget_tree(initial: &std::collections::BTreeMap<String, String>) -> Ed
         dev_type,
         proto_tcp,
         tun_mtu,
-        mssfix,
+        mssfix_enabled,
+        mssfix_bytes,
         fragment,
         keepalive_ping,
         keepalive_restart,
@@ -1311,7 +1487,20 @@ fn build_widget_tree(initial: &std::collections::BTreeMap<String, String>) -> Ed
 
     apply_contype_visibility(&state, initial_ct);
     wire_contype_visibility(&state);
+    wire_mssfix_visibility(&state);
     state
+}
+
+/// Bind the MSSfix switch's `notify::active` to the byte-count spin's
+/// visibility so the explicit-bytes field only appears when MSSfix is
+/// actually enabled.
+fn wire_mssfix_visibility(st: &EditorState) {
+    let spin_weak: glib::WeakRef<SpinRow> = st.mssfix_bytes.downgrade();
+    st.mssfix_enabled.connect_active_notify(move |sw| {
+        if let Some(spin) = spin_weak.upgrade() {
+            spin.set_visible(sw.is_active());
+        }
+    });
 }
 
 /// Toggle visibility of credential/cert/static-key rows for a given
@@ -1329,7 +1518,7 @@ fn apply_contype_visibility(st: &EditorState, contype: &str) {
     st.username.set_visible(needs_password);
     st.password.set_visible(needs_password);
     st.static_key.set_visible(is_static_key);
-    st.static_key_dir.set_visible(is_static_key);
+    st.static_key_dir.row.set_visible(is_static_key);
 }
 
 /// Fire `NMVpnEditor::changed` on the editor GObject so libnma
@@ -1404,12 +1593,18 @@ fn wire_changed_signals(st: &EditorState, editor_ptr: usize) {
     let combos: &[&ComboRow] = &[
         &st.contype.row,
         &st.dev_type.row,
+        &st.static_key_dir.row,
         &st.allow_compression.row,
         &st.comp_lzo.row,
+        &st.compress.row,
+        &st.cipher.row,
+        &st.data_ciphers_fallback.row,
+        &st.auth.row,
         &st.tls_version_min.row,
         &st.tls_version_max.row,
         &st.remote_cert_tls.row,
         &st.ns_cert_type.row,
+        &st.ta_dir.row,
         &st.proxy_type.row,
     ];
     for c in combos {
@@ -1421,13 +1616,8 @@ fn wire_changed_signals(st: &EditorState, editor_ptr: usize) {
         &st.remote,
         &st.username,
         &st.dev,
-        &st.mssfix,
-        &st.compress,
-        &st.cipher,
         &st.data_ciphers,
-        &st.data_ciphers_fallback,
         &st.tls_cipher,
-        &st.auth,
         &st.verify_x509_name,
         &st.proxy_server,
         &st.proxy_user,
@@ -1449,15 +1639,14 @@ fn wire_changed_signals(st: &EditorState, editor_ptr: usize) {
 
     let spins: &[&SpinRow] = &[
         &st.port,
-        &st.static_key_dir,
         &st.tun_mtu,
+        &st.mssfix_bytes,
         &st.fragment,
         &st.keepalive_ping,
         &st.keepalive_restart,
         &st.reneg_seconds,
         &st.connect_timeout,
         &st.keysize,
-        &st.ta_dir,
         &st.proxy_port,
         &st.or_log_level,
     ];
@@ -1468,6 +1657,7 @@ fn wire_changed_signals(st: &EditorState, editor_ptr: usize) {
 
     let switches: &[&SwitchRow] = &[
         &st.proto_tcp,
+        &st.mssfix_enabled,
         &st.tls_version_min_or_highest,
         &st.or_route_nopull,
         &st.or_force_default_gateway,
@@ -1499,7 +1689,7 @@ fn wire_contype_visibility(st: &EditorState) {
         username: glib::WeakRef<EntryRow>,
         password: glib::WeakRef<PasswordEntryRow>,
         static_key: glib::WeakRef<EntryRow>,
-        static_key_dir: glib::WeakRef<SpinRow>,
+        static_key_dir: glib::WeakRef<ComboRow>,
     }
 
     let weak = Rc::new(WeakRows {
@@ -1510,7 +1700,7 @@ fn wire_contype_visibility(st: &EditorState) {
         username: st.username.downgrade(),
         password: st.password.downgrade(),
         static_key: st.static_key.downgrade(),
-        static_key_dir: st.static_key_dir.downgrade(),
+        static_key_dir: st.static_key_dir.row.downgrade(),
     });
     let ids = Rc::new(st.contype.ids.clone());
 

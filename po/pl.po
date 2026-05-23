@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: nm-openvpn3 0.6\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-05-20 23:00+0200\n"
+"POT-Creation-Date: 2026-05-22 19:50+0200\n"
 "PO-Revision-Date: 2026-05-20 23:00+0200\n"
 "Last-Translator: nm-openvpn3 contributors\n"
 "Language-Team: Polish\n"
@@ -16,368 +16,131 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=3; plural=(n==1 ? 0 : n%10>=2 && n%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2);\n"
 
-msgid "OpenVPN 3"
-msgstr "OpenVPN 3"
+msgid "0 disables fragmentation. Set when the path MTU is unstable."
+msgstr "0 wyłącza fragmentację. Ustaw, gdy MTU ścieżki jest niestabilne."
 
-msgid "Edit the OpenVPN 3 VPN connection settings."
-msgstr "Edycja ustawień połączenia VPN OpenVPN 3."
-
-msgid "General"
-msgstr "Ogólne"
-
-msgid "Connection type"
-msgstr "Typ połączenia"
-
-msgid "Selects which credentials the server expects."
-msgstr "Określa, jakich danych uwierzytelniających oczekuje serwer."
-
-msgid "TLS"
-msgstr "TLS"
-
-msgid "Password"
-msgstr "Hasło"
-
-msgid "Password + TLS"
-msgstr "Hasło + TLS"
-
-msgid "Static key"
-msgstr "Klucz statyczny"
-
-msgid "Gateway"
-msgstr "Brama"
-
-msgid "Server hostname or IP. Comma-separated entries fail over in order."
-msgstr "Nazwa hosta lub adres IP serwera. Wpisy oddzielone przecinkami są używane jako kolejne fallbacki."
-
-msgid "Port"
-msgstr "Port"
-
-msgid "0 leaves the value at openvpn's default (1194)."
-msgstr "0 zostawia domyślną wartość openvpn (1194)."
-
-msgid "CA certificate"
-msgstr "Certyfikat CA"
-
-msgid "PEM-encoded certificate authority that signs the server."
-msgstr "Certyfikat CA (format PEM), który podpisał serwer."
-
-msgid "User certificate"
-msgstr "Certyfikat użytkownika"
-
-msgid "PEM-encoded client certificate."
-msgstr "Certyfikat klienta w formacie PEM."
-
-msgid "Private key"
-msgstr "Klucz prywatny"
-
-msgid "PEM or PKCS#12 file matching the user certificate."
-msgstr "Plik PEM lub PKCS#12 pasujący do certyfikatu użytkownika."
-
-msgid "Private key passphrase"
-msgstr "Hasło klucza prywatnego"
-
-msgid "Username"
-msgstr "Nazwa użytkownika"
-
-msgid "Static key file"
-msgstr "Plik klucza statycznego"
-
-msgid "Pre-shared key. Only used when Connection type is Static key."
-msgstr "Klucz współdzielony. Używany tylko gdy typ połączenia to Klucz statyczny."
-
-msgid "Static key direction"
-msgstr "Kierunek klucza statycznego"
-
-msgid "0 = none, 1 = 0, 2 = 1."
-msgstr "0 = brak, 1 = 0, 2 = 1."
-
-msgid "Inline .ovpn profile"
-msgstr "Wbudowany profil .ovpn"
-
-msgid "Optional path to a verbatim .ovpn file. When set, the file is fed straight to openvpn3 and the rest of these fields are ignored."
-msgstr "Opcjonalna ścieżka do pliku .ovpn. Gdy ustawiona, plik przekazywany jest bezpośrednio do openvpn3 i pozostałe pola są ignorowane."
-
-msgid "Advanced"
-msgstr "Zaawansowane"
-
-msgid "Sections below collapse — open the ones you need. Empty fields keep openvpn3's defaults."
-msgstr "Sekcje poniżej można zwijać — otwórz te, których potrzebujesz. Puste pola zachowują domyślne wartości openvpn3."
-
-msgid "Device"
-msgstr "Urządzenie"
-
-msgid "Tun / tap interface, MTU, fragmentation."
-msgstr "Interfejs tun / tap, MTU, fragmentacja."
-
-msgid "Custom device name"
-msgstr "Niestandardowa nazwa urządzenia"
-
-msgid "Leave empty for openvpn3's default (tun0, tun1, …)."
-msgstr "Zostaw puste dla domyślnej nazwy openvpn3 (tun0, tun1, …)."
-
-msgid "Device type"
-msgstr "Typ urządzenia"
-
-msgid "tun (layer 3, default) or tap (layer 2 bridge)."
-msgstr "tun (warstwa 3, domyślnie) lub tap (mostek warstwy 2)."
-
-msgid "Auto"
-msgstr "Automatycznie"
-
-msgid "Tunnel MTU"
-msgstr "MTU tunelu"
+msgid "0 keeps the default. 1–6 raises openvpn3's verbosity."
+msgstr "0 zachowuje domyślny. 1–6 zwiększa szczegółowość openvpn3."
 
 msgid "0 leaves openvpn3 to negotiate."
 msgstr "0 pozostawia negocjację openvpn3."
 
-msgid "Fragment size"
-msgstr "Rozmiar fragmentu"
-
-msgid "0 disables fragmentation. Set when the path MTU is unstable."
-msgstr "0 wyłącza fragmentację. Ustaw, gdy MTU ścieżki jest niestabilne."
-
-msgid "MSSfix"
-msgstr "MSSfix"
-
-msgid "`yes` to enable, a byte count to set the value, empty to disable."
-msgstr "`yes` włącza, liczba bajtów ustawia wartość, puste wyłącza."
-
-msgid "Connection"
-msgstr "Połączenie"
-
-msgid "Protocol, keepalive, timeouts."
-msgstr "Protokół, keepalive, limity czasu."
-
-msgid "Use TCP"
-msgstr "Użyj TCP"
-
-msgid "Off uses UDP (recommended). Enable only when UDP is blocked."
-msgstr "Wyłączone używa UDP (zalecane). Włącz tylko gdy UDP jest zablokowany."
-
-msgid "Ping interval"
-msgstr "Interwał ping"
-
-msgid "Seconds between keepalive probes. 0 disables."
-msgstr "Sekundy między próbami keepalive. 0 wyłącza."
-
-msgid "Restart after"
-msgstr "Restart po"
-
-msgid "Seconds without traffic before openvpn3 restarts the session."
-msgstr "Sekundy bez ruchu zanim openvpn3 zrestartuje sesję."
-
-msgid "Renegotiate after"
-msgstr "Renegocjacja po"
-
-msgid "Re-key seconds. 0 leaves the default (3600)."
-msgstr "Sekundy do renegocjacji klucza. 0 zostawia domyślne (3600)."
-
-msgid "Connect timeout"
-msgstr "Limit czasu połączenia"
-
-msgid "Seconds to wait for the initial connection. 0 keeps the default."
-msgstr "Sekundy oczekiwania na pierwsze połączenie. 0 zachowuje domyślne."
-
-msgid "Compression"
-msgstr "Kompresja"
-
-msgid "Disable unless your server enforces it (modern default)."
-msgstr "Wyłącz, chyba że serwer wymaga (nowoczesna wartość domyślna)."
-
-msgid "Allow compression"
-msgstr "Pozwól na kompresję"
-
-msgid "Master switch — disabling overrides the two options below."
-msgstr "Główny przełącznik — wyłączenie nadpisuje dwie poniższe opcje."
-
-msgid "Default"
-msgstr "Domyślnie"
-
-msgid "Disabled"
-msgstr "Wyłączone"
-
-msgid "Asymmetric"
-msgstr "Asymetryczna"
-
-msgid "Enabled"
-msgstr "Włączone"
-
-msgid "LZO compression (legacy)"
-msgstr "Kompresja LZO (przestarzała)"
-
-msgid "Off is the modern default."
-msgstr "Wyłączone to nowoczesna wartość domyślna."
-
-msgid "Off"
-msgstr "Wyłączone"
-
-msgid "Adaptive"
-msgstr "Adaptacyjna"
-
-msgid "Compression algorithm"
-msgstr "Algorytm kompresji"
-
-msgid "`yes`, `lz4`, `lz4-v2`, or empty."
-msgstr "`yes`, `lz4`, `lz4-v2` lub puste."
-
-msgid "Security"
-msgstr "Bezpieczeństwo"
-
-msgid "Ciphers and HMAC algorithms."
-msgstr "Szyfry i algorytmy HMAC."
-
-msgid "Legacy cipher"
-msgstr "Szyfr przestarzały"
-
-msgid "Used with older servers. Modern setups use data-ciphers."
-msgstr "Używany ze starszymi serwerami. Nowoczesne konfiguracje używają data-ciphers."
-
-msgid "Data ciphers"
-msgstr "Szyfry danych"
-
-msgid "Colon-separated list, highest preference first."
-msgstr "Lista oddzielona dwukropkami, najwyższy priorytet pierwszy."
-
-msgid "Data ciphers fallback"
-msgstr "Szyfr danych — fallback"
-
-msgid "Cipher to use when negotiation fails."
-msgstr "Szyfr używany, gdy negocjacja zawiedzie."
-
-msgid "TLS cipher"
-msgstr "Szyfr TLS"
-
-msgid "OpenSSL cipher string for the control channel."
-msgstr "Łańcuch szyfru OpenSSL dla kanału kontrolnego."
-
-msgid "HMAC authentication"
-msgstr "Uwierzytelnianie HMAC"
-
-msgid "Algorithm for the packet HMAC (`SHA1`, `SHA256`, …)."
-msgstr "Algorytm HMAC pakietu (`SHA1`, `SHA256`, …)."
-
-msgid "Key size"
-msgstr "Rozmiar klucza"
-
 msgid "0 leaves the cipher's native key size."
 msgstr "0 zostawia natywny rozmiar klucza szyfru."
 
-msgid "TLS versions, peer verification, control-channel keys."
-msgstr "Wersje TLS, weryfikacja peera, klucze kanału kontrolnego."
+msgid "0 leaves the value at openvpn's default (1194)."
+msgstr "0 zostawia domyślną wartość openvpn (1194)."
 
-msgid "Minimum TLS version"
-msgstr "Minimalna wersja TLS"
-
-msgid "TLS 1.0"
-msgstr "TLS 1.0"
-
-msgid "TLS 1.1"
-msgstr "TLS 1.1"
-
-msgid "TLS 1.2"
-msgstr "TLS 1.2"
-
-msgid "TLS 1.3"
-msgstr "TLS 1.3"
-
-msgid "Use highest available if unsupported"
-msgstr "Użyj najwyższej dostępnej, gdy minimalna jest nieobsługiwana"
-
-msgid "Fall back to the highest TLS version the peer supports rather than refusing the connection."
-msgstr "Powrót do najwyższej wersji TLS obsługiwanej przez drugą stronę zamiast odrzucania połączenia."
-
-msgid "Maximum TLS version"
-msgstr "Maksymalna wersja TLS"
-
-msgid "verify-x509-name"
-msgstr "verify-x509-name"
-
-msgid "Optional `type:name` prefix (e.g. `name-prefix:server`)."
-msgstr "Opcjonalny przedrostek `typ:nazwa` (np. `name-prefix:server`)."
-
-msgid "Require remote certificate type"
-msgstr "Wymagaj typu certyfikatu zdalnego"
-
-msgid "Not enforced"
-msgstr "Niewymuszone"
-
-msgid "Server must present a client certificate"
-msgstr "Serwer musi przedstawić certyfikat klienta"
-
-msgid "Server must present a server certificate"
-msgstr "Serwer musi przedstawić certyfikat serwera"
-
-msgid "Legacy ns-cert-type"
-msgstr "Przestarzały ns-cert-type"
-
-msgid "Pre-X509 v3 server check. Leave at Not enforced unless your server requires it."
-msgstr "Sprawdzenie serwera sprzed X509 v3. Pozostaw Niewymuszone, chyba że serwer wymaga inaczej."
-
-msgid "tls-auth key"
-msgstr "Klucz tls-auth"
-
-msgid "HMAC key for the control channel."
-msgstr "Klucz HMAC dla kanału kontrolnego."
-
-msgid "tls-auth direction"
-msgstr "Kierunek tls-auth"
-
-msgid "0 = none, 1 = 0, 2 = 1. Match the server's `tls-auth … 0` or `… 1`."
-msgstr "0 = brak, 1 = 0, 2 = 1. Dopasuj do `tls-auth … 0` lub `… 1` serwera."
-
-msgid "tls-crypt key"
-msgstr "Klucz tls-crypt"
-
-msgid "Encrypted control channel key."
-msgstr "Zaszyfrowany klucz kanału kontrolnego."
-
-msgid "tls-crypt-v2 key"
-msgstr "Klucz tls-crypt-v2"
-
-msgid "Modern per-client control channel key."
-msgstr "Nowoczesny klucz kanału kontrolnego, osobny dla każdego klienta."
-
-msgid "Proxy"
-msgstr "Proxy"
-
-msgid "HTTP or SOCKS proxy in front of the VPN."
-msgstr "Proxy HTTP lub SOCKS przed tunelem VPN."
-
-msgid "Proxy type"
-msgstr "Typ proxy"
-
-msgid "None"
-msgstr "Brak"
-
-msgid "HTTP"
-msgstr "HTTP"
-
-msgid "SOCKS"
-msgstr "SOCKS"
-
-msgid "Proxy server"
-msgstr "Serwer proxy"
-
-msgid "Proxy port"
-msgstr "Port proxy"
+msgid "0 lets openvpn3 pick the value automatically."
+msgstr "0 pozwala openvpn3 wybrać wartość automatycznie."
 
 msgid "0 uses the type's default (HTTP 8080, SOCKS 1080)."
 msgstr "0 używa domyślnego portu dla typu (HTTP 8080, SOCKS 1080)."
 
-msgid "Proxy username"
-msgstr "Nazwa użytkownika proxy"
+msgid "Adaptive"
+msgstr "Adaptacyjna"
 
-msgid "Misc"
-msgstr "Różne"
+msgid "Advanced"
+msgstr "Zaawansowane"
 
-msgid "Override flags forwarded to openvpn3's SetOverride API."
-msgstr "Flagi nadpisujące przekazywane do API SetOverride openvpn3."
+msgid "All files"
+msgstr "Wszystkie pliki"
+
+msgid "Allow compression"
+msgstr "Pozwól na kompresję"
+
+msgid "Asymmetric"
+msgstr "Asymetryczna"
+
+msgid "Auto"
+msgstr "Automatycznie"
+
+msgid "Block IPv6"
+msgstr "Blokuj IPv6"
+
+msgid "Browse for file…"
+msgstr "Wybierz plik…"
+
+msgid "CA certificate"
+msgstr "Certyfikat CA"
+
+msgid "Cap TCP payload to fit inside the tunnel MTU."
+msgstr "Ogranicz ładunek TCP tak, aby zmieścił się w MTU tunelu."
+
+msgid "Certificates (PEM, CRT, CER)"
+msgstr "Certyfikaty (PEM, CRT, CER)"
+
+msgid "Cipher to use when negotiation fails."
+msgstr "Szyfr używany, gdy negocjacja zawiedzie."
+
+msgid "Ciphers and HMAC algorithms."
+msgstr "Szyfry i algorytmy HMAC."
+
+msgid "Client"
+msgstr "Klient"
+
+msgid "Colon-separated list, highest preference first."
+msgstr "Lista oddzielona dwukropkami, najwyższy priorytet pierwszy."
+
+msgid "Compression"
+msgstr "Kompresja"
+
+msgid "Compression algorithm"
+msgstr "Algorytm kompresji"
+
+msgid "Connect timeout"
+msgstr "Limit czasu połączenia"
+
+msgid "Connection"
+msgstr "Połączenie"
+
+msgid "Connection type"
+msgstr "Typ połączenia"
+
+msgid "Custom device name"
+msgstr "Niestandardowa nazwa urządzenia"
+
+msgid "Data ciphers"
+msgstr "Szyfry danych"
+
+msgid "Data ciphers fallback"
+msgstr "Szyfr danych — fallback"
+
+msgid "Data-channel offload (DCO)"
+msgstr "Odciążenie kanału danych (DCO)"
+
+msgid "Default"
+msgstr "Domyślnie"
+
+msgid "Device"
+msgstr "Urządzenie"
+
+msgid "Device type"
+msgstr "Typ urządzenia"
+
+msgid "Disable unless your server enforces it (modern default)."
+msgstr "Wyłącz, chyba że serwer wymaga (nowoczesna wartość domyślna)."
+
+msgid "Disabled"
+msgstr "Wyłączone"
+
+msgid "Don't configure DNS"
+msgstr "Nie konfiguruj DNS"
 
 msgid "Don't pull routes from server"
 msgstr "Nie pobieraj tras z serwera"
 
-msgid "Useful when you only want the VPN for traffic you route yourself."
-msgstr "Przydatne, gdy chcesz używać VPN tylko dla ruchu kierowanego ręcznie."
+msgid "Drop IPv6 traffic instead of leaking it outside the tunnel."
+msgstr "Odrzucaj ruch IPv6 zamiast przepuszczać go poza tunelem."
+
+msgid "Enabled"
+msgstr "Włączone"
+
+msgid "Encrypted control channel key."
+msgstr "Zaszyfrowany klucz kanału kontrolnego."
+
+msgid "Fall back to the highest TLS version the peer supports rather than refusing the connection."
+msgstr "Powrót do najwyższej wersji TLS obsługiwanej przez drugą stronę zamiast odrzucania połączenia."
 
 msgid "Force default gateway"
 msgstr "Wymuś bramę domyślną"
@@ -385,32 +148,266 @@ msgstr "Wymuś bramę domyślną"
 msgid "Forwards all traffic through the tunnel even if the server didn't push it."
 msgstr "Przekazuje cały ruch przez tunel, nawet gdy serwer tego nie wymusił."
 
-msgid "Block IPv6"
-msgstr "Blokuj IPv6"
+msgid "Fragment size"
+msgstr "Rozmiar fragmentu"
 
-msgid "Drop IPv6 traffic instead of leaking it outside the tunnel."
-msgstr "Odrzucaj ruch IPv6 zamiast przepuszczać go poza tunelem."
+msgid "Gateway"
+msgstr "Brama"
 
-msgid "Don't configure DNS"
-msgstr "Nie konfiguruj DNS"
+msgid "General"
+msgstr "Ogólne"
+
+msgid "HMAC authentication"
+msgstr "Uwierzytelnianie HMAC"
+
+msgid "HMAC key for the control channel."
+msgstr "Klucz HMAC dla kanału kontrolnego."
+
+msgid "HTTP or SOCKS proxy in front of the VPN."
+msgstr "Proxy HTTP lub SOCKS przed tunelem VPN."
+
+msgid "Hands the data path to a kernel module on supported systems for big throughput gains."
+msgstr "Przekazuje ścieżkę danych do modułu jądra w obsługiwanych systemach dla dużego wzrostu przepustowości."
+
+msgid "Inline .ovpn profile"
+msgstr "Wbudowany profil .ovpn"
+
+msgid "Key material (KEY, PEM, TXT)"
+msgstr "Materiał klucza (KEY, PEM, TXT)"
+
+msgid "Key size"
+msgstr "Rozmiar klucza"
+
+msgid "Keys (PEM, KEY)"
+msgstr "Klucze (PEM, KEY)"
+
+msgid "LZO compression (legacy)"
+msgstr "Kompresja LZO (przestarzała)"
+
+msgid "Leave empty for openvpn3's default (tun0, tun1, …)."
+msgstr "Zostaw puste dla domyślnej nazwy openvpn3 (tun0, tun1, …)."
 
 msgid "Leaves system resolvers alone — useful with systemd-resolved or a local resolver."
 msgstr "Pozostawia systemowe resolwery — przydatne z systemd-resolved lub lokalnym resolverem."
 
-msgid "Data-channel offload (DCO)"
-msgstr "Odciążenie kanału danych (DCO)"
+msgid "Legacy NS certificate type"
+msgstr "Stary typ certyfikatu NS"
 
-msgid "Hands the data path to a kernel module on supported systems for big throughput gains."
-msgstr "Przekazuje ścieżkę danych do modułu jądra na wspieranych systemach dla dużego wzrostu wydajności."
+msgid "Legacy cipher"
+msgstr "Szyfr przestarzały"
+
+msgid "MSSfix"
+msgstr "MSSfix"
+
+msgid "MSSfix byte count"
+msgstr "Bajty MSSfix"
+
+msgid "Master switch — disabling overrides the two options below."
+msgstr "Główny przełącznik — wyłączenie nadpisuje dwie poniższe opcje."
+
+msgid "Maximum TLS version"
+msgstr "Maksymalna wersja TLS"
+
+msgid "Minimum TLS version"
+msgstr "Minimalna wersja TLS"
+
+msgid "Misc"
+msgstr "Różne"
+
+msgid "Modern per-client control channel key."
+msgstr "Nowoczesny klucz kanału kontrolnego, osobny dla każdego klienta."
+
+msgid "None"
+msgstr "Brak"
+
+msgid "Not enforced"
+msgstr "Niewymuszone"
+
+msgid "Off"
+msgstr "Wyłączone"
+
+msgid "Off is the modern default."
+msgstr "Wyłączone to nowoczesna wartość domyślna."
+
+msgid "Off uses UDP (recommended). Enable only when UDP is blocked."
+msgstr "Wyłączone używa UDP (zalecane). Włącz tylko gdy UDP jest zablokowany."
+
+msgid "OpenSSL cipher string for the control channel."
+msgstr "Łańcuch szyfru OpenSSL dla kanału kontrolnego."
+
+msgid "OpenVPN 3"
+msgstr "OpenVPN 3"
+
+msgid "OpenVPN profiles (OVPN, CONF)"
+msgstr "Profile OpenVPN (OVPN, CONF)"
+
+msgid "Optional path to a verbatim .ovpn file. When set, the file is fed straight to openvpn3 and the rest of these fields are ignored."
+msgstr "Opcjonalna ścieżka do pliku .ovpn. Gdy ustawiona, plik przekazywany jest bezpośrednio do openvpn3 i pozostałe pola są ignorowane."
+
+msgid "Optional type:name prefix, for example name-prefix:server."
+msgstr "Opcjonalny prefiks type:name, na przykład name-prefix:server."
+
+msgid "Override flags forwarded to openvpn3's SetOverride API."
+msgstr "Flagi nadpisujące przekazywane do API SetOverride openvpn3."
 
 msgid "Override log level"
 msgstr "Nadpisz poziom logowania"
 
-msgid "0 keeps the default. 1–6 raises openvpn3's verbosity."
-msgstr "0 zachowuje domyślny. 1–6 zwiększa szczegółowość openvpn3."
+msgid "PEM or PKCS#12 file matching the user certificate."
+msgstr "Plik PEM lub PKCS#12 pasujący do certyfikatu użytkownika."
 
-msgid "Browse for file…"
-msgstr "Wybierz plik…"
+msgid "PEM-encoded certificate authority that signs the server."
+msgstr "Certyfikat CA (format PEM), który podpisał serwer."
+
+msgid "PEM-encoded client certificate."
+msgstr "Certyfikat klienta w formacie PEM."
+
+msgid "PKCS#12 bundles (P12, PFX)"
+msgstr "Pakiety PKCS#12 (P12, PFX)"
+
+msgid "Password"
+msgstr "Hasło"
+
+msgid "Ping interval"
+msgstr "Interwał ping"
+
+msgid "Port"
+msgstr "Port"
+
+msgid "Pre-X509 v3 server check. Leave at Not enforced unless your server requires it."
+msgstr "Sprawdzenie serwera sprzed X509 v3. Pozostaw Niewymuszone, chyba że serwer wymaga inaczej."
+
+msgid "Pre-shared key. Only used when Connection type is Static key."
+msgstr "Klucz współdzielony. Używany tylko, gdy typ połączenia to Klucz statyczny.Klucz współdzielony. Używany tylko gdy typ połączenia to Klucz statyczny."
+
+msgid "Private key"
+msgstr "Klucz prywatny"
+
+msgid "Private key passphrase"
+msgstr "Hasło klucza prywatnego"
+
+msgid "Protocol, keepalive, timeouts."
+msgstr "Protokół, keepalive, limity czasu."
+
+msgid "Proxy"
+msgstr "Proxy"
+
+msgid "Proxy port"
+msgstr "Port proxy"
+
+msgid "Proxy server"
+msgstr "Serwer proxy"
+
+msgid "Proxy type"
+msgstr "Typ proxy"
+
+msgid "Proxy username"
+msgstr "Nazwa użytkownika proxy"
+
+msgid "Re-key seconds. 0 leaves the default (3600)."
+msgstr "Sekundy do renegocjacji klucza. 0 zostawia domyślne (3600)."
+
+msgid "Renegotiate after"
+msgstr "Renegocjacja po"
+
+msgid "Require remote certificate type"
+msgstr "Wymagaj typu certyfikatu zdalnego"
+
+msgid "Restart after"
+msgstr "Restart po"
+
+msgid "Seconds between keepalive probes. 0 disables."
+msgstr "Sekundy między próbami keepalive. 0 wyłącza."
+
+msgid "Seconds to wait for the initial connection. 0 keeps the default."
+msgstr "Sekundy oczekiwania na pierwsze połączenie. 0 zachowuje domyślne."
+
+msgid "Seconds without traffic before openvpn3 restarts the session."
+msgstr "Sekundy bez ruchu zanim openvpn3 zrestartuje sesję."
+
+msgid "Sections below collapse — open the ones you need. Empty fields keep openvpn3's defaults."
+msgstr "Sekcje poniżej można zwijać — otwórz te, których potrzebujesz. Puste pola zachowują domyślne wartości openvpn3."
+
+msgid "Security"
+msgstr "Bezpieczeństwo"
 
 msgid "Select file"
 msgstr "Wybierz plik"
+
+msgid "Selects which credentials the server expects."
+msgstr "Określa, jakich danych uwierzytelniających oczekuje serwer."
+
+msgid "Server"
+msgstr "Serwer"
+
+msgid "Server and credentials. Advanced settings collapse below."
+msgstr "Serwer i poświadczenia. Ustawienia zaawansowane zwijają się poniżej."
+
+msgid "Server hostname or IP. Comma-separated entries fail over in order."
+msgstr "Nazwa hosta lub IP serwera. Wpisy oddzielone przecinkami próbowane po kolei.Nazwa hosta lub adres IP serwera. Wpisy oddzielone przecinkami są używane jako kolejne fallbacki."
+
+msgid "Server must present a client certificate"
+msgstr "Serwer musi przedstawić certyfikat klienta"
+
+msgid "Server must present a server certificate"
+msgstr "Serwer musi przedstawić certyfikat serwera"
+
+msgid "Static key direction"
+msgstr "Kierunek klucza statycznego"
+
+msgid "Static key file"
+msgstr "Plik klucza statycznego"
+
+msgid "TLS cipher"
+msgstr "Szyfr TLS"
+
+msgid "TLS versions, peer verification, control-channel keys."
+msgstr "Wersje TLS, weryfikacja peera, klucze kanału kontrolnego."
+
+msgid "TLS-auth direction"
+msgstr "Kierunek TLS-auth"
+
+msgid "TLS-auth key"
+msgstr "Klucz TLS-auth"
+
+msgid "TLS-crypt key"
+msgstr "Klucz TLS-crypt"
+
+msgid "TLS-crypt-v2 key"
+msgstr "Klucz TLS-crypt-v2"
+
+msgid "Tun / tap interface, MTU, fragmentation."
+msgstr "Interfejs tun / tap, MTU, fragmentacja."
+
+msgid "Tunnel MTU"
+msgstr "MTU tunelu"
+
+msgid "Use TCP"
+msgstr "Użyj TCP"
+
+msgid "Use highest available if unsupported"
+msgstr "Użyj najwyższej dostępnej, gdy minimalna jest nieobsługiwana"
+
+msgid "Used with older servers. Modern setups use data-ciphers."
+msgstr "Używany ze starszymi serwerami. Nowoczesne konfiguracje używają data-ciphers.Używany ze starszymi serwerami. Nowoczesne konfiguracje używają data-ciphers."
+
+msgid "Useful when you only want the VPN for traffic you route yourself."
+msgstr "Przydatne, gdy chcesz używać VPN tylko dla ruchu kierowanego ręcznie."
+
+msgid "User certificate"
+msgstr "Certyfikat użytkownika"
+
+msgid "Username"
+msgstr "Nazwa użytkownika"
+
+msgid "Verify X.509 name"
+msgstr "Weryfikacja nazwy X.509"
+
+msgid "client"
+msgstr "klient"
+
+msgid "server"
+msgstr "serwer"
+
+msgid "tun (layer 3, default) or tap (layer 2 bridge)."
+msgstr "tun (warstwa 3, domyślnie) lub tap (mostek warstwy 2)."
