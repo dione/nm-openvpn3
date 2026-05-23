@@ -41,7 +41,7 @@ Pick the branch matching the language you want to work on. They are not meant to
 ├── data/                     .name template, dbus policy, sysusers, tmpfiles
 ├── docs/                     ARCHITECTURE, FORK, UI-PORT
 ├── po/                       translations (POT + 60 catalogs)
-└── install-test.sh           local smoke-test installer
+└── scripts/install-test.sh           local smoke-test installer
 ```
 
 ## Maintaining against upstream

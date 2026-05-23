@@ -1,0 +1,19 @@
+# Cargo configuration injected into CARGO_HOME at build time by
+# debian/rules.  Replaces every crates.io source lookup with the
+# vendored tree shipped via the orig-vendor component tarball.
+
+[source.crates-io]
+replace-with = "vendored-sources"
+
+[source.vendored-sources]
+# Absolute path — `debian/rules` substitutes @VENDOR_DIR@ with
+# $(CURDIR)/vendor at configure time.  Relative paths resolve from
+# `$CARGO_HOME/..` (one level above the config file), which is the
+# wrong base when CARGO_HOME lives under debian/.
+directory = "@VENDOR_DIR@"
+
+# Hard-fail any network reach attempt at build time.  Defence in depth
+# against a future Cargo.lock entry whose source line still points at
+# git or a registry mirror.
+[net]
+offline = true

@@ -1,0 +1,15 @@
+network-manager-openvpn3 (0.6.0~alpha.1-1) noble; urgency=medium
+
+  * Initial Ubuntu PPA packaging of the Rust-port nm-openvpn3 plugin.
+  * Package names follow the Debian `network-manager-<vpn>` convention
+    used by network-manager-openvpn, -pptp, -vpnc, -strongswan, etc.
+    Runtime identifiers (binary names, .name file, D-Bus service name)
+    keep the upstream `nm-openvpn3` short form.
+  * Two binary packages: network-manager-openvpn3 (service + auth-dialog,
+    headless) and network-manager-openvpn3-gnome (libnm + GTK4 editor
+    cdylibs, locale, AppStream metainfo).
+  * Vendored cargo dependencies shipped via orig-vendor component
+    tarball; the build runs `cargo --offline --locked` so Launchpad
+    builders never reach crates.io.
+
+ -- Dominik Jarmulowicz <dominik.jarmulowicz@oversee.biz>  Sat, 23 May 2026 14:30:00 +0200

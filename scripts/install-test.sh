@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # Build + install the openvpn3 NM VPN plugin (Rust implementation) for
 # smoke testing on a workstation.  Idempotent — re-run after every
-# rebuild.  For packaging see data/ (the canonical install paths the
-# downstream packager should mirror).
+# rebuild.  For packaging see debian/ + Makefile (the canonical paths
+# downstream packagers consume).
 
 set -euo pipefail
 
-cd "$(dirname "$0")"
+# Script lives in scripts/; cargo build + data/ paths sit at the repo
+# root, one level up.
+cd "$(dirname "$0")/.."
 
 cargo build --release
 
@@ -38,10 +40,11 @@ detect_dir() {
 }
 PLUGINDIR=$(detect_dir "")
 LIBEXECDIR=/usr/libexec
-# NM probes the multiarch + lib64 + lib paths in the same priority order
-# as the cdylib plugin dir, so pick the matching VPN subdir to avoid
-# installing a .name file NM never reads.
-NAMEDIR=$(detect_dir "/VPN")
+# NM scans VPN .name files only from /usr/lib/NetworkManager/VPN —
+# the non-multiarch path is canonical for VPN service discovery even
+# on multiarch distros (every other Debian VPN plugin installs the
+# .name there).  Hard-code the path; do NOT derive it from PLUGINDIR.
+NAMEDIR=/usr/lib/NetworkManager/VPN
 echo "Using PLUGINDIR=$PLUGINDIR"
 echo "Using NAMEDIR=$NAMEDIR"
 

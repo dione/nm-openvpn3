@@ -42,7 +42,7 @@ msgfmt -c -v po/de.po -o /dev/null
 LANG=de_DE.UTF-8 gnome-control-center network
 ```
 
-`install-test.sh` compiles every `po/*.po` it finds — no extra
+`scripts/install-test.sh` compiles every `po/*.po` it finds — no extra
 plumbing needed.
 
 ## Updating an existing translation

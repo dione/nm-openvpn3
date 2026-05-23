@@ -1,0 +1,4 @@
+usr/lib/*/NetworkManager/libnm-vpn-plugin-openvpn3.so
+usr/lib/*/NetworkManager/libnm-vpn-plugin-openvpn3-editor.so
+usr/share/metainfo/network-manager-openvpn3.metainfo.xml
+usr/share/locale/*/LC_MESSAGES/nm-openvpn3.mo

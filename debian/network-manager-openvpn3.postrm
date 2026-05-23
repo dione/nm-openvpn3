@@ -1,0 +1,13 @@
+#!/bin/sh
+# Restart NM after the .name file is gone so it drops the cached
+# openvpn3 plugin entry and stops trying to dispatch connections to a
+# service that no longer exists.  `try-restart` skips chroots /
+# headless builds where NM is not running.
+set -e
+
+#DEBHELPER#
+
+if { [ "$1" = "remove" ] || [ "$1" = "purge" ]; } \
+   && [ -d /run/systemd/system ]; then
+    deb-systemd-invoke try-restart NetworkManager.service >/dev/null 2>&1 || true
+fi

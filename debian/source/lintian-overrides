@@ -1,0 +1,6 @@
+# Cargo dependencies are vendored into the source package at orig-tarball
+# creation time.  Launchpad builders cannot reach crates.io, so the build
+# has no other option.  Each vendored crate keeps its upstream licence;
+# see debian/copyright for the licence-matrix summary.
+network-manager-openvpn3 source: source-contains-prebuilt-binary [vendor/winapi-x86_64-pc-windows-gnu/lib/*]
+network-manager-openvpn3 source: source-contains-prebuilt-binary [vendor/winapi-i686-pc-windows-gnu/lib/*]

@@ -1,0 +1,10 @@
+# Initial PPA upload — see network-manager-openvpn3.lintian-overrides.
+network-manager-openvpn3-gnome: initial-upload-closes-no-bugs
+
+# AppStream metainfo carries the upstream component-id
+# `network-manager-openvpn3` (inherited from the C plugin tree).  Modern
+# AppStream specifies reverse-DNS ids (eg. `io.github.dione.NmOpenvpn3`).
+# Renaming the component-id also requires renaming the metainfo file +
+# updating every downstream reference, so the fix lives in the upstream
+# tree, not here.  See docs/PACKAGING.md "Out of scope / known mismatches".
+network-manager-openvpn3-gnome: appstream-metadata-validation-failed

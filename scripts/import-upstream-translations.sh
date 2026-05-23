@@ -63,4 +63,4 @@ for src_path in "${upstream_pos[@]}"; do
 done
 
 echo "Merged $merged catalogs (kept exact msgid matches only)."
-echo "Re-run 'bash install-test.sh' to compile + install the .mo files."
+echo "Re-run 'bash scripts/install-test.sh' to compile + install the .mo files."

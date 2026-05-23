@@ -1,0 +1,13 @@
+# Things dpkg-source must ignore when diffing the upstream orig tarball
+# against the working tree:
+#   vendor/             — arrives as a component orig-vendor tarball.
+#   target/             — cargo build output.
+#   debian/cargo_home/  — offline cargo config injected at configure time.
+#   reference/          — fork-local upstream references, gitignored
+#                         (declared not part of the upstream tree).
+#   docs/superpowers/   — fork-local notes, also gitignored.
+#   po/*.mo             — gettext compile output regenerated per build.
+#   coderabbit-review.jsonl — local review artefact (may contain PII).
+# Cargo.lock is committed and ships inside the main orig tarball so
+# `cargo --locked` matches across builds.
+extend-diff-ignore = "(^(vendor|target|debian/cargo_home|reference|docs/superpowers)/|^coderabbit-review\.jsonl$|^po/.*\.mo$)"

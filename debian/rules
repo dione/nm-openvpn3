@@ -1,0 +1,60 @@
+#!/usr/bin/make -f
+
+include /usr/share/dpkg/architecture.mk
+
+# Multiarch-aware install paths.  NM probes
+# /usr/lib/<triplet>/NetworkManager before the bare /usr/lib path, so
+# the cdylibs + .name file land under the triplet directory.
+LIBDIR := /usr/lib/$(DEB_HOST_MULTIARCH)
+
+# Launchpad PPA builders have no crates.io reach.  CARGO_HOME holds an
+# offline-only config injected from debian/cargo-config.toml; vendor/
+# arrives via the orig-vendor component tarball that dpkg-source
+# unpacks alongside the upstream source tree.
+export CARGO_HOME = $(CURDIR)/debian/cargo_home
+
+%:
+	dh $@
+
+override_dh_auto_configure:
+	mkdir -p $(CARGO_HOME)
+	sed 's|@VENDOR_DIR@|$(CURDIR)/vendor|g' \
+	    debian/cargo-config.toml.in > $(CARGO_HOME)/config.toml
+
+override_dh_auto_build:
+	$(MAKE) build \
+	    CARGO_FLAGS='--release --workspace --offline --locked'
+
+override_dh_auto_test:
+	# Workspace tests build the cdylibs as a side-effect — keep them
+	# disabled by default on PPA builds (GTK headless smoke tests
+	# would need xvfb).  Run locally with `dh_auto_test` if needed.
+	@echo "Skipping cargo test on Launchpad — re-enable for local runs."
+
+override_dh_auto_install:
+	# `namedir` stays at the Makefile default (/usr/lib/NetworkManager/VPN)
+	# — NM scans only that non-multiarch path for VPN service .name
+	# files, regardless of the multiarch cdylib path.
+	$(MAKE) install \
+	    DESTDIR=$(CURDIR)/debian/tmp \
+	    libdir=$(LIBDIR) \
+	    pluginlibdir=$(LIBDIR)/NetworkManager
+
+override_dh_auto_clean:
+	# $(CARGO_HOME) / debian/cargo_home are covered by debian/clean.
+	$(MAKE) clean
+	rm -rf debian/.cargo target
+
+# `cargo build --release` already strips DWARF, leaving the auto-dbgsym
+# packages dh_strip would generate empty (lintian: debug-file-with-no-
+# debug-symbols).  Suppress them — a future profile.release tweak
+# (debug = "line-tables-only") would re-enable useful crash backtraces.
+override_dh_strip:
+	dh_strip --no-automatic-dbgsym
+
+# `dh_clean`'s default pattern list nukes every `*.orig` it finds, which
+# wipes the `Cargo.toml.orig` markers `cargo vendor` writes into every
+# vendored crate.  Without them `cargo --offline` fails the checksum
+# check and refuses to build.  Skip the whole vendor/ tree.
+override_dh_clean:
+	dh_clean -Xvendor/

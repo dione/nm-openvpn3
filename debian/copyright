@@ -1,0 +1,43 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: nm-openvpn3
+Upstream-Contact: https://github.com/dione/nm-openvpn3/issues
+Source: https://github.com/dione/nm-openvpn3
+
+Files: *
+Copyright: 2026 nm-openvpn3 contributors
+           2005-2024 Red Hat, Inc. (portions inherited from
+                                    network-manager-openvpn)
+License: GPL-2.0+
+
+Files: po/*
+Copyright: 2005-2024 The GNOME translation teams
+           2026 nm-openvpn3 contributors
+License: GPL-2.0+
+
+Files: vendor/*
+Copyright: Various — see each vendored crate's LICENSE-* file
+License: Various
+ Cargo dependencies are vendored into the source package at orig-tarball
+ creation time.  Each crate retains its upstream licence; the canonical
+ licence text lives under vendor/CRATE-NAME/LICENSE-* in every vendored
+ crate.  All vendored crates carry GPL-2.0-or-later-compatible terms
+ (MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, MPL-2.0, ISC, Unicode-3.0,
+ Zlib, or similarly permissive licences).
+
+Files: debian/*
+Copyright: 2026 Dominik Jarmulowicz <dominik.jarmulowicz@oversee.biz>
+License: GPL-2.0+
+
+License: GPL-2.0+
+ This program is free software; you can redistribute it and/or modify
+ it under the terms of the GNU General Public License as published by
+ the Free Software Foundation; either version 2 of the License, or
+ (at your option) any later version.
+ .
+ This program is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ GNU General Public License for more details.
+ .
+ On Debian systems, the complete text of the GNU General Public
+ License version 2 can be found in `/usr/share/common-licenses/GPL-2'.

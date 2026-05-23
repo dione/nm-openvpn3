@@ -36,7 +36,7 @@ Two new workspace crates:
 
 Plus:
 
-- `install-test.sh` installs both `.so` files when present (skips silently if a partial build did not produce them).
+- `scripts/install-test.sh` installs both `.so` files when present (skips silently if a partial build did not produce them).
 - `data/NetworkManager-VPN/nm-openvpn3-service.name.in` wires `[libnm] plugin=` and `[GNOME] properties=` to the new paths.
 - `tests/fixtures/` carries a representative subset of the C tree's `.ovpn` test cases (`port`, `proto-tcp`, `pkcs12`, `pkcs12-with-ca`, `compress`, `connect-timeout`, `crl-file`, `device`, `keepalive`, `keysize`, `mtu-disc`, `ping-with-restart`, `proxy-http`, `proxy-socks` — 14 files).  Every fixture parses **and** round-trips through `parse → emit → parse` to an identical directive stream.
 

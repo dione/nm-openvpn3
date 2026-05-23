@@ -16,8 +16,9 @@ This branch (`rust/main`) is the Rust-only tree.  The original C implementation 
 │   ├── NetworkManager-VPN/   # NM .name file (vpn-type discovery)
 │   └── systemd/              # sysusers / tmpfiles
 ├── docs/                     # architecture + phase notes
-├── scripts/                  # ovpn-to-nmcli helpers
-└── install-test.sh           # build + install for local smoke-test
+├── debian/                   # Debian source-package for Ubuntu PPA
+├── scripts/                  # install-test.sh, uninstall-test.sh, ovpn-to-nmcli, …
+└── Makefile                  # canonical install entry-point for packagers
 ```
 
 ## Identifiers
@@ -45,10 +46,12 @@ End-to-end working against openvpn3-linux v27:
 
 ```sh
 cargo build --release
-bash install-test.sh
+bash scripts/install-test.sh
 ```
 
-`install-test.sh` auto-detects the NM plugin directory (`gcc -dumpmachine` for the multiarch triplet, falls back to `/usr/lib64/NetworkManager` and `/usr/lib/NetworkManager`), installs the service + auth-dialog binaries to `/usr/libexec`, renders the `.name.in` template, and reloads dbus.
+`scripts/install-test.sh` auto-detects the NM plugin directory (`gcc -dumpmachine` for the multiarch triplet, falls back to `/usr/lib64/NetworkManager` and `/usr/lib/NetworkManager`), installs the service + auth-dialog binaries to `/usr/libexec`, renders the `.name.in` template, and reloads dbus.
+
+For .deb packaging (Ubuntu PPA / local install via `dpkg -i`) see [docs/PACKAGING.md](docs/PACKAGING.md).  `scripts/uninstall-test.sh` reverses an `install-test.sh` run before switching to a `.deb`-managed install.
 
 Create a test connection (replace `<path>` with a real profile path):
 
