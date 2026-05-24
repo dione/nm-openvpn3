@@ -2,15 +2,55 @@ Source: network-manager-openvpn3
 Section: net
 Priority: optional
 Maintainer: Dominik Jarmulowicz <dominik.jarmulowicz@oversee.biz>
+# dh-cargo path — pulls every Rust dep from `librust-*-dev` packages in
+# the Debian / Ubuntu archive.  See README in this directory for the
+# current version-mismatch blockers (gtk4, libadwaita, glib, if-addrs).
+#
+# Direct Build-Deps mirror the workspace `Cargo.toml` `[dependencies]`
+# block.  Transitive deps come along via the apt dependency solver from
+# the librust-*-dev metapackages; we only list crates we name directly.
 Build-Depends:
  debhelper-compat (= 13),
- cargo (>= 0.74) | rustc (>= 1.75),
- rustc (>= 1.75),
+ dh-cargo,
+ cargo:native,
+ rustc:native (>= 1.75),
  pkgconf,
  libgtk-4-dev (>= 4.10),
  libadwaita-1-dev (>= 1.4),
  libglib2.0-dev,
  gettext,
+# zbus 5 (tokio feature)
+ librust-zbus-5+tokio-dev,
+# tokio 1 + the feature subset the workspace requests
+ librust-tokio-1+rt-multi-thread-dev,
+ librust-tokio-1+macros-dev,
+ librust-tokio-1+fs-dev,
+ librust-tokio-1+signal-dev,
+ librust-tokio-1+time-dev,
+ librust-tokio-1+sync-dev,
+# Core utilities
+ librust-anyhow-1-dev,
+ librust-futures-util-0.3-dev,
+ librust-if-addrs-0.13-dev,
+ librust-tracing-0.1-dev,
+ librust-tracing-subscriber-0.3+env-filter-dev,
+ librust-clap-4+derive-dev,
+ librust-zeroize-1+zeroize-derive-dev,
+# i18n
+ librust-gettext-rs-0.7+gettext-system-dev,
+# FFI
+ librust-libc-0.2-dev,
+ librust-glib-sys-0.21-dev,
+ librust-gobject-sys-0.21-dev,
+ librust-gio-sys-0.21-dev,
+# GUI cdylibs
+ librust-base64-0.22-dev,
+ librust-gtk4-0.10-dev,
+ librust-libadwaita-0.8-dev,
+ librust-glib-0.21-dev,
+ librust-gio-0.21-dev,
+# build deps
+ librust-pkg-config-0.3-dev,
 Standards-Version: 4.7.0
 Homepage: https://github.com/dione/nm-openvpn3
 Vcs-Browser: https://github.com/dione/nm-openvpn3
@@ -25,15 +65,16 @@ Depends:
  network-manager (>= 1.30),
  openvpn3 | openvpn3-client,
  dbus-system-bus-common,
-Description: NetworkManager VPN plugin for OpenVPN 3 — service
+Description: NetworkManager VPN plugin for OpenVPN 3 — service (dh-cargo)
  nm-openvpn3 is a NetworkManager VPN service plugin that drives the
  OpenVPN 3 Linux session manager over D-Bus, written in Rust on top
  of zbus and tokio.
  .
- This package contains the service daemon, the external-UI-mode
- auth-dialog binary, and the NetworkManager .name discovery file —
- enough to configure and bring up openvpn3 connections via nmcli
- without any GUI.
+ This experimental package is built via dh-cargo against
+ `librust-*-dev` packages from the Debian / Ubuntu archive rather than
+ a vendored cargo tarball.  The runtime payload — service daemon,
+ auth-dialog, .name discovery file, dbus policy — is identical to the
+ canonical network-manager-openvpn3 package.
 
 Package: network-manager-openvpn3-gnome
 Architecture: any
@@ -44,10 +85,8 @@ Depends:
  libgtk-4-1 (>= 4.10),
  libadwaita-1-0 (>= 1.4),
 Recommends: network-manager-gnome
-Description: NetworkManager VPN plugin for OpenVPN 3 — GNOME UI
- GUI integration for nm-openvpn3: the libnm-vpn-plugin discovery hook
- plus the GTK4 / libadwaita property editor that gnome-control-center
- and nm-connection-editor load to render OpenVPN 3 connection pages.
- .
- Translations (gettext domain `nm-openvpn3`) and the AppStream
- metainfo file ship here.
+Description: NetworkManager VPN plugin for OpenVPN 3 — GNOME UI (dh-cargo)
+ GUI integration for nm-openvpn3 built via dh-cargo against archive
+ `librust-*-dev` packages.  Ships the libnm-vpn-plugin discovery hook,
+ the GTK4 / libadwaita property editor, gettext catalogs, and the
+ AppStream metainfo file.

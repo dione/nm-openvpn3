@@ -1,0 +1,17 @@
+#!/bin/sh
+# NetworkManager scans VPN .name files only at start-up — `systemctl
+# reload` re-reads NetworkManager.conf, not the plugin directory.  A
+# `try-restart` is the cheapest way to make NM pick up the new
+# openvpn3 service-type without forcing a start on chroots / build
+# containers where NM is intentionally not running.
+#
+# The dbus system bus config drops in automatically via the
+# dbus-system-bus-common dpkg-trigger on /usr/share/dbus-1/system.d;
+# no explicit `systemctl reload dbus` needed here.
+set -e
+
+#DEBHELPER#
+
+if [ "$1" = "configure" ] && [ -d /run/systemd/system ]; then
+    deb-systemd-invoke try-restart NetworkManager.service >/dev/null 2>&1 || true
+fi

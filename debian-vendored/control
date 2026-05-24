@@ -1,0 +1,53 @@
+Source: network-manager-openvpn3
+Section: net
+Priority: optional
+Maintainer: Dominik Jarmulowicz <dominik.jarmulowicz@oversee.biz>
+Build-Depends:
+ debhelper-compat (= 13),
+ cargo (>= 0.74) | rustc (>= 1.75),
+ rustc (>= 1.75),
+ pkgconf,
+ libgtk-4-dev (>= 4.10),
+ libadwaita-1-dev (>= 1.4),
+ libglib2.0-dev,
+ gettext,
+Standards-Version: 4.7.0
+Homepage: https://github.com/dione/nm-openvpn3
+Vcs-Browser: https://github.com/dione/nm-openvpn3
+Vcs-Git: https://github.com/dione/nm-openvpn3.git
+Rules-Requires-Root: no
+
+Package: network-manager-openvpn3
+Architecture: any
+Depends:
+ ${shlibs:Depends},
+ ${misc:Depends},
+ network-manager (>= 1.30),
+ openvpn3 | openvpn3-client,
+ dbus-system-bus-common,
+Description: NetworkManager VPN plugin for OpenVPN 3 — service
+ nm-openvpn3 is a NetworkManager VPN service plugin that drives the
+ OpenVPN 3 Linux session manager over D-Bus, written in Rust on top
+ of zbus and tokio.
+ .
+ This package contains the service daemon, the external-UI-mode
+ auth-dialog binary, and the NetworkManager .name discovery file —
+ enough to configure and bring up openvpn3 connections via nmcli
+ without any GUI.
+
+Package: network-manager-openvpn3-gnome
+Architecture: any
+Depends:
+ ${shlibs:Depends},
+ ${misc:Depends},
+ network-manager-openvpn3 (= ${binary:Version}),
+ libgtk-4-1 (>= 4.10),
+ libadwaita-1-0 (>= 1.4),
+Recommends: network-manager-gnome
+Description: NetworkManager VPN plugin for OpenVPN 3 — GNOME UI
+ GUI integration for nm-openvpn3: the libnm-vpn-plugin discovery hook
+ plus the GTK4 / libadwaita property editor that gnome-control-center
+ and nm-connection-editor load to render OpenVPN 3 connection pages.
+ .
+ Translations (gettext domain `nm-openvpn3`) and the AppStream
+ metainfo file ship here.

@@ -28,12 +28,15 @@ libc = "0.2"
 # libnm itself is not on crates.io; the relevant struct layouts +
 # extern fns live hand-rolled in `src/libnm.rs` against libnm ≥ 1.30
 # headers.
-# Use the 0.22 train so the editor crate (which depends on gtk4 0.11
-# → glib 0.22 → glib-sys 0.22) sees one unified version of these types
+# Use the 0.21 train so the editor crate (which depends on gtk4 0.10
+# → glib 0.21 → glib-sys 0.21) sees one unified version of these types
 # across crate boundaries.
-glib-sys = "0.22"
-gobject-sys = "0.22"
-gio-sys = "0.22"
+#
+# Pinned to apt-available versions on Ubuntu 26.04 noble — see
+# nm-openvpn3-editor/Cargo.toml for the matching gtk4/libadwaita pins.
+glib-sys = "0.21"
+gobject-sys = "0.21"
+gio-sys = "0.21"
 
 [build-dependencies]
 pkg-config = "0.3"

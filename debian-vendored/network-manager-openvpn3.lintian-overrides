@@ -1,0 +1,4 @@
+# Initial PPA upload — not headed for Debian main archive, so there is
+# no ITP bug to close.  Lintian's check exists for Debian-NEW-queue
+# uploads; harmless here.
+network-manager-openvpn3: initial-upload-closes-no-bugs

@@ -15,24 +15,29 @@ name = "nm_vpn_plugin_openvpn3_editor"
 nm-openvpn3-properties = { path = "../nm-openvpn3-properties" }
 anyhow = { workspace = true }
 tracing = { workspace = true }
-glib-sys = "0.22"
-gobject-sys = "0.22"
+glib-sys = "0.21"
+gobject-sys = "0.21"
 
 # GTK4 + libadwaita pulled in unconditionally — Phase-3 ships a real
 # editor so the cdylib has nothing to do without them.  Distros that
 # do not ship libadwaita ≥ 1.4 can still build the runtime side: this
 # crate is optional in the workspace (omit it from `cargo build -p`),
 # and `install-test.sh` already handles the artifact being missing.
-gtk4 = { version = "0.11", default-features = false, features = ["v4_10"] }
+#
+# Versions pinned to what Ubuntu 26.04 noble ships as librust-*-dev so
+# the dh-cargo packaging path resolves against the archive without
+# requiring a backport PPA.  The vendored layout uses newer minors
+# (gtk4 0.11 / libadwaita 0.9 / glib 0.22) on the main branch.
+gtk4 = { version = "0.10", default-features = false, features = ["v4_10"] }
 # AdwComboRow / AdwSpinRow / SwitchRow all landed by libadwaita 1.4.
 # Older distros (Ubuntu 22.04, RHEL 9) need a libadwaita backport or
 # the editor cdylib skipped at install time.
-libadwaita = { version = "0.9", default-features = false, features = ["v1_4"] }
+libadwaita = { version = "0.8", default-features = false, features = ["v1_4"] }
 gettext-rs = { workspace = true }
-# Match gtk4 0.11's transitive glib (0.22) + gio (0.22) to avoid the
+# Match gtk4 0.10's transitive glib (0.21) + gio (0.21) to avoid the
 # duplicate-glib-version trait import ambiguity at editor.rs.
-glib = "0.22"
-gio = "0.22"
+glib = "0.21"
+gio = "0.21"
 
 [features]
 default = []
