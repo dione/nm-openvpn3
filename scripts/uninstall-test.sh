@@ -43,7 +43,7 @@ LOCALEDIR=/usr/share/locale
 METAINFODIR=/usr/share/metainfo
 
 # Multiarch + non-multiarch NM plugin dirs.  install-test.sh on this
-# branch installs under multiarch; the C autotools tree (`fork/openvpn3-skeleton`)
+# branch installs under multiarch; the C autotools tree (`c/main`)
 # defaulted to `--libdir=/usr/lib`.  A workstation that built both
 # branches has live files under both — sweep both, regardless of which
 # one was the "current" install.

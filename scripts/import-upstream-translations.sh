@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Re-merge translations from the upstream C tree (fork/openvpn3-skeleton)
-# into our Rust POT.  Only exact msgid matches are kept — fuzzy
+# Re-merge translations from the upstream C tree (c/main) into our
+# Rust POT.  Only exact msgid matches are kept — fuzzy
 # guesses get stripped because gettext skips fuzzies at runtime
 # anyway, so an unreviewed fuzzy would behave identically to "no
 # translation" while doubling the .po file size.
@@ -13,7 +13,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 POT=po/nm-openvpn3.pot
-UPSTREAM_BRANCH=fork/openvpn3-skeleton
+UPSTREAM_BRANCH=c/main
 
 command -v msgmerge >/dev/null || { echo "msgmerge missing — apt install gettext"; exit 1; }
 command -v msgattrib >/dev/null || { echo "msgattrib missing — apt install gettext"; exit 1; }

@@ -1,17 +1,19 @@
-# `debian/` — dh-cargo experimental packaging (this branch)
+# `debian/` — dh-cargo packaging (default Debian/Ubuntu path)
 
-This is the **`packaging/dh-cargo`** branch.  The `debian/` tree here
-builds against `librust-*-dev` packages from the Ubuntu / Debian
-archive instead of the vendored-cargo tarball used on `rust/main`.
-The canonical vendored layout is preserved under `debian-vendored/`
-for direct comparison.
+This is the **`rust/main`** branch (Debian / Ubuntu archive target).
+The `debian/` tree here builds against `librust-*-dev` packages from
+the archive instead of a vendored-cargo tarball.  The alternative
+vendored layout (newest crates.io minors via PPA) lives on the
+[`rust/upstream-deps`](../../tree/rust/upstream-deps) branch; this
+branch keeps a sibling copy under `debian-vendored/` for side-by-side
+comparison.
 
 ## Status: builds on Ubuntu 26.04 noble
 
 Workspace Cargo.toml is downgraded on this branch to match the
 versions Ubuntu 26.04 ships:
 
-| Crate        | rust/main (Cargo.lock) | this branch (apt) |
+| Crate        | rust/upstream-deps (Cargo.lock) | rust/main (apt) |
 |--------------|-----------------------:|------------------:|
 | `tokio`      | 1.52.3                 | 1.48.0            |
 | `zbus`       | 5.15.0                 | 5.13.2            |
@@ -48,28 +50,31 @@ dpkg-buildpackage -b -us -uc
 lintian ../network-manager-openvpn3_*_amd64.changes   # exit 0
 ```
 
-To switch back to the vendored layout (eg. for a PPA upload), check
-out `rust/main`.
+To use the vendored layout (eg. for a PPA upload with the newest
+crates.io minors), check out `rust/upstream-deps`.
 
-## Why this branch is not the default
+## When to switch to `rust/upstream-deps`
 
-The vendored layout stays the canonical PPA path because:
+The vendored sibling is the right choice when:
 
-* **Reproducibility** — the orig-vendor tarball locks Rust dep
-  versions across every build.  dh-cargo's reproducibility lives in
-  the apt archive snapshot, which moves under us.
-* **Archive coupling** — every Ubuntu release ships a different
-  set of `librust-*-dev` versions.  This branch builds on noble;
-  jammy / oracular would need different Cargo.toml pins.
-* **gtk4 / libadwaita lag** — the apt archive is one release cycle
-  behind crates.io for GTK4 bindings.  Vendored builds the newer
-  matrix without backporting.
+* you want the **newest gtk4 / libadwaita rust bindings** (0.11 / 0.9)
+  — eg. for an AdwSpinRow feature only exposed there;
+* you target **multiple Ubuntu releases from one build** — apt's
+  `librust-*-dev` set differs between noble / oracular, vendored
+  bypasses that;
+* you publish to a **PPA** where bundling the orig-vendor tarball is
+  cheaper than verifying every Ubuntu release ships the right
+  archive crate versions.
 
-dh-cargo path becomes attractive **if the eventual target is the
-Debian main archive** (not a PPA) — Debian-NEW review requires
-either the dh-cargo route or a per-crate debcargo source-package
-campaign.  This branch documents the dh-cargo alternative for that
-eventuality.
+This branch (`rust/main`) is the right choice when:
+
+* the eventual target is the **Debian / Ubuntu main archive**
+  (Debian-NEW review accepts dh-cargo source-packages but not
+  vendored cargo tarballs);
+* you want **smaller source tarballs** (no orig-vendor → ~250K
+  vs 24M);
+* you prefer **fewer moving pieces** — no `cargo vendor` step, no
+  multi-tarball source format.
 
 ## `debian/rules` quirks
 

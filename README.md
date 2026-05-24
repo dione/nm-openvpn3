@@ -2,7 +2,10 @@
 
 NetworkManager VPN service plugin for [OpenVPN 3 Linux](https://github.com/OpenVPN/openvpn3-linux), written in async Rust on top of zbus.
 
-This branch (`rust/main`) is the Rust-only tree.  The original C implementation lives on the [`fork/openvpn3-skeleton`](../../tree/fork/openvpn3-skeleton) branch — pick the branch matching the language you want to work on.
+Branches:
+* [`rust/main`](../../tree/rust/main) (default, **this branch**) — Rust workspace + Debian packaging that builds against the Ubuntu / Debian archive's `librust-*-dev` packages.  Cargo.toml is pinned to apt-available versions.
+* [`rust/upstream-deps`](../../tree/rust/upstream-deps) — same workspace but with the **newest crates.io versions** (`gtk4 = "0.11"`, `libadwaita = "0.9"`, `glib = "0.22"`).  Vendored cargo build, ships via a PPA orig-vendor tarball.
+* [`c/main`](../../tree/c/main) — the original C implementation (GLib + GTK3/4, autotools) adapted to openvpn3-linux.  Frozen reference; new work happens on the Rust side.
 
 ## Layout
 

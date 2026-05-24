@@ -2,7 +2,7 @@
 
 The runtime side of nm-openvpn3 (service + auth-dialog) is feature-complete on the `rust/main` branch.  The UI side — the libnm discovery shim and the GTK editor that gnome-control-center / nm-applet / plasma-nm spawn — is **scaffolded only**.  This document explains what landed in round 1, the toolchain decisions, and what the next iterations need.
 
-## Status as of rust/main HEAD
+## Status as of `rust/main` HEAD (dh-cargo, archive-aligned)
 
 End-to-end working against gnome-control-center v49 + libnm 1.54 +
 openvpn3-linux v27:
@@ -91,7 +91,7 @@ What the `properties` library does cover today:
 ### Round 4 — UX polish + integration tests
 
 1. End-to-end test: install both `.so` files, launch gnome-control-center under `dbus-run-session`, screenshot-diff the VPN tab.
-2. `nmcli` round-trip tests against the full 49-file fixture corpus (port the remaining `.ovpn` fixtures from `fork/openvpn3-skeleton:properties/tests/conf/`).
+2. `nmcli` round-trip tests against the full 49-file fixture corpus (port the remaining `.ovpn` fixtures from `c/main:properties/tests/conf/`).
 3. Settings migration from the upstream C plugin (`vpn-type=openvpn`) to this one (`vpn-type=openvpn3`) — single-shot helper script driven off existing `~/.config/NetworkManager` entries.
 
 ## Risks / open questions
