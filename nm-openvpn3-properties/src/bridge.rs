@@ -137,35 +137,74 @@ pub unsafe fn ovpn_text_to_connection(
     // password'] (AGENT_OWNED).  Mirrors C `parse_http_proxy_auth`.
     let parent_dir = path.parent().unwrap_or_else(|| Path::new("."));
     if let Some(authfile) = data.remove("http-proxy-auth-file") {
-        let af_path = if Path::new(&authfile).is_absolute() {
-            PathBuf::from(&authfile)
+        // Resolve the authfile strictly within the .ovpn's own
+        // directory.  A crafted profile could otherwise name an
+        // absolute path or climb out with `..` to slurp the first two
+        // lines of an arbitrary readable file into the connection's
+        // proxy credentials.  Reject absolute paths and any `..` /
+        // root component; only a plain relative name beside the .ovpn
+        // is honoured.
+        let af = Path::new(&authfile);
+        let traversal = af.is_absolute()
+            || af.components().any(|c| {
+                matches!(
+                    c,
+                    std::path::Component::ParentDir | std::path::Component::RootDir
+                )
+            });
+        if traversal {
+            // Surface the rejection — a silent drop looks like a
+            // mis-parse to a user who legitimately pointed at an
+            // absolute creds path.
+            eprintln!(
+                "nm-openvpn3: refusing http-proxy-auth-file outside profile dir: {authfile}"
+            );
         } else {
-            parent_dir.join(&authfile)
-        };
-        if let Ok(contents) = std::fs::read_to_string(&af_path) {
-            let mut iter = contents.lines();
-            let user = iter.next().unwrap_or("").trim().to_string();
-            let pass = iter.next().unwrap_or("").trim().to_string();
-            if !user.is_empty() {
-                data.insert("http-proxy-username".into(), user);
-            }
-            if !pass.is_empty() {
-                if let (Ok(k), Ok(v)) = (
-                    CString::new("http-proxy-password"),
-                    CString::new(pass.as_str()),
-                ) {
-                    nm_setting_vpn_add_secret(s_vpn_cast, k.as_ptr(), v.as_ptr());
-                    let _ = nm_setting_set_secret_flags(
-                        s_vpn.cast::<NMSetting>(),
-                        k.as_ptr(),
-                        NM_SETTING_SECRET_FLAG_AGENT_OWNED,
-                        ptr::null_mut(),
-                    );
+            let af_path = parent_dir.join(af);
+            // Open with O_NOFOLLOW: the path guard above blocks `..` and
+            // absolute names, but a symlink beside the .ovpn (creds ->
+            // /etc/shadow) would still be followed by a plain read.
+            // Opening the final component nofollow closes that race-free;
+            // a symlink yields ELOOP and falls through to the skip.
+            match std::fs::OpenOptions::new()
+                .read(true)
+                .custom_flags(libc::O_NOFOLLOW)
+                .open(&af_path)
+            {
+                Ok(mut f) => {
+                    let mut contents = String::new();
+                    if std::io::Read::read_to_string(&mut f, &mut contents).is_ok() {
+                        let mut iter = contents.lines();
+                        let user = iter.next().unwrap_or("").trim().to_string();
+                        let pass = iter.next().unwrap_or("").trim().to_string();
+                        if !user.is_empty() {
+                            data.insert("http-proxy-username".into(), user);
+                        }
+                        if !pass.is_empty() {
+                            if let (Ok(k), Ok(v)) = (
+                                CString::new("http-proxy-password"),
+                                CString::new(pass.as_str()),
+                            ) {
+                                nm_setting_vpn_add_secret(s_vpn_cast, k.as_ptr(), v.as_ptr());
+                                let _ = nm_setting_set_secret_flags(
+                                    s_vpn.cast::<NMSetting>(),
+                                    k.as_ptr(),
+                                    NM_SETTING_SECRET_FLAG_AGENT_OWNED,
+                                    ptr::null_mut(),
+                                );
+                            }
+                        }
+                    }
                 }
+                Err(e) if e.raw_os_error() == Some(libc::ELOOP) => {
+                    eprintln!("nm-openvpn3: refusing symlinked http-proxy-auth-file: {authfile}");
+                }
+                // Missing or unreadable — skip silently, as before.
+                Err(_) => {}
             }
         }
-        // Authfile may carry a NUL or be unreadable; either way it
-        // shouldn't survive in vpn.data as a key NM doesn't recognise.
+        // The key was removed from `data` above; either way it shouldn't
+        // survive in vpn.data as a key NM doesn't recognise.
     }
 
     for (k, v) in &data {
@@ -200,12 +239,28 @@ pub unsafe fn ovpn_text_to_connection(
         .chars()
         .map(|c| if c.is_alphanumeric() { c } else { '_' })
         .collect();
+    // The alnum-collapse above maps distinct ids onto the same stem
+    // ("vpn-prod" and "vpn_prod" both become "vpn_prod"), so a second
+    // import would silently overwrite the first connection's blob files
+    // (write_blob_securely unlinks before create_new).  Append a short
+    // hash of the *full* id to keep distinct connections in distinct
+    // files.  FNV-1a, not DefaultHasher: the latter's output changes
+    // across Rust releases, so a toolchain bump would re-hash the same
+    // id to a new filename and orphan the previous 0600 blob.
+    let id_disc: String = {
+        let mut h: u32 = 0x811c_9dc5;
+        for b in id.as_bytes() {
+            h ^= u32::from(*b);
+            h = h.wrapping_mul(0x0100_0193);
+        }
+        format!("{h:08x}")
+    };
     let blob_dir_result = secure_cert_dir();
     for d in &cfg.directives {
         let Directive::Blob { name, body } = d else {
             continue;
         };
-        let filename = format!("{id_safe}-{name}.pem");
+        let filename = format!("{id_safe}-{id_disc}-{name}.pem");
         let blob_path = match &blob_dir_result {
             Ok(dir) => dir.join(&filename),
             // Cert dir lookup failed — fall back to next-to-.ovpn but
@@ -357,8 +412,30 @@ pub unsafe fn export_connection_to_path(
         None => ".export.tmp".to_string(),
     };
     let tmp_path = parent.join(&tmp_name);
-    match std::fs::write(&tmp_path, text.as_bytes()).and_then(|_| std::fs::rename(&tmp_path, path))
-    {
+    // The exported profile may carry inline <key> / <tls-crypt> /
+    // <tls-crypt-v2> blobs (connection_to_ovpn_text re-emits the pinned
+    // profile verbatim).  A plain std::fs::write creates the temp at
+    // 0666 & ~umask (typically 0644), leaving private-key material
+    // world-readable.  Write it 0600 with O_NOFOLLOW | O_EXCL — the
+    // same hardening write_blob_securely applies on import — then
+    // rename onto the target (which inherits the temp's mode).
+    let write_secure = || -> std::io::Result<()> {
+        if let Err(e) = std::fs::remove_file(&tmp_path) {
+            if e.kind() != std::io::ErrorKind::NotFound {
+                return Err(e);
+            }
+        }
+        let mut file = std::fs::OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .mode(0o600)
+            .custom_flags(libc::O_NOFOLLOW)
+            .open(&tmp_path)?;
+        file.write_all(text.as_bytes())?;
+        file.sync_all()?;
+        std::fs::rename(&tmp_path, path)
+    };
+    match write_secure() {
         Ok(()) => GTRUE,
         Err(e) => {
             let _ = std::fs::remove_file(&tmp_path);

@@ -100,7 +100,12 @@ impl OvpnConfig {
                 let mut body = String::new();
                 let mut closed = false;
                 for (_, blob_line) in lines.by_ref() {
-                    if blob_line.trim_start().starts_with(&close) {
+                    // Exact match on the trimmed close tag — a
+                    // starts_with would accept "</ca>junk" and silently
+                    // drop the trailing text, and a base64 body line
+                    // that happens to begin with the tag bytes would
+                    // close the blob early.
+                    if blob_line.trim() == close.as_str() {
                         closed = true;
                         break;
                     }

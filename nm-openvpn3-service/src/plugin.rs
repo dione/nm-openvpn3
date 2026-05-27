@@ -718,8 +718,16 @@ impl Plugin {
                 let stats = match client.session_get_statistics(&session_path).await {
                     Ok(s) => s,
                     Err(e) => {
-                        debug!("stats fetch failed: {e}");
-                        return;
+                        // A single failed read is usually a transient
+                        // D-Bus blip (suspend/resume, daemon reload) —
+                        // don't kill the timer over it or throughput
+                        // logging stays dead for the rest of the
+                        // session.  The poller owns real liveness; this
+                        // task just skips a tick.  When the session is
+                        // actually gone the poller fails to NM and
+                        // Disconnect aborts this handle.
+                        debug!("stats fetch failed: {e}; skipping tick");
+                        continue;
                     }
                 };
                 let bin = *stats.get("BYTES_IN").unwrap_or(&0);
