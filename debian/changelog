@@ -1,4 +1,22 @@
-network-manager-openvpn3 (0.6.0~alpha.1-1~dhcargo1) noble; urgency=medium
+network-manager-openvpn3 (0.6.0~alpha.2-1~dhcargo1) noble; urgency=medium
+
+  * Security & correctness hardening sweep across all five crates
+    (audit follow-up):
+    - service: O_NONBLOCK on the profile open (FIFO can't stall the
+      daemon); allow-list KEY_EXTRA_ROUTES so a crafted vpn.data can't
+      inject openvpn directives past the security tail; serialize
+      Connect; suppress spurious Failure on NM-initiated Disconnect.
+    - properties: harden the export-side pinned-profile read
+      (O_NOFOLLOW + size cap) to match import; NULL-check
+      g_module_error()/dli_fname; wrap every extern "C" entrypoint in
+      catch_unwind; fail closed on inline-blob writes when the secure
+      cert dir is unavailable.
+    - ovpn3-client: propagate UserInputQueueGetTypeGroup errors instead
+      of masking auth failures as an empty queue.
+    - editor/auth-dialog: catch_unwind at the FFI boundary; zeroize
+      secret intermediates; O_NONBLOCK keyfile probe.
+
+ -- Dominik Jarmulowicz <dominik.jarmulowicz@oversee.biz>  Thu, 28 May 2026 23:30:00 +0200
 
   * Experimental dh-cargo packaging: resolves Rust deps from the
     Ubuntu / Debian archive's `librust-*-dev` packages (no vendored
