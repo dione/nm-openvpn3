@@ -299,11 +299,26 @@ pub fn build_profile_string(
     // entry is a verbatim "route …" line — pre-tokenised, already
     // escape_arg'd as needed by the parser.  Re-emit as raw text so we
     // don't double-quote.
+    //
+    // SECURITY: this value originates from vpn.data, which is
+    // attacker-controllable over D-Bus.  Each physical line is emitted
+    // verbatim, so without validation a hostile profile could smuggle
+    // arbitrary directives ("script-security 3\nup /tmp/evil.sh") past
+    // the hard-coded security tail below.  Accept only well-formed
+    // `route` / `route-ipv6` / `route-gateway` / `route-metric` /
+    // `route-delay` lines whose arguments are pure address/number
+    // tokens; reject (and log) anything else — in particular
+    // route-up / route-pre-down, which execute scripts.
     if let Some(routes) = get(KEY_EXTRA_ROUTES) {
         for line in routes.lines() {
             let line = line.trim();
-            if !line.is_empty() {
+            if line.is_empty() {
+                continue;
+            }
+            if is_safe_route_line(line) {
                 w.raw_line(line);
+            } else {
+                tracing::warn!("dropping unsafe extra-route line: {line:?}");
             }
         }
     }
@@ -399,6 +414,41 @@ pub fn build_profile_string(
 /// `nmovpn_arg_is_set` — empty strings are not arguments.
 fn arg_is_set(value: Option<&str>) -> Option<&str> {
     value.filter(|s| !s.is_empty())
+}
+
+/// Allow-list gate for a single preserved extra-route line.  The
+/// directive must be one of the route-table family that takes only
+/// address / netmask / gateway / numeric arguments — never a script
+/// hook (route-up, route-pre-down) — and every argument token must be
+/// composed solely of address/number characters so a quoted blob or
+/// embedded separator can't smuggle a second directive onto the line.
+fn is_safe_route_line(line: &str) -> bool {
+    const ALLOWED: &[&str] = &[
+        "route",
+        "route-ipv6",
+        "route-gateway",
+        "route-metric",
+        "route-delay",
+    ];
+    let mut tokens = line.split_whitespace();
+    let Some(directive) = tokens.next() else {
+        return false;
+    };
+    if !ALLOWED.contains(&directive) {
+        return false;
+    }
+    // Bare directives with no args (e.g. a lone "route-delay") are
+    // harmless; any args present must look like addresses / masks /
+    // gateways / metrics.  Permit hex (IPv6), dotted-quad, CIDR slash,
+    // and the openvpn gateway keywords (vpn_gateway, net_gateway, dhcp,
+    // default, remote_host) — those are alnum + underscore, covered by
+    // the char class below.
+    tokens.all(|tok| {
+        !tok.is_empty()
+            && tok
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | ':' | '/' | '_' | '-'))
+    })
 }
 
 /// Heuristic match of the C tree's `is_pkcs12()` — by file extension
@@ -904,5 +954,49 @@ mod tests {
         let out = build_profile_string(&data, &secrets).expect("build");
         assert_contains(&out, "route 10.0.0.0 255.0.0.0");
         assert_contains(&out, "route 192.168.1.0 255.255.255.0 10.0.0.1");
+    }
+
+    /// A hostile vpn.data value that tries to smuggle script execution
+    /// past the security tail via newline injection must be dropped.
+    #[test]
+    fn extra_routes_reject_directive_injection() {
+        let secrets = SecretsMap::new();
+        let data = dict(&[
+            ("connection-type", "tls"),
+            ("remote", "v"),
+            (
+                "nm-openvpn3-extra-routes",
+                "route 10.0.0.0 255.0.0.0\nscript-security 3\nup /tmp/evil.sh\nroute-up /tmp/x.sh",
+            ),
+        ]);
+        let out = build_profile_string(&data, &secrets).expect("build");
+        assert_contains(&out, "route 10.0.0.0 255.0.0.0");
+        assert!(
+            !out.lines().any(|l| l.starts_with("script-security 3")),
+            "injected script-security must be dropped: {out}"
+        );
+        assert!(
+            !out.lines().any(|l| l == "up /tmp/evil.sh"),
+            "injected up-script must be dropped: {out}"
+        );
+        assert!(
+            !out.lines().any(|l| l.starts_with("route-up")),
+            "route-up executes a script and must be dropped: {out}"
+        );
+    }
+
+    #[test]
+    fn safe_route_line_allowlist() {
+        assert!(is_safe_route_line("route 10.0.0.0 255.0.0.0"));
+        assert!(is_safe_route_line("route 10.0.0.0 255.0.0.0 vpn_gateway"));
+        assert!(is_safe_route_line("route-ipv6 2001:db8::/32"));
+        assert!(is_safe_route_line("route-gateway 10.8.0.1"));
+        assert!(is_safe_route_line("route-metric 100"));
+        // Script hooks and arbitrary directives rejected.
+        assert!(!is_safe_route_line("route-up /tmp/x.sh"));
+        assert!(!is_safe_route_line("up /tmp/x.sh"));
+        assert!(!is_safe_route_line("script-security 3"));
+        // A quoted blob with a space inside a token is rejected.
+        assert!(!is_safe_route_line("route 'a b'"));
     }
 }

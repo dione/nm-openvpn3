@@ -62,6 +62,32 @@ fn write_blob_securely(path: &Path, body: &[u8]) -> std::io::Result<()> {
     file.sync_all()
 }
 
+/// Read a pinned `.ovpn` profile path defensively for export: open
+/// `O_NOFOLLOW | O_CLOEXEC` so a symlink can't redirect the read,
+/// fstat the fd to confirm a regular file (rejects FIFOs / devices),
+/// and cap the read at 1 MiB.  Returns `None` (caller falls back to a
+/// structured emit) on any rejection or I/O error.
+fn read_profile_securely(path: &Path) -> Option<String> {
+    use std::io::Read;
+    const MAX_PROFILE_BYTES: u64 = 1 << 20;
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC | libc::O_NONBLOCK)
+        .open(path)
+        .ok()?;
+    let md = file.metadata().ok()?;
+    if !md.is_file() || md.len() > MAX_PROFILE_BYTES {
+        return None;
+    }
+    let mut buf = String::with_capacity((md.len() as usize).saturating_add(1));
+    let mut limited = (&file).take(MAX_PROFILE_BYTES + 1);
+    limited.read_to_string(&mut buf).ok()?;
+    if buf.len() as u64 > MAX_PROFILE_BYTES {
+        return None;
+    }
+    Some(buf)
+}
+
 /// Build a fresh `NMConnection` from an `.ovpn` text + the connection
 /// id derived from the file's basename.  Returns NULL + populated
 /// GError on failure, mirroring the C tree's `do_import` contract.
@@ -263,11 +289,19 @@ pub unsafe fn ovpn_text_to_connection(
         let filename = format!("{id_safe}-{id_disc}-{name}.pem");
         let blob_path = match &blob_dir_result {
             Ok(dir) => dir.join(&filename),
-            // Cert dir lookup failed — fall back to next-to-.ovpn but
-            // still respect the secure-write helper.  Worst case the
-            // write fails and the editor's path-validity indicator
-            // flags the empty value on next edit.
-            Err(_) => parent_dir.join(&filename),
+            // Cert dir unavailable — fail closed.  The old fallback wrote
+            // next to the source .ovpn, but that directory is often a
+            // USB stick / Flatpak host mount on vfat/exfat where the
+            // 0600 mode bits are silently ignored, leaving private-key
+            // material world-readable.  Skip the blob (and its data-item)
+            // instead; the editor's path-validity indicator flags the
+            // now-empty key on next edit.
+            Err(e) => {
+                eprintln!(
+                    "nm-openvpn3: no secure cert dir ({e}); skipping inline blob '{name}' rather than risk a world-readable write"
+                );
+                continue;
+            }
         };
         let bytes: Vec<u8> = if name == "pkcs12" {
             // openvpn wraps inline pkcs12 in line-broken base64
@@ -376,7 +410,15 @@ pub unsafe fn connection_to_ovpn_text(connection: *mut NMConnection) -> String {
 
     if let Some(profile_path) = data.get("nm-openvpn3-profile") {
         if !profile_path.is_empty() {
-            if let Ok(text) = std::fs::read_to_string(profile_path) {
+            // SECURITY: the pinned profile path is stored connection
+            // state that can be influenced by an attacker who can write
+            // the system-connection / settings; a plain read_to_string
+            // would follow a symlink swap on this path and stream an
+            // arbitrary file (e.g. /etc/shadow) into the user-chosen
+            // export destination.  Open O_NOFOLLOW, fstat the fd to
+            // confirm a regular file, and cap the read — the same
+            // hardening the import side (iface_import_from_file) uses.
+            if let Some(text) = read_profile_securely(Path::new(profile_path)) {
                 return text;
             }
         }

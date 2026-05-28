@@ -15,6 +15,8 @@ name = "nm_vpn_plugin_openvpn3_editor"
 nm-openvpn3-properties = { path = "../nm-openvpn3-properties" }
 anyhow = { workspace = true }
 tracing = { workspace = true }
+# Scrub secret intermediates (passphrase / password) from the heap.
+zeroize = { workspace = true }
 glib-sys = "0.21"
 gobject-sys = "0.21"
 

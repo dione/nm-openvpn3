@@ -23,6 +23,7 @@ use std::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
 use std::sync::{Arc, OnceLock};
 
 use gettextrs::dgettext;
+use zeroize::{Zeroize, Zeroizing};
 use glib::ffi::{gboolean, gpointer, GError, GFALSE, GTRUE};
 use gobject_sys::{
     g_object_new, g_type_add_interface_static, g_type_register_static_simple, GInterfaceInfo,
@@ -269,7 +270,12 @@ fn gettext_init_once() {
         // call textdomain() because that would override the host's
         // default domain.  dgettext() in tr() above is domain-scoped.
         gettextrs::setlocale(gettextrs::LocaleCategory::LcAll, "");
-        let _ = gettextrs::bindtextdomain("nm-openvpn3", "/usr/share/locale");
+        // Honour a build/install-time locale dir override so a non-/usr
+        // prefix (/opt, /usr/local, Flatpak) still finds the catalog;
+        // fall back to the FHS default otherwise.
+        let localedir = std::env::var("NM_OPENVPN3_LOCALEDIR")
+            .unwrap_or_else(|_| "/usr/share/locale".to_string());
+        let _ = gettextrs::bindtextdomain("nm-openvpn3", localedir);
     });
 }
 
@@ -432,6 +438,20 @@ unsafe extern "C" fn instance_finalize(object: *mut GObject) {
     }
 }
 
+/// Run an FFI entrypoint body, converting any Rust panic into a clean
+/// `default` return instead of unwinding across the C ABI (which aborts
+/// the host process — gnome-control-center / nm-applet).  Widget
+/// construction and libnm calls can panic; this keeps that contained.
+pub(crate) fn ffi_guard<T>(default: T, f: impl FnOnce() -> T) -> T {
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
+        Ok(v) => v,
+        Err(_) => {
+            eprintln!("nm-openvpn3-editor: caught panic at FFI boundary; returning failure");
+            default
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // NMVpnEditor interface impl.
 // ---------------------------------------------------------------------------
@@ -450,13 +470,15 @@ unsafe extern "C" fn iface_get_widget(
     // page's last strong ref disappears — at which point GTK frees
     // the GObject.  Do NOT g_object_ref here: libnma would not unref
     // and the page would leak.
-    let inst = editor.cast::<Openvpn3Editor>();
-    let state = (*inst).state;
-    if state.is_null() {
-        return ptr::null_mut();
-    }
-    let glib_obj = (*state).page.upcast_ref::<glib::Object>();
-    glib_obj.as_ptr().cast::<GObject>()
+    ffi_guard(ptr::null_mut(), || unsafe {
+        let inst = editor.cast::<Openvpn3Editor>();
+        let state = (*inst).state;
+        if state.is_null() {
+            return ptr::null_mut();
+        }
+        let glib_obj = (*state).page.upcast_ref::<glib::Object>();
+        glib_obj.as_ptr().cast::<GObject>()
+    })
 }
 
 unsafe extern "C" fn iface_update_connection(
@@ -464,6 +486,7 @@ unsafe extern "C" fn iface_update_connection(
     connection: *mut NMConnection,
     error: *mut *mut GError,
 ) -> gboolean {
+    ffi_guard(GFALSE, || unsafe {
     let inst = editor.cast::<Openvpn3Editor>();
     let state = (*inst).state;
     if state.is_null() || connection.is_null() {
@@ -546,6 +569,11 @@ unsafe extern "C" fn iface_update_connection(
                     NM_SETTING_SECRET_FLAG_AGENT_OWNED,
                     ptr::null_mut(),
                 );
+                // libnm has copied the value into its own secret store;
+                // scrub the CString's heap bytes before they drop so the
+                // plaintext doesn't linger in this process's memory.
+                let mut vb = v.into_bytes_with_nul();
+                vb.zeroize();
             }
             Err(_) => {
                 let _ = nm_setting_vpn_remove_secret(s_vpn, k.as_ptr());
@@ -601,15 +629,18 @@ unsafe extern "C" fn iface_update_connection(
     set("ca", &cond(tls_like, st.ca.text().as_ref()));
     set("cert", &cond(needs_user_cert, st.cert.text().as_ref()));
     set("key", &cond(needs_user_cert, st.key.text().as_ref()));
-    let cert_pass: glib::GString = st.cert_pass.text();
-    set_secret("cert-pass", &cond(needs_user_cert, cert_pass.as_ref()));
+    // Hold the derived secret in a Zeroizing<String> so our heap copy
+    // is scrubbed on drop.  (The GTK entry buffer + the glib::GString it
+    // returns remain GTK-owned and unscrubbed — outside our control.)
+    let cert_pass = Zeroizing::new(cond(needs_user_cert, st.cert_pass.text().as_ref()));
+    set_secret("cert-pass", cert_pass.as_str());
 
     set(
         "username",
         &cond(needs_password, st.username.text().as_ref()),
     );
-    let pw: glib::GString = st.password.text();
-    set_secret("password", &cond(needs_password, pw.as_ref()));
+    let pw = Zeroizing::new(cond(needs_password, st.password.text().as_ref()));
+    set_secret("password", pw.as_str());
 
     set(
         "static-key",
@@ -743,6 +774,7 @@ unsafe extern "C" fn iface_update_connection(
     );
 
     GTRUE
+    })
 }
 
 unsafe extern "C" fn iface_init(iface_data: gpointer, _user_data: gpointer) {
@@ -1485,7 +1517,11 @@ fn build_widget_tree(initial: &std::collections::BTreeMap<String, String>) -> Ed
         alive: Arc::new(AtomicBool::new(true)),
     };
 
-    apply_contype_visibility(&state, initial_ct);
+    // Use the combo's resolved selection, not the raw stored string:
+    // combo_row clamps an unknown/missing connection-type to index 0
+    // ("tls"), so an out-of-vocabulary initial_ct would otherwise hide
+    // credential rows the (TLS-showing) combo says should be visible.
+    apply_contype_visibility(&state, state.contype.selected_id());
     wire_contype_visibility(&state);
     wire_mssfix_visibility(&state);
     state

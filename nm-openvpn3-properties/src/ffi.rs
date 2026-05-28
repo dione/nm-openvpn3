@@ -19,6 +19,7 @@ use crate::plugin::plugin_new;
 /// NULL GError pointer (the GError contract).
 #[no_mangle]
 pub unsafe extern "C" fn nm_vpn_editor_plugin_factory(error: *mut *mut GError) -> *mut GObject {
+    crate::plugin::ffi_guard(ptr::null_mut(), || unsafe {
     // ABI guard.  Our vtable layout for NMVpnEditorPluginInterface
     // assumes the `get_vt` field that landed in libnm 1.4 and the
     // `notify_plugin_info_set` slot that's stable since 1.30.  An
@@ -50,4 +51,5 @@ pub unsafe extern "C" fn nm_vpn_editor_plugin_factory(error: *mut *mut GError) -
         return ptr::null_mut();
     }
     obj
+    })
 }

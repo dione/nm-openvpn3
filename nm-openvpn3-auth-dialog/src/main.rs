@@ -183,7 +183,12 @@ fn read_vpn_details<R: BufRead>(reader: R) -> Result<(DataMap, SecretsMap)> {
     let mut data_mode = true;
 
     for line in reader.lines() {
-        let line = line.context("reading stdin line")?;
+        // Wrap the raw line in Zeroizing: a `SECRET_VAL=<password>` line
+        // holds plaintext credentials in this buffer; without scrubbing,
+        // the bytes linger on the heap after the String drops (only the
+        // post-split value was previously zeroized).
+        let line = Zeroizing::new(line.context("reading stdin line")?);
+        let line = line.as_str();
         if line == "DONE" {
             break;
         }
@@ -251,23 +256,41 @@ fn is_encrypted_keyfile_path(path: &str) -> bool {
     if lower.ends_with(".p12") || lower.ends_with(".pfx") {
         return true;
     }
-    let md = match std::fs::metadata(path) {
+    // Open once with O_NONBLOCK, then fstat the fd and read through a
+    // cap.  O_NONBLOCK keeps a FIFO / special-file path from blocking
+    // the open (the fstat below then rejects non-regular files);
+    // operating on the fd (not the path) also removes the metadata→read
+    // TOCTOU window the previous two-syscall form had.
+    use std::io::Read;
+    use std::os::unix::fs::OpenOptionsExt;
+    let file = match std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NONBLOCK)
+        .open(path)
+    {
+        Ok(f) => f,
+        Err(_) => return true,
+    };
+    let md = match file.metadata() {
         Ok(m) => m,
         Err(_) => return true,
     };
-    if !md.is_file() {
+    if !md.is_file() || md.len() > MAX_KEYFILE_BYTES {
+        // Non-regular or pathologically large — over-prompt, don't read.
         return true;
     }
-    if md.len() > MAX_KEYFILE_BYTES {
-        // Pathologically large file — over-prompt rather than read.
+    let mut bytes = Vec::new();
+    if (&file)
+        .take(MAX_KEYFILE_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .is_err()
+    {
         return true;
     }
-    let bytes = match std::fs::read(path) {
-        Ok(b) if (b.len() as u64) <= MAX_KEYFILE_BYTES => b,
-        // File grew between metadata and read (TOCTOU): play safe.
-        Ok(_) => return true,
-        Err(_) => return true,
-    };
+    if bytes.len() as u64 > MAX_KEYFILE_BYTES {
+        // File grew past the cap during the read: play safe.
+        return true;
+    }
     // PEM markers are 7-bit ASCII; binary PKCS#12 was handled by the
     // extension check above, so anything not-quite-UTF-8 here is
     // garbage we don't want to scan.

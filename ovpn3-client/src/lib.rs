@@ -170,8 +170,7 @@ impl Client {
             .path(session_path.as_ref())?
             .build()
             .await?;
-        let raw = proxy.statistics().await?;
-        Ok(raw.into_iter().collect())
+        proxy.statistics().await
     }
 
     /// Read the netcfg device's DNS server list (each element is a
@@ -267,8 +266,10 @@ impl Client {
         if let Ok(reply) = try_prop("connected_to").await {
             let body = reply.body();
             if let Ok(value) = body.deserialize::<OwnedValue>() {
-                if let Ok((p, h, port)) = <(String, String, u32)>::try_from(value.try_clone()?) {
-                    return Ok(Some((p, h, port)));
+                if let Ok(cloned) = value.try_clone() {
+                    if let Ok((p, h, port)) = <(String, String, u32)>::try_from(cloned) {
+                        return Ok(Some((p, h, port)));
+                    }
                 }
                 if let Ok(s) = <String>::try_from(value) {
                     // "user@host:port" or "host:port" or bare host.
@@ -338,13 +339,16 @@ impl Client {
     ) -> anyhow::Result<Vec<InputSlot>> {
         let proxy = self.session_proxy(session_path).await?;
         let mut out = Vec::new();
-        let pairs = match proxy.user_input_queue_get_type_group().await {
-            Ok(v) => v,
-            Err(e) => {
-                tracing::debug!("UserInputQueueGetTypeGroup failed: {e}");
-                return Ok(out);
-            }
-        };
+        // Propagate a real bus error here rather than swallowing it as
+        // "queue empty": AttentionRequired only fires when openvpn3
+        // genuinely needs input, so a failed GetTypeGroup at that point
+        // means we cannot enumerate the prompts.  Returning Ok(empty)
+        // would make the caller believe auth is satisfied and let NM
+        // hang until its activation timeout instead of failing fast.
+        let pairs = proxy
+            .user_input_queue_get_type_group()
+            .await
+            .map_err(|e| anyhow::anyhow!("UserInputQueueGetTypeGroup: {e}"))?;
         for (t, g) in pairs {
             let ids = match proxy.user_input_queue_check(t, g).await {
                 Ok(v) => v,

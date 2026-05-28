@@ -46,15 +46,17 @@ pub unsafe extern "C" fn nm_vpn_editor_factory_openvpn3(
     connection: *mut NMConnection,
     error: *mut *mut GError,
 ) -> *mut NMVpnEditor {
-    if connection.is_null() {
-        set_error(
-            error,
-            nm_vpn_plugin_openvpn3::libnm::NM_OPENVPN3_PLUGIN_ERROR_FAILED,
-            "editor factory called with NULL connection",
-        );
-        return ptr::null_mut();
-    }
-    editor::new_editor(connection, error) as *mut NMVpnEditor
+    editor::ffi_guard(ptr::null_mut(), || unsafe {
+        if connection.is_null() {
+            set_error(
+                error,
+                nm_vpn_plugin_openvpn3::libnm::NM_OPENVPN3_PLUGIN_ERROR_FAILED,
+                "editor factory called with NULL connection",
+            );
+            return ptr::null_mut();
+        }
+        editor::new_editor(connection, error) as *mut NMVpnEditor
+    })
 }
 
 /// Editor crate entrypoint usable from in-process Rust tests (the

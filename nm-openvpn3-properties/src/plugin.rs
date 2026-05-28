@@ -94,6 +94,19 @@ unsafe extern "C" fn get_property(
     gobject_sys::g_value_set_string(value, cstr.as_ptr());
 }
 
+/// Run an FFI entrypoint body, converting any Rust panic into a clean
+/// `default` return instead of unwinding across the C ABI (which aborts
+/// the host process — nm-applet / gnome-control-center).
+pub(crate) fn ffi_guard<T>(default: T, f: impl FnOnce() -> T) -> T {
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
+        Ok(v) => v,
+        Err(_) => {
+            eprintln!("nm-openvpn3: caught panic at FFI boundary; returning failure to libnm");
+            default
+        }
+    }
+}
+
 // --- NMVpnEditorPlugin interface implementation ---------------------------
 
 unsafe extern "C" fn iface_get_capabilities(_plugin: *mut NMVpnEditorPlugin) -> u32 {
@@ -110,6 +123,7 @@ unsafe extern "C" fn iface_import_from_file(
     path: *const c_char,
     error: *mut *mut GError,
 ) -> *mut NMConnection {
+    ffi_guard(ptr::null_mut(), || unsafe {
     if path.is_null() {
         set_error(error, NM_OPENVPN3_PLUGIN_ERROR_FAILED, "import: NULL path");
         return ptr::null_mut();
@@ -215,6 +229,7 @@ unsafe extern "C" fn iface_import_from_file(
             ptr::null_mut()
         }
     }
+    })
 }
 
 unsafe extern "C" fn iface_export_to_file(
@@ -223,52 +238,56 @@ unsafe extern "C" fn iface_export_to_file(
     connection: *mut NMConnection,
     error: *mut *mut GError,
 ) -> gboolean {
-    if path.is_null() || connection.is_null() {
-        set_error(
-            error,
-            NM_OPENVPN3_PLUGIN_ERROR_FAILED,
-            "export: NULL path or connection",
-        );
-        return GFALSE;
-    }
-    let path_str = match CStr::from_ptr(path).to_str() {
-        Ok(s) => s,
-        Err(_) => {
+    ffi_guard(GFALSE, || unsafe {
+        if path.is_null() || connection.is_null() {
             set_error(
                 error,
                 NM_OPENVPN3_PLUGIN_ERROR_FAILED,
-                "export: non-UTF8 path",
+                "export: NULL path or connection",
             );
             return GFALSE;
         }
-    };
-    export_connection_to_path(connection, Path::new(path_str), error)
+        let path_str = match CStr::from_ptr(path).to_str() {
+            Ok(s) => s,
+            Err(_) => {
+                set_error(
+                    error,
+                    NM_OPENVPN3_PLUGIN_ERROR_FAILED,
+                    "export: non-UTF8 path",
+                );
+                return GFALSE;
+            }
+        };
+        export_connection_to_path(connection, Path::new(path_str), error)
+    })
 }
 
 unsafe extern "C" fn iface_get_suggested_filename(
     _plugin: *mut NMVpnEditorPlugin,
     connection: *mut NMConnection,
 ) -> *mut c_char {
-    let s_con = nm_connection_get_setting_connection(connection);
-    if s_con.is_null() {
-        return ptr::null_mut();
-    }
-    let id_ptr = nm_setting_connection_get_id(s_con);
-    if id_ptr.is_null() {
-        return ptr::null_mut();
-    }
-    let id = match CStr::from_ptr(id_ptr).to_str() {
-        Ok(s) if !s.is_empty() => s,
-        _ => return ptr::null_mut(),
-    };
-    let suggested = format!("{id} (openvpn).conf");
-    // libnm frees this with g_free, so allocate with glib's
-    // g_malloc-equivalent (g_strdup) to keep allocators paired.
-    let c = match CString::new(suggested) {
-        Ok(c) => c,
-        Err(_) => return ptr::null_mut(),
-    };
-    glib_sys::g_strdup(c.as_ptr())
+    ffi_guard(ptr::null_mut(), || unsafe {
+        let s_con = nm_connection_get_setting_connection(connection);
+        if s_con.is_null() {
+            return ptr::null_mut();
+        }
+        let id_ptr = nm_setting_connection_get_id(s_con);
+        if id_ptr.is_null() {
+            return ptr::null_mut();
+        }
+        let id = match CStr::from_ptr(id_ptr).to_str() {
+            Ok(s) if !s.is_empty() => s,
+            _ => return ptr::null_mut(),
+        };
+        let suggested = format!("{id} (openvpn).conf");
+        // libnm frees this with g_free, so allocate with glib's
+        // g_malloc-equivalent (g_strdup) to keep allocators paired.
+        let c = match CString::new(suggested) {
+            Ok(c) => c,
+            Err(_) => return ptr::null_mut(),
+        };
+        glib_sys::g_strdup(c.as_ptr())
+    })
 }
 
 /// Resolve the editor cdylib's absolute path by asking the loader for
@@ -280,6 +299,11 @@ unsafe fn locate_editor_module() -> Option<CString> {
     // Any code address inside our `.so` works for dladdr.  `plugin_new`
     // is exported by us so it satisfies that requirement.
     if crate::libnm::dladdr(plugin_new as *const c_void, &mut info as *mut _) == 0 {
+        return None;
+    }
+    // POSIX does not guarantee `dli_fname` is non-NULL (anonymous
+    // mappings, the vDSO); guard before constructing a CStr from it.
+    if info.dli_fname.is_null() {
         return None;
     }
     let fname = CStr::from_ptr(info.dli_fname)
@@ -297,11 +321,24 @@ unsafe fn locate_editor_module() -> Option<CString> {
     CString::new(editor.to_string_lossy().as_ref()).ok()
 }
 
+/// `g_module_error()` wraps `dlerror(3)`, which returns NULL when no
+/// error is pending (e.g. the module is simply missing).  Dereferencing
+/// that NULL via `CStr::from_ptr` is UB — guard it.
+unsafe fn module_error_string() -> String {
+    let p = crate::libnm::g_module_error();
+    if p.is_null() {
+        "no GModule error detail available".to_string()
+    } else {
+        CStr::from_ptr(p).to_string_lossy().into_owned()
+    }
+}
+
 unsafe extern "C" fn iface_get_editor(
     plugin: *mut NMVpnEditorPlugin,
     connection: *mut NMConnection,
     error: *mut *mut GError,
 ) -> *mut NMVpnEditor {
+    ffi_guard(ptr::null_mut(), || unsafe {
     let factory_name = CStr::from_bytes_with_nul(EDITOR_FACTORY).unwrap();
     let module_name_default = CStr::from_bytes_with_nul(EDITOR_MODULE).unwrap();
 
@@ -329,9 +366,7 @@ unsafe extern "C" fn iface_get_editor(
         module
     };
     if module.is_null() {
-        let detail = CStr::from_ptr(crate::libnm::g_module_error())
-            .to_string_lossy()
-            .into_owned();
+        let detail = module_error_string();
         let tried = abs_path
             .as_ref()
             .map(|c| c.to_string_lossy().into_owned())
@@ -346,9 +381,7 @@ unsafe extern "C" fn iface_get_editor(
     let mut sym: gpointer = ptr::null_mut();
     let ok = crate::libnm::g_module_symbol(module, factory_name.as_ptr(), &mut sym);
     if ok == GFALSE || sym.is_null() {
-        let detail = CStr::from_ptr(crate::libnm::g_module_error())
-            .to_string_lossy()
-            .into_owned();
+        let detail = module_error_string();
         set_error(
             error,
             NM_OPENVPN3_PLUGIN_ERROR_FAILED,
@@ -369,6 +402,7 @@ unsafe extern "C" fn iface_get_editor(
     // matches the libnm contract and lets the editor read plugin-info
     // metadata if a future version of the editor needs it.
     factory(plugin, connection, error)
+    })
 }
 
 /// Fill the libnm-supplied interface vtable with our methods.  Called

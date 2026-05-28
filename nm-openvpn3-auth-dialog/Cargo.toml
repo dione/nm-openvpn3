@@ -10,3 +10,6 @@ repository.workspace = true
 clap = { workspace = true }
 anyhow = { workspace = true }
 zeroize = { workspace = true }
+# O_NONBLOCK on the keyfile probe so a FIFO / special-file path in
+# vpn.data can't block the dialog open().
+libc = "0.2"

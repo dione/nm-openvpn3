@@ -89,12 +89,24 @@ struct SessionState {
     /// Connect resetting a plugin-global flag — the old listeners
     /// hold their own Arc and the new Connect builds a new one.
     ip4_emitted: Arc<AtomicBool>,
+    /// Set when NM (or an internal failure path) initiates teardown.
+    /// The StatusChange listener / poller check this before emitting a
+    /// Failure on the openvpn3 `Disconnected` event so a user-requested
+    /// Disconnect doesn't surface to NM as a spurious ConnectFailed.
+    /// Per-session for the same reason as `ip4_emitted`.
+    disconnect_requested: Arc<AtomicBool>,
 }
 
 pub struct Plugin {
     client: Client,
     state: Arc<Mutex<NMVpnServiceState>>,
     session: Arc<Mutex<SessionState>>,
+    /// Serializes Connect dispatch end-to-end.  zbus runs method
+    /// handlers concurrently; without this two Connects could both pass
+    /// the `session_path.is_none()` gate before either stashes its
+    /// session.  Held for the whole do_connect so the second caller
+    /// observes the first's stashed session and is rejected.
+    connect_lock: Arc<Mutex<()>>,
     /// Fires when Disconnect runs (or activation hard-fails) so main
     /// can drop the bus name and exit — NM only sends SIGTERM if we
     /// hang, and without --persist the C plugin self-exits the same
@@ -140,6 +152,7 @@ impl Plugin {
             client,
             state: Arc::new(Mutex::new(NMVpnServiceState::Init)),
             session: Arc::new(Mutex::new(SessionState::default())),
+            connect_lock: Arc::new(Mutex::new(())),
             quit_tx,
         }
     }
@@ -153,6 +166,7 @@ impl Plugin {
         connection: zbus::Connection,
         session_path: OwnedObjectPath,
         ip4_emitted: Arc<AtomicBool>,
+        disconnect_requested: Arc<AtomicBool>,
     ) -> tokio::task::JoinHandle<()> {
         let client = self.client.clone();
         let state = self.state.clone();
@@ -226,7 +240,13 @@ impl Plugin {
                     }
                     NMVpnServiceState::Stopped => {
                         set_state_via(&emitter, &state, target).await;
-                        let _ = emitter.failure(status.failure_reason().as_u32()).await;
+                        // Suppress the Failure signal when teardown was
+                        // NM-initiated — otherwise a normal Disconnect
+                        // races this Disconnected event and surfaces as
+                        // a spurious ConnectFailed in NM's UI.
+                        if !disconnect_requested.load(Ordering::Acquire) {
+                            let _ = emitter.failure(status.failure_reason().as_u32()).await;
+                        }
                         break;
                     }
                     other => set_state_via(&emitter, &state, other).await,
@@ -281,11 +301,24 @@ impl Plugin {
         conn: &zbus::Connection,
         connection: Settings,
     ) -> anyhow::Result<()> {
+        // Refuse a second Connect while a session is already live.  zbus
+        // dispatches method calls concurrently, so two Connects could
+        // otherwise race on self.session and orphan the loser's openvpn3
+        // session.  The check is cheap and the common case (one Connect
+        // per activation) is unaffected.
+        {
+            let s = self.session.lock().await;
+            if s.session_path.is_some() {
+                return Err(anyhow!("a session is already active; refusing concurrent Connect"));
+            }
+        }
+
         // Fresh per-session emit guard.  Prior listeners (if any are
         // mid-emit during a fast Disconnect/Connect cycle) keep
         // referencing the previous Arc; this Connect's listeners get a
         // brand-new flag they alone can flip.
         let ip4_emitted = Arc::new(AtomicBool::new(false));
+        let disconnect_requested = Arc::new(AtomicBool::new(false));
 
         let data = vpn_data(&connection).context("parsing vpn.data")?;
         // Split secrets out early — build_profile may need them and we
@@ -311,9 +344,16 @@ impl Plugin {
             let buf = tokio::task::spawn_blocking(move || -> anyhow::Result<String> {
                 use std::io::Read;
                 use std::os::unix::fs::OpenOptionsExt;
+                // O_NONBLOCK so opening a FIFO (or any pipe-like special
+                // file) returns immediately instead of blocking this
+                // spawn_blocking thread forever waiting for a writer —
+                // vpn.data is attacker-controllable, so the path could
+                // name a named pipe.  The is_file() check below then
+                // rejects it.  O_NONBLOCK has no effect on regular-file
+                // reads, so the legitimate path is unchanged.
                 let file = std::fs::OpenOptions::new()
                     .read(true)
-                    .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
+                    .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC | libc::O_NONBLOCK)
                     .open(&path_owned)
                     .with_context(|| format!("opening profile file {path_owned}"))?;
                 let md = file
@@ -395,6 +435,7 @@ impl Plugin {
             s.current_data = data_map;
             s.current_secrets = secret_map;
             s.ip4_emitted = ip4_emitted.clone();
+            s.disconnect_requested = disconnect_requested.clone();
         }
 
         // Wait for the session manager to publish the session, then
@@ -419,8 +460,12 @@ impl Plugin {
         }
         {
             let mut s = self.session.lock().await;
-            let h1 =
-                self.spawn_status_listener(conn.clone(), session_path.clone(), ip4_emitted.clone());
+            let h1 = self.spawn_status_listener(
+                conn.clone(),
+                session_path.clone(),
+                ip4_emitted.clone(),
+                disconnect_requested.clone(),
+            );
             let h2 = self.spawn_attention_listener(conn.clone(), session_path.clone());
             s.tasks.extend([h1, h2]);
         }
@@ -446,8 +491,12 @@ impl Plugin {
         // state we explicitly drove.
         {
             let mut s = self.session.lock().await;
-            let h3 =
-                self.spawn_status_poller(conn.clone(), session_path.clone(), ip4_emitted.clone());
+            let h3 = self.spawn_status_poller(
+                conn.clone(),
+                session_path.clone(),
+                ip4_emitted.clone(),
+                disconnect_requested.clone(),
+            );
             let h4 = self.spawn_stats_timer(session_path);
             s.tasks.extend([h3, h4]);
         }
@@ -461,6 +510,17 @@ impl Plugin {
     /// the activation-failure paths so a half-attached listener can't
     /// keep referencing a dead session.
     async fn cleanup_session(&self, session_path: &OwnedObjectPath) {
+        // Abort the background tasks FIRST so a listener/poller can't
+        // keep referencing session_path while we tear the session down
+        // (session_disconnect may take two retries, leaving a window in
+        // which a still-running task talks to a half-dead session).
+        {
+            let mut s = self.session.lock().await;
+            s.disconnect_requested.store(true, Ordering::Release);
+            for h in s.tasks.drain(..) {
+                h.abort();
+            }
+        }
         // openvpn3 drops sessions whose backend has yet to register;
         // an in-flight tear-down can return ObjectNotFound or a
         // transient bus error.  One retry is enough.
@@ -473,9 +533,6 @@ impl Plugin {
             }
         }
         let mut s = self.session.lock().await;
-        for h in s.tasks.drain(..) {
-            h.abort();
-        }
         s.config_path = None;
         s.session_path = None;
         s.current_data.clear();
@@ -515,6 +572,7 @@ impl Plugin {
         connection: zbus::Connection,
         session_path: OwnedObjectPath,
         ip4_emitted_shared: Arc<AtomicBool>,
+        disconnect_requested: Arc<AtomicBool>,
     ) -> tokio::task::JoinHandle<()> {
         let client = self.client.clone();
         let state = self.state.clone();
@@ -533,7 +591,11 @@ impl Plugin {
             // budget reset, etc.).
             let mut ip4_emitted = false;
             let mut tick_interval = Duration::from_millis(500);
-            let max_ticks_pre_started = 120; // 120 * 500ms = 60s
+            // 100 * 500ms = 50s — deliberately under NM's own 60s
+            // activation timeout so our clean Failure signal reaches NM
+            // before it SIGKILLs the service (which would make the
+            // Failure unreachable and surface as a generic timeout).
+            let max_ticks_pre_started = 100;
             let mut ticks = 0u32;
             // Consecutive post-STARTED status-read failures before we
             // declare the session lost.  A brief D-Bus blip (suspend/
@@ -653,11 +715,15 @@ impl Plugin {
                             }
                             NMVpnServiceState::Stopped => {
                                 set_state_via(&emitter, &state, target).await;
-                                let reason = status.map_or(
-                                    NMVpnPluginFailure::ConnectFailed,
-                                    Status::failure_reason,
-                                );
-                                let _ = emitter.failure(reason.as_u32()).await;
+                                // See spawn_status_listener — don't fire
+                                // Failure for an NM-initiated teardown.
+                                if !disconnect_requested.load(Ordering::Acquire) {
+                                    let reason = status.map_or(
+                                        NMVpnPluginFailure::ConnectFailed,
+                                        Status::failure_reason,
+                                    );
+                                    let _ = emitter.failure(reason.as_u32()).await;
+                                }
                                 break;
                             }
                             other if !ip4_emitted => {
@@ -745,8 +811,13 @@ impl Plugin {
                 } else {
                     let now = std::time::Instant::now();
                     let dt = now.duration_since(last_tick).as_secs_f64().max(1e-3);
-                    let rate_rx = ((bin - last_bytes_in) as f64 / dt) as i64;
-                    let rate_tx = ((bout - last_bytes_out) as f64 / dt) as i64;
+                    // saturating_sub: openvpn3 counters reset to 0 on a
+                    // daemon reload / session resume, so a naive `bin -
+                    // last` can go negative and render as a wildly
+                    // negative throughput.  Clamp the delta at 0 across a
+                    // reset rather than printing nonsense.
+                    let rate_rx = (bin.saturating_sub(last_bytes_in) as f64 / dt) as i64;
+                    let rate_tx = (bout.saturating_sub(last_bytes_out) as f64 / dt) as i64;
                     info!(
                         "stats: rx={bin}B tx={bout}B tun_rx={tbin}B tun_tx={tbout}B \
                          pkt_in={pkt_in} pkt_out={pkt_out} \
@@ -929,6 +1000,7 @@ impl Plugin {
         connection: Settings,
     ) -> zbus::fdo::Result<()> {
         info!("Connect dispatch entered");
+        let _connect_guard = self.connect_lock.lock().await;
         let r = self.do_connect(&emitter, conn, connection).await;
         match r {
             Ok(()) => {
@@ -972,6 +1044,11 @@ impl Plugin {
         info!("Disconnect dispatched");
         let session = {
             let mut s = self.session.lock().await;
+            // Flag teardown BEFORE taking the session so the background
+            // tasks (which hold their own Arc clone of this flag) see it
+            // and suppress the Failure signal on the openvpn3
+            // `Disconnected` event this Disconnect triggers.
+            s.disconnect_requested.store(true, Ordering::Release);
             std::mem::take(&mut *s)
         };
         // Abort the poller / stats / signal-listener background tasks
