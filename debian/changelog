@@ -1,3 +1,14 @@
+network-manager-openvpn3 (0.6.0~alpha.4-1~dhcargo1) noble; urgency=medium
+
+  * service: openvpn3 config name now derives from NM's connection.id
+    (the user-facing name `nmcli connection up NAME` uses) instead of
+    the static "nm-openvpn3-rust" placeholder, so `openvpn3
+    sessions-list` shows the connection the user actually activated.
+    A `vpn.data['connection-name']` override still takes precedence;
+    the static string remains only as a last-resort fallback.
+
+ -- Dominik Jarmulowicz <dominik.jarmulowicz@oversee.biz>  Fri, 29 May 2026 13:00:00 +0200
+
 network-manager-openvpn3 (0.6.0~alpha.3-1~dhcargo1) noble; urgency=medium
 
   * Review-driven hardening + i18n sweep:

@@ -417,9 +417,16 @@ impl Plugin {
 
         self.set_state(emitter, NMVpnServiceState::Starting).await;
 
+        // openvpn3 config name, in preference order:
+        //   1. vpn.data['connection-name'] — explicit override, if a
+        //      profile ever wants to decouple the two.
+        //   2. connection.id — NM's user-facing name (`nmcli up NAME`),
+        //      so `openvpn3 sessions-list` matches what the user typed.
+        //   3. static fallback when neither is present.
         let id = data
             .get("connection-name")
             .cloned()
+            .or_else(|| crate::connection::connection_id(&connection))
             .unwrap_or_else(|| "nm-openvpn3-rust".to_string());
 
         debug!("importing config '{id}' ({} bytes)", profile.len());

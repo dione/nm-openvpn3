@@ -60,6 +60,16 @@ pub fn permission_users(settings: &Settings) -> Vec<String> {
         .collect()
 }
 
+/// Pull the connection's display name from `connection.id`.  NM stores
+/// the user-facing connection name (the one `nmcli connection up NAME`
+/// uses) here; the VPN `vpn.data` hash does not carry it, so this is the
+/// only place the plugin can recover it for use as the openvpn3 config
+/// name.  Returns `None` when the group/key is absent or not a string.
+pub fn connection_id(settings: &Settings) -> Option<String> {
+    let raw = settings.get("connection")?.get("id")?;
+    String::try_from(raw.clone()).ok().filter(|s| !s.is_empty())
+}
+
 fn string_string_dict(value: &OwnedValue) -> anyhow::Result<HashMap<String, String>> {
     // The wire type is a{ss} but NM wraps it as a variant inside the
     // outer a{sv} settings dict.  zbus surfaces that as OwnedValue;
