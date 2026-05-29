@@ -13,3 +13,5 @@ zeroize = { workspace = true }
 # O_NONBLOCK on the keyfile probe so a FIFO / special-file path in
 # vpn.data can't block the dialog open().
 libc = "0.2"
+# Translate the user-visible secret labels NM renders in its agent UI.
+gettext-rs = { workspace = true }

@@ -34,6 +34,10 @@ INSTALL      ?= install
 INSTALL_DATA ?= $(INSTALL) -m 0644
 INSTALL_BIN  ?= $(INSTALL) -m 0755
 MSGFMT       ?= msgfmt
+XGETTEXT     ?= xgettext
+
+POT          := po/nm-openvpn3.pot
+POTFILES     := po/POTFILES.in
 
 TARGET_DIR   ?= target/release
 SERVICE_BIN  := $(TARGET_DIR)/nm-openvpn3-service
@@ -51,7 +55,7 @@ PO_FILES     := $(wildcard po/*.po)
 MO_FILES     := $(PO_FILES:po/%.po=po/%.mo)
 
 .PHONY: all build install install-core install-gnome install-i18n \
-        check clean
+        check clean pot
 
 all: build
 
@@ -96,6 +100,17 @@ install-i18n: $(MO_FILES)
 	    $(INSTALL) -d $$dir; \
 	    $(INSTALL_DATA) $$mo $$dir/nm-openvpn3.mo; \
 	done
+
+# Regenerate the translation template from the sources listed in
+# po/POTFILES.in.  xgettext's C parser handles Rust string literals and
+# spans multi-line tr(...) / gettext(...) calls, so it extracts the
+# editor's wrapped strings reliably.  Run after adding/changing any
+# user-visible string, then `msgmerge` the .po catalogs.
+pot:
+	$(XGETTEXT) --files-from=$(POTFILES) --from-code=UTF-8 \
+	    --language=C --keyword=tr --keyword=gettext --keyword=ngettext:1,2 \
+	    --package-name=nm-openvpn3 --copyright-holder='nm-openvpn3 contributors' \
+	    --output=$(POT)
 
 check:
 	$(CARGO) test $(CARGO_FLAGS)

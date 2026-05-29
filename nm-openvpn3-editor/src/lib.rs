@@ -72,3 +72,42 @@ pub unsafe fn new_editor_object(
 ) -> *mut GObject {
     editor::new_editor(connection, error)
 }
+
+#[cfg(test)]
+mod smoke {
+    //! End-to-end FFI smoke test: import a trivial profile into a real
+    //! `NMConnection`, then drive the editor factory and pull its
+    //! primary widget — exercising GType registration, the GInterface
+    //! vtable, and the catch_unwind boundaries that are otherwise
+    //! compile-only.  Requires a display, so it is `#[ignore]`d; run it
+    //! locally / in CI under a headless server:
+    //!
+    //! ```sh
+    //! xvfb-run -a cargo test -p nm-openvpn3-editor -- --ignored
+    //! ```
+    use std::path::Path;
+    use std::ptr;
+
+    #[test]
+    #[ignore = "needs an X/Wayland display — run under xvfb-run"]
+    fn factory_builds_editor_and_widget() {
+        unsafe {
+            let conn = nm_vpn_plugin_openvpn3::bridge::ovpn_text_to_connection(
+                Path::new("smoke.ovpn"),
+                "client\nremote vpn.example.com\n",
+            )
+            .expect("import minimal profile");
+
+            let mut err: *mut glib_sys::GError = ptr::null_mut();
+            // new_editor builds the full widget tree internally, so a
+            // non-null return proves GType registration + the interface
+            // vtable + widget construction all succeeded end-to-end.
+            let editor = super::new_editor_object(conn, &mut err);
+            assert!(
+                !editor.is_null(),
+                "editor object must construct (gerror set: {})",
+                !err.is_null()
+            );
+        }
+    }
+}

@@ -182,9 +182,7 @@ pub unsafe fn ovpn_text_to_connection(
             // Surface the rejection — a silent drop looks like a
             // mis-parse to a user who legitimately pointed at an
             // absolute creds path.
-            eprintln!(
-                "nm-openvpn3: refusing http-proxy-auth-file outside profile dir: {authfile}"
-            );
+            eprintln!("nm-openvpn3: refusing http-proxy-auth-file outside profile dir: {authfile}");
         } else {
             let af_path = parent_dir.join(af);
             // Open with O_NOFOLLOW: the path guard above blocks `..` and

@@ -119,8 +119,23 @@ fn main() -> ExitCode {
     }
 }
 
+/// This dialog is a standalone binary (not dlopened into a host), so
+/// unlike the editor it may own the process-wide text domain.
+fn gettext_init() {
+    gettextrs::setlocale(gettextrs::LocaleCategory::LcAll, "");
+    let localedir =
+        std::env::var("NM_OPENVPN3_LOCALEDIR").unwrap_or_else(|_| "/usr/share/locale".to_string());
+    let _ = gettextrs::bindtextdomain("nm-openvpn3", localedir);
+    let _ = gettextrs::textdomain("nm-openvpn3");
+}
+
+fn tr(s: &str) -> String {
+    gettextrs::gettext(s)
+}
+
 fn run() -> Result<()> {
     let args = Args::parse();
+    gettext_init();
 
     if args.uuid.is_none() || args.name.is_none() || args.service.is_none() {
         bail!("--uuid, --name and --service are all required");
@@ -158,10 +173,12 @@ fn run() -> Result<()> {
     }
 
     let prompt = needed.prompt.clone().unwrap_or_else(|| {
-        format!(
-            "You need to authenticate to access the Virtual Private Network \u{201C}{}\u{201D}.",
-            args.name.as_deref().unwrap_or("")
-        )
+        // `needed.prompt` (when set) is the server's x-vpn-message — left
+        // verbatim.  Only our fallback string is translated; keep the
+        // `{name}` placeholder in the msgid so translators control word
+        // order around it.
+        tr("You need to authenticate to access the Virtual Private Network \u{201C}{name}\u{201D}.")
+            .replace("{name}", args.name.as_deref().unwrap_or(""))
     });
 
     write_eui_keyfile(&mut out, &prompt, &needed, args.allow_interaction)?;
@@ -383,13 +400,13 @@ fn write_eui_keyfile(
     writeln!(out, "[VPN Plugin UI]")?;
     writeln!(out, "Version=2")?;
     writeln!(out, "Description={}", escape(prompt))?;
-    writeln!(out, "Title=Authentication required")?;
+    writeln!(out, "Title={}", escape(&tr("Authentication required")))?;
 
     write_entry(
         out,
         KEY_PASSWORD,
         "",
-        "Password",
+        &tr("Password"),
         false,
         needed.password && allow_interaction,
     )?;
@@ -397,7 +414,7 @@ fn write_eui_keyfile(
         out,
         KEY_CERTPASS,
         "",
-        "Certificate password",
+        &tr("Certificate password"),
         false,
         needed.certpass && allow_interaction,
     )?;
@@ -405,7 +422,7 @@ fn write_eui_keyfile(
         out,
         KEY_HTTP_PROXY_PASSWORD,
         "",
-        "HTTP proxy password",
+        &tr("HTTP proxy password"),
         false,
         needed.proxypass && allow_interaction,
     )?;
@@ -417,7 +434,7 @@ fn write_eui_keyfile(
         out,
         KEY_CHALLENGE_RESPONSE,
         "",
-        "Challenge response",
+        &tr("Challenge response"),
         needed.challenge_response_echo,
         needed.challenge_response && allow_interaction,
     )?;

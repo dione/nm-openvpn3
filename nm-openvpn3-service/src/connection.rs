@@ -33,6 +33,33 @@ pub fn vpn_secrets(settings: &Settings) -> anyhow::Result<HashMap<String, String
     }
 }
 
+/// Pull the usernames out of the connection's `connection.permissions`
+/// (`as` of `user:NAME[:...]`).  NM records which local user a
+/// connection belongs to here, so this is the authoritative source for
+/// who to AccessGrant the openvpn3 session to — far better than guessing
+/// from `/run/user`.  Returns an empty vec when the connection is
+/// system-wide (no permissions) or the field is malformed.
+pub fn permission_users(settings: &Settings) -> Vec<String> {
+    let Some(conn) = settings.get("connection") else {
+        return Vec::new();
+    };
+    let Some(raw) = conn.get("permissions") else {
+        return Vec::new();
+    };
+    let Ok(entries) = Vec::<String>::try_from(raw.clone()) else {
+        return Vec::new();
+    };
+    entries
+        .into_iter()
+        .filter_map(|e| {
+            // Format is "user:NAME[:reserved]"; take the NAME field.
+            let rest = e.strip_prefix("user:")?;
+            let name = rest.split(':').next().unwrap_or("");
+            (!name.is_empty()).then(|| name.to_string())
+        })
+        .collect()
+}
+
 fn string_string_dict(value: &OwnedValue) -> anyhow::Result<HashMap<String, String>> {
     // The wire type is a{ss} but NM wraps it as a variant inside the
     // outer a{sv} settings dict.  zbus surfaces that as OwnedValue;

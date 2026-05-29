@@ -24,7 +24,7 @@ use anyhow::{anyhow, Context};
 use futures_util::stream::StreamExt;
 use ovpn3_client::Client;
 use tokio::sync::Mutex;
-use tracing::{debug, info, warn};
+use tracing::{debug, info, warn, Instrument};
 use zbus::interface;
 use zbus::object_server::SignalEmitter;
 use zbus::zvariant::{ObjectPath, OwnedObjectPath, OwnedValue};
@@ -170,90 +170,98 @@ impl Plugin {
     ) -> tokio::task::JoinHandle<()> {
         let client = self.client.clone();
         let state = self.state.clone();
-        tokio::spawn::<_>(async move {
-            let proxy = match client.session_proxy(&session_path).await {
-                Ok(p) => p,
-                Err(e) => {
-                    warn!("StatusChange subscribe failed: {e}");
-                    return;
-                }
-            };
-            let mut stream = match proxy.receive_status_change().await {
-                Ok(s) => s,
-                Err(e) => {
-                    warn!("receive_status_change failed: {e}");
-                    return;
-                }
-            };
-            info!("StatusChange listener attached to {session_path}");
-            while let Some(signal) = stream.next().await {
-                let Ok(args) = signal.args() else { continue };
-                debug!(
-                    "StatusChange: major={} minor={} msg='{}'",
-                    args.major, args.minor, args.message
-                );
-                let Some(status) = Status::from_wire(args.major, args.minor) else {
-                    continue;
+        let span =
+            tracing::info_span!("vpn-session", task = "status-listener", path = %session_path);
+        tokio::spawn(
+            async move {
+                let proxy = match client.session_proxy(&session_path).await {
+                    Ok(p) => p,
+                    Err(e) => {
+                        warn!("StatusChange subscribe failed: {e}");
+                        return;
+                    }
                 };
-                let Some(target) = status.to_nm_state() else {
-                    continue;
+                let mut stream = match proxy.receive_status_change().await {
+                    Ok(s) => s,
+                    Err(e) => {
+                        warn!("receive_status_change failed: {e}");
+                        return;
+                    }
                 };
-                let Ok(emitter) = make_emitter(&connection) else {
-                    warn!("dropping StatusChange — could not build emitter");
-                    continue;
-                };
-                match target {
-                    NMVpnServiceState::Started => {
-                        // Race-safe coordinate with spawn_status_poller —
-                        // whichever spots CONNECTED first emits, the
-                        // other becomes a no-op.  Memory-ordering:
-                        //   * success = AcqRel — the winner publishes
-                        //     "ip4 has been emitted" before NM sees the
-                        //     SetConfig signal it triggers.
-                        //   * failure = Acquire — the loser must see
-                        //     every state write the winner made before
-                        //     it stored `true`.
-                        //   * roll-back path (Ip4Config emit failed)
-                        //     stores `false` with Release — pairs with
-                        //     the next CAS's Acquire on either path.
-                        if ip4_emitted
-                            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-                            .is_err()
-                        {
-                            debug!("StatusChange: Started reached after poller emitted, skipping");
+                info!("StatusChange listener attached to {session_path}");
+                while let Some(signal) = stream.next().await {
+                    let Ok(args) = signal.args() else { continue };
+                    debug!(
+                        "StatusChange: major={} minor={} msg='{}'",
+                        args.major, args.minor, args.message
+                    );
+                    let Some(status) = Status::from_wire(args.major, args.minor) else {
+                        continue;
+                    };
+                    let Some(target) = status.to_nm_state() else {
+                        continue;
+                    };
+                    let Ok(emitter) = make_emitter(&connection) else {
+                        warn!("dropping StatusChange — could not build emitter");
+                        continue;
+                    };
+                    match target {
+                        NMVpnServiceState::Started => {
+                            // Race-safe coordinate with spawn_status_poller —
+                            // whichever spots CONNECTED first emits, the
+                            // other becomes a no-op.  Memory-ordering:
+                            //   * success = AcqRel — the winner publishes
+                            //     "ip4 has been emitted" before NM sees the
+                            //     SetConfig signal it triggers.
+                            //   * failure = Acquire — the loser must see
+                            //     every state write the winner made before
+                            //     it stored `true`.
+                            //   * roll-back path (Ip4Config emit failed)
+                            //     stores `false` with Release — pairs with
+                            //     the next CAS's Acquire on either path.
+                            if ip4_emitted
+                                .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+                                .is_err()
+                            {
+                                debug!(
+                                    "StatusChange: Started reached after poller emitted, skipping"
+                                );
+                                set_state_via(&emitter, &state, target).await;
+                                continue;
+                            }
+                            if let Err(e) = crate::ip4::emit(&emitter, &client, &session_path).await
+                            {
+                                warn!("Ip4Config emit failed: {e:#}; failing to NM");
+                                // Roll back the guard so a recovery path
+                                // (status re-poll) can still retry once
+                                // openvpn3 fixes its state.
+                                ip4_emitted.store(false, Ordering::Release);
+                                set_state_via(&emitter, &state, NMVpnServiceState::Stopped).await;
+                                let _ = emitter
+                                    .failure(NMVpnPluginFailure::BadIpConfig.as_u32())
+                                    .await;
+                                break;
+                            }
                             set_state_via(&emitter, &state, target).await;
-                            continue;
                         }
-                        if let Err(e) = crate::ip4::emit(&emitter, &client, &session_path).await {
-                            warn!("Ip4Config emit failed: {e:#}; failing to NM");
-                            // Roll back the guard so a recovery path
-                            // (status re-poll) can still retry once
-                            // openvpn3 fixes its state.
-                            ip4_emitted.store(false, Ordering::Release);
-                            set_state_via(&emitter, &state, NMVpnServiceState::Stopped).await;
-                            let _ = emitter
-                                .failure(NMVpnPluginFailure::BadIpConfig.as_u32())
-                                .await;
+                        NMVpnServiceState::Stopped => {
+                            set_state_via(&emitter, &state, target).await;
+                            // Suppress the Failure signal when teardown was
+                            // NM-initiated — otherwise a normal Disconnect
+                            // races this Disconnected event and surfaces as
+                            // a spurious ConnectFailed in NM's UI.
+                            if !disconnect_requested.load(Ordering::Acquire) {
+                                let _ = emitter.failure(status.failure_reason().as_u32()).await;
+                            }
                             break;
                         }
-                        set_state_via(&emitter, &state, target).await;
+                        other => set_state_via(&emitter, &state, other).await,
                     }
-                    NMVpnServiceState::Stopped => {
-                        set_state_via(&emitter, &state, target).await;
-                        // Suppress the Failure signal when teardown was
-                        // NM-initiated — otherwise a normal Disconnect
-                        // races this Disconnected event and surfaces as
-                        // a spurious ConnectFailed in NM's UI.
-                        if !disconnect_requested.load(Ordering::Acquire) {
-                            let _ = emitter.failure(status.failure_reason().as_u32()).await;
-                        }
-                        break;
-                    }
-                    other => set_state_via(&emitter, &state, other).await,
                 }
+                debug!("StatusChange listener exited for {session_path}");
             }
-            debug!("StatusChange listener exited for {session_path}");
-        })
+            .instrument(span),
+        )
     }
 
     /// Mutate the cached state and emit a StateChanged signal so NM can
@@ -309,7 +317,9 @@ impl Plugin {
         {
             let s = self.session.lock().await;
             if s.session_path.is_some() {
-                return Err(anyhow!("a session is already active; refusing concurrent Connect"));
+                return Err(anyhow!(
+                    "a session is already active; refusing concurrent Connect"
+                ));
             }
         }
 
@@ -325,6 +335,16 @@ impl Plugin {
         // want to stash the same Zeroizing'd map on session state below
         // either way.
         let (data_map, secret_map) = crate::secrets::split_vpn(&connection);
+
+        // Resolve who to AccessGrant the session to, while we still hold
+        // the connection dict.  Prefer NM's connection.permissions
+        // (user:NAME) over the /run/user heuristic — the former is the
+        // authoritative owner, the latter a guess that misfires on
+        // multi-user / multi-seat hosts.
+        let grant_uid = crate::connection::permission_users(&connection)
+            .into_iter()
+            .find_map(|u| username_to_uid(&u))
+            .or_else(lowest_run_user_uid);
 
         // Two profile paths, matching the C tree's `build_profile_string`:
         //   1. `vpn.data['nm-openvpn3-profile']` set → read a verbatim
@@ -469,7 +489,7 @@ impl Plugin {
             let h2 = self.spawn_attention_listener(conn.clone(), session_path.clone());
             s.tasks.extend([h1, h2]);
         }
-        self.grant_access(&session_path).await;
+        self.grant_access(&session_path, grant_uid).await;
 
         if let Err(e) = self
             .client
@@ -539,27 +559,27 @@ impl Plugin {
         s.current_secrets.clear();
     }
 
-    /// Open the session up for the user's CLI (`openvpn3 sessions-list`)
-    /// and grant per-property read access via AccessGrant.  Mirrors the
-    /// C tree's `grant_access_for_connection()` — Phase 3 lands the
-    /// `/run/user` fallback only; explicit `permissions=user:NAME`
-    /// parsing waits for Phase 4 once a libc-bound name → uid lookup
-    /// is wired in.
-    async fn grant_access(&self, session_path: &OwnedObjectPath) {
-        if let Err(e) = self
-            .client
-            .session_set_public_access(session_path, true)
-            .await
-        {
-            warn!("set public_access=TRUE failed: {e}");
-        }
-        if let Some(uid) = lowest_run_user_uid() {
-            match self.client.session_access_grant(session_path, uid).await {
-                Ok(()) => info!("AccessGrant uid={uid} (/run/user fallback) ok"),
+    /// Grant the activating user per-property access to the openvpn3
+    /// session via AccessGrant, so their `openvpn3 sessions-list` CLI
+    /// can see and manage it.
+    ///
+    /// `public_access` is deliberately NOT set: it would open session
+    /// management (Disconnect, statistics) to *every* local UID, which
+    /// is over-broad on multi-user systems.  A single targeted
+    /// AccessGrant to the owning UID is sufficient and far tighter.
+    /// The UID comes from NM's `connection.permissions` when present,
+    /// falling back to the `/run/user` heuristic only for system-wide
+    /// connections that carry no permissions.
+    async fn grant_access(&self, session_path: &OwnedObjectPath, uid: Option<u32>) {
+        match uid {
+            Some(uid) => match self.client.session_access_grant(session_path, uid).await {
+                Ok(()) => info!("AccessGrant uid={uid} ok"),
                 Err(e) => warn!("AccessGrant uid={uid} failed: {e}"),
-            }
-        } else {
-            debug!("AccessGrant fallback: no non-root uid in /run/user");
+            },
+            None => warn!(
+                "no activating UID resolved (no connection.permissions, no /run/user); \
+                 session left owner-only — `openvpn3 sessions-list` won't show it to the user"
+            ),
         }
     }
 
@@ -576,7 +596,8 @@ impl Plugin {
     ) -> tokio::task::JoinHandle<()> {
         let client = self.client.clone();
         let state = self.state.clone();
-        tokio::spawn::<_>(async move {
+        let span = tracing::info_span!("vpn-session", task = "poller", path = %session_path);
+        tokio::spawn(async move {
             debug!("poller task started for {session_path}");
             let proxy = match client.session_proxy(&session_path).await {
                 Ok(p) => p,
@@ -765,7 +786,7 @@ impl Plugin {
                 }
             }
             debug!("status poller exited for {session_path}");
-        })
+        }.instrument(span))
     }
 
     /// Periodic openvpn3 session.statistics fetch, logged at INFO so
@@ -774,61 +795,65 @@ impl Plugin {
     /// the v0.5.11 TUN_BYTES_* addition).
     fn spawn_stats_timer(&self, session_path: OwnedObjectPath) -> tokio::task::JoinHandle<()> {
         let client = self.client.clone();
-        tokio::spawn::<_>(async move {
-            let mut last_bytes_in: i64 = 0;
-            let mut last_bytes_out: i64 = 0;
-            let mut last_tick = std::time::Instant::now();
-            let mut first = true;
-            loop {
-                tokio::time::sleep(Duration::from_secs(30)).await;
-                let stats = match client.session_get_statistics(&session_path).await {
-                    Ok(s) => s,
-                    Err(e) => {
-                        // A single failed read is usually a transient
-                        // D-Bus blip (suspend/resume, daemon reload) —
-                        // don't kill the timer over it or throughput
-                        // logging stays dead for the rest of the
-                        // session.  The poller owns real liveness; this
-                        // task just skips a tick.  When the session is
-                        // actually gone the poller fails to NM and
-                        // Disconnect aborts this handle.
-                        debug!("stats fetch failed: {e}; skipping tick");
-                        continue;
-                    }
-                };
-                let bin = *stats.get("BYTES_IN").unwrap_or(&0);
-                let bout = *stats.get("BYTES_OUT").unwrap_or(&0);
-                let tbin = *stats.get("TUN_BYTES_IN").unwrap_or(&0);
-                let tbout = *stats.get("TUN_BYTES_OUT").unwrap_or(&0);
-                let pkt_in = *stats.get("PACKETS_IN").unwrap_or(&0);
-                let pkt_out = *stats.get("PACKETS_OUT").unwrap_or(&0);
-                if first {
-                    info!(
-                        "stats: rx={bin}B tx={bout}B tun_rx={tbin}B tun_tx={tbout}B \
+        let span = tracing::info_span!("vpn-session", task = "stats", path = %session_path);
+        tokio::spawn(
+            async move {
+                let mut last_bytes_in: i64 = 0;
+                let mut last_bytes_out: i64 = 0;
+                let mut last_tick = std::time::Instant::now();
+                let mut first = true;
+                loop {
+                    tokio::time::sleep(Duration::from_secs(30)).await;
+                    let stats = match client.session_get_statistics(&session_path).await {
+                        Ok(s) => s,
+                        Err(e) => {
+                            // A single failed read is usually a transient
+                            // D-Bus blip (suspend/resume, daemon reload) —
+                            // don't kill the timer over it or throughput
+                            // logging stays dead for the rest of the
+                            // session.  The poller owns real liveness; this
+                            // task just skips a tick.  When the session is
+                            // actually gone the poller fails to NM and
+                            // Disconnect aborts this handle.
+                            debug!("stats fetch failed: {e}; skipping tick");
+                            continue;
+                        }
+                    };
+                    let bin = *stats.get("BYTES_IN").unwrap_or(&0);
+                    let bout = *stats.get("BYTES_OUT").unwrap_or(&0);
+                    let tbin = *stats.get("TUN_BYTES_IN").unwrap_or(&0);
+                    let tbout = *stats.get("TUN_BYTES_OUT").unwrap_or(&0);
+                    let pkt_in = *stats.get("PACKETS_IN").unwrap_or(&0);
+                    let pkt_out = *stats.get("PACKETS_OUT").unwrap_or(&0);
+                    if first {
+                        info!(
+                            "stats: rx={bin}B tx={bout}B tun_rx={tbin}B tun_tx={tbout}B \
                          pkt_in={pkt_in} pkt_out={pkt_out}"
-                    );
-                    first = false;
-                } else {
-                    let now = std::time::Instant::now();
-                    let dt = now.duration_since(last_tick).as_secs_f64().max(1e-3);
-                    // saturating_sub: openvpn3 counters reset to 0 on a
-                    // daemon reload / session resume, so a naive `bin -
-                    // last` can go negative and render as a wildly
-                    // negative throughput.  Clamp the delta at 0 across a
-                    // reset rather than printing nonsense.
-                    let rate_rx = (bin.saturating_sub(last_bytes_in) as f64 / dt) as i64;
-                    let rate_tx = (bout.saturating_sub(last_bytes_out) as f64 / dt) as i64;
-                    info!(
-                        "stats: rx={bin}B tx={bout}B tun_rx={tbin}B tun_tx={tbout}B \
+                        );
+                        first = false;
+                    } else {
+                        let now = std::time::Instant::now();
+                        let dt = now.duration_since(last_tick).as_secs_f64().max(1e-3);
+                        // saturating_sub: openvpn3 counters reset to 0 on a
+                        // daemon reload / session resume, so a naive `bin -
+                        // last` can go negative and render as a wildly
+                        // negative throughput.  Clamp the delta at 0 across a
+                        // reset rather than printing nonsense.
+                        let rate_rx = (bin.saturating_sub(last_bytes_in) as f64 / dt) as i64;
+                        let rate_tx = (bout.saturating_sub(last_bytes_out) as f64 / dt) as i64;
+                        info!(
+                            "stats: rx={bin}B tx={bout}B tun_rx={tbin}B tun_tx={tbout}B \
                          pkt_in={pkt_in} pkt_out={pkt_out} \
                          rate_rx={rate_rx}B/s rate_tx={rate_tx}B/s"
-                    );
-                    last_tick = now;
+                        );
+                        last_tick = now;
+                    }
+                    last_bytes_in = bin;
+                    last_bytes_out = bout;
                 }
-                last_bytes_in = bin;
-                last_bytes_out = bout;
             }
-        })
+            .instrument(span),
+        )
     }
 
     /// Subscribe to the per-session `AttentionRequired` signal.  Each
@@ -842,41 +867,45 @@ impl Plugin {
     ) -> tokio::task::JoinHandle<()> {
         let client = self.client.clone();
         let session_state = self.session.clone();
-        tokio::spawn::<_>(async move {
-            let proxy = match client.session_proxy(&session_path).await {
-                Ok(p) => p,
-                Err(e) => {
-                    warn!("AttentionRequired subscribe failed: {e}");
-                    return;
-                }
-            };
-            let mut stream = match proxy.receive_attention_required().await {
-                Ok(s) => s,
-                Err(e) => {
-                    warn!("receive_attention_required failed: {e}");
-                    return;
-                }
-            };
-            info!("AttentionRequired listener attached to {session_path}");
-            while let Some(signal) = stream.next().await {
-                let Ok(args) = signal.args() else { continue };
-                let (t, g, msg) = (args.t, args.g, args.message);
-                info!("AttentionRequired: type={t} group={g} msg='{msg}'");
-                if let Err(e) =
-                    handle_attention(&connection, &client, &session_path, &session_state, &msg)
-                        .await
-                {
-                    warn!("AttentionRequired handler failed: {e:#}; failing to NM");
-                    if let Ok(emitter) = make_emitter(&connection) {
-                        let _ = emitter
-                            .failure(NMVpnPluginFailure::LoginFailed.as_u32())
-                            .await;
+        let span = tracing::info_span!("vpn-session", task = "attention", path = %session_path);
+        tokio::spawn(
+            async move {
+                let proxy = match client.session_proxy(&session_path).await {
+                    Ok(p) => p,
+                    Err(e) => {
+                        warn!("AttentionRequired subscribe failed: {e}");
+                        return;
                     }
-                    break;
+                };
+                let mut stream = match proxy.receive_attention_required().await {
+                    Ok(s) => s,
+                    Err(e) => {
+                        warn!("receive_attention_required failed: {e}");
+                        return;
+                    }
+                };
+                info!("AttentionRequired listener attached to {session_path}");
+                while let Some(signal) = stream.next().await {
+                    let Ok(args) = signal.args() else { continue };
+                    let (t, g, msg) = (args.t, args.g, args.message);
+                    info!("AttentionRequired: type={t} group={g} msg='{msg}'");
+                    if let Err(e) =
+                        handle_attention(&connection, &client, &session_path, &session_state, &msg)
+                            .await
+                    {
+                        warn!("AttentionRequired handler failed: {e:#}; failing to NM");
+                        if let Ok(emitter) = make_emitter(&connection) {
+                            let _ = emitter
+                                .failure(NMVpnPluginFailure::LoginFailed.as_u32())
+                                .await;
+                        }
+                        break;
+                    }
                 }
+                debug!("AttentionRequired listener exited for {session_path}");
             }
-            debug!("AttentionRequired listener exited for {session_path}");
-        })
+            .instrument(span),
+        )
     }
 }
 
@@ -970,9 +999,43 @@ async fn handle_attention(
     Ok(())
 }
 
+/// Resolve a username to its UID via the system passwd database
+/// (`getpwnam_r`).  Returns `None` for an unknown user or on any libc
+/// error.  Used to turn NM's `connection.permissions` (`user:NAME`)
+/// into the UID we AccessGrant the openvpn3 session to.
+fn username_to_uid(name: &str) -> Option<u32> {
+    let cname = std::ffi::CString::new(name).ok()?;
+    // SAFETY: getpwnam_r writes into the caller-provided passwd struct +
+    // scratch buffer; we pass valid pointers and a buffer sized from the
+    // libc-suggested minimum (fallback 4 KiB).  `result` is set to NULL
+    // when no entry matches, which we treat as "unknown user".
+    unsafe {
+        let bufsize = match libc::sysconf(libc::_SC_GETPW_R_SIZE_MAX) {
+            n if n > 0 => n as usize,
+            _ => 4096,
+        };
+        let mut buf = vec![0u8; bufsize];
+        let mut pwd: libc::passwd = std::mem::zeroed();
+        let mut result: *mut libc::passwd = std::ptr::null_mut();
+        let rc = libc::getpwnam_r(
+            cname.as_ptr(),
+            &mut pwd,
+            buf.as_mut_ptr().cast::<libc::c_char>(),
+            buf.len(),
+            &mut result,
+        );
+        if rc == 0 && !result.is_null() {
+            Some(pwd.pw_uid)
+        } else {
+            None
+        }
+    }
+}
+
 /// Read /run/user and return the lowest non-zero UID present.  systemd
 /// creates per-user runtime dirs there, so the lowest UID is almost
-/// always the human session that triggered NM's activation.
+/// always the human session that triggered NM's activation.  Fallback
+/// only — `connection.permissions` is preferred when present.
 fn lowest_run_user_uid() -> Option<u32> {
     let entries = std::fs::read_dir("/run/user").ok()?;
     let mut best: Option<u32> = None;

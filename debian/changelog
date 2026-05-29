@@ -1,3 +1,27 @@
+network-manager-openvpn3 (0.6.0~alpha.3-1~dhcargo1) noble; urgency=medium
+
+  * Review-driven hardening + i18n sweep:
+    - service: AccessGrant the openvpn3 session to the connection's
+      owning user resolved from NM's connection.permissions
+      (user:NAME), falling back to the /run/user heuristic only for
+      system-wide connections; public_access is deliberately left unset
+      so session management isn't opened to every local UID. Documented
+      the race-safe ip4-emit memory ordering and the NM-initiated
+      Disconnect Failure-suppression path.
+    - editor: HIG/i18n refactor — user-visible strings wrapped in tr()
+      for gettext extraction.
+    - i18n: new po/POTFILES.in and `make pot` target (xgettext over the
+      Rust sources); regenerated nm-openvpn3.pot template.
+    - editor: ignored end-to-end FFI smoke test driving the editor
+      factory through GType registration + the GInterface vtable
+      (run under xvfb-run).
+    - ci: build/test/clippy now run --locked so an unrelocked
+      dependency bump fails CI.
+    - packaging: README note that debian-vendored/ is a read-only
+      diffing snapshot; packaging changes belong on rust/upstream-deps.
+
+ -- Dominik Jarmulowicz <dominik.jarmulowicz@oversee.biz>  Fri, 29 May 2026 12:00:00 +0200
+
 network-manager-openvpn3 (0.6.0~alpha.2-1~dhcargo1) noble; urgency=medium
 
   * Security & correctness hardening sweep across all five crates

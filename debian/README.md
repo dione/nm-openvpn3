@@ -53,6 +53,14 @@ lintian ../network-manager-openvpn3_*_amd64.changes   # exit 0
 To use the vendored layout (eg. for a PPA upload with the newest
 crates.io minors), check out `rust/upstream-deps`.
 
+> **Do not edit `debian-vendored/` on this branch.** It is a read-only
+> sibling snapshot kept for side-by-side diffing only; the authoritative
+> vendored packaging lives on `rust/upstream-deps`. The two trees
+> duplicate nearly every file, so a change made here (eg. a changelog
+> bump) will silently diverge from the branch that actually ships it.
+> Make packaging changes on the owning branch and copy across
+> deliberately.
+
 ## When to switch to `rust/upstream-deps`
 
 The vendored sibling is the right choice when:

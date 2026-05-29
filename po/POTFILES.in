@@ -1,0 +1,5 @@
+# Source files containing translatable strings (tr() / gettext()).
+# Consumed by `make pot`.  Keep in sync when a new crate gains
+# user-visible, translatable text.
+nm-openvpn3-editor/src/editor.rs
+nm-openvpn3-auth-dialog/src/main.rs

@@ -23,7 +23,6 @@ use std::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
 use std::sync::{Arc, OnceLock};
 
 use gettextrs::dgettext;
-use zeroize::{Zeroize, Zeroizing};
 use glib::ffi::{gboolean, gpointer, GError, GFALSE, GTRUE};
 use gobject_sys::{
     g_object_new, g_type_add_interface_static, g_type_register_static_simple, GInterfaceInfo,
@@ -36,6 +35,7 @@ use libadwaita::{
     ComboRow, EntryRow, ExpanderRow, PasswordEntryRow, PreferencesGroup, PreferencesPage, SpinRow,
     SwitchRow,
 };
+use zeroize::{Zeroize, Zeroizing};
 
 use nm_vpn_plugin_openvpn3::bridge::connection_to_nm_data;
 use nm_vpn_plugin_openvpn3::libnm::{
@@ -487,293 +487,293 @@ unsafe extern "C" fn iface_update_connection(
     error: *mut *mut GError,
 ) -> gboolean {
     ffi_guard(GFALSE, || unsafe {
-    let inst = editor.cast::<Openvpn3Editor>();
-    let state = (*inst).state;
-    if state.is_null() || connection.is_null() {
-        return GFALSE;
-    }
-    let s_vpn = nm_connection_get_setting_vpn(connection);
-    if s_vpn.is_null() {
-        return GFALSE;
-    }
-
-    let st = &*state;
-
-    // check_validity gate — matches C nm-openvpn-editor's update_connection
-    // refusing to save until the minimum-viable field set is filled in.
-    // Catching this here (instead of letting build_profile error at
-    // activation) means the user sees a clear "Apply rejected" hint in
-    // libnma's dialog rather than an opaque red banner on Connect.
-    let ct = st.contype.selected_id();
-    let remote_text = st.remote.text();
-    let remote_str = remote_text.as_str();
-    let validity_err = if remote_str.is_empty() {
-        Some("missing gateway address".to_string())
-    } else if matches!(ct, "tls" | "password-tls") && st.ca.text().is_empty() {
-        Some("TLS connection requires a CA certificate".to_string())
-    } else if ct == "tls" && (st.cert.text().is_empty() || st.key.text().is_empty()) {
-        Some("TLS connection requires both client certificate and private key".to_string())
-    } else if matches!(ct, "password" | "password-tls") && st.username.text().is_empty() {
-        Some("password authentication requires a user name".to_string())
-    } else if ct == "static-key" && st.static_key.text().is_empty() {
-        Some("static-key connection requires a key file".to_string())
-    } else {
-        None
-    };
-    if let Some(msg) = validity_err {
-        set_error(error, NM_OPENVPN3_PLUGIN_ERROR_FAILED, &msg);
-        return GFALSE;
-    }
-
-    // Empty value → remove the key entirely so cleared widgets actually
-    // wipe state.  Non-empty value → add (libnm overwrites).  NUL in
-    // the value is treated as remove rather than silently truncating —
-    // the editor's path-validity indicator already flags the bad input
-    // visually.
-    let set = |key: &str, value: &str| {
-        let k = match CString::new(key) {
-            Ok(c) => c,
-            Err(_) => return,
-        };
-        if value.is_empty() {
-            let _ = nm_setting_vpn_remove_data_item(s_vpn, k.as_ptr());
-            return;
+        let inst = editor.cast::<Openvpn3Editor>();
+        let state = (*inst).state;
+        if state.is_null() || connection.is_null() {
+            return GFALSE;
         }
-        match CString::new(value) {
-            Ok(v) => nm_setting_vpn_add_data_item(s_vpn, k.as_ptr(), v.as_ptr()),
-            Err(_) => {
+        let s_vpn = nm_connection_get_setting_vpn(connection);
+        if s_vpn.is_null() {
+            return GFALSE;
+        }
+
+        let st = &*state;
+
+        // check_validity gate — matches C nm-openvpn-editor's update_connection
+        // refusing to save until the minimum-viable field set is filled in.
+        // Catching this here (instead of letting build_profile error at
+        // activation) means the user sees a clear "Apply rejected" hint in
+        // libnma's dialog rather than an opaque red banner on Connect.
+        let ct = st.contype.selected_id();
+        let remote_text = st.remote.text();
+        let remote_str = remote_text.as_str();
+        let validity_err = if remote_str.is_empty() {
+            Some("missing gateway address".to_string())
+        } else if matches!(ct, "tls" | "password-tls") && st.ca.text().is_empty() {
+            Some("TLS connection requires a CA certificate".to_string())
+        } else if ct == "tls" && (st.cert.text().is_empty() || st.key.text().is_empty()) {
+            Some("TLS connection requires both client certificate and private key".to_string())
+        } else if matches!(ct, "password" | "password-tls") && st.username.text().is_empty() {
+            Some("password authentication requires a user name".to_string())
+        } else if ct == "static-key" && st.static_key.text().is_empty() {
+            Some("static-key connection requires a key file".to_string())
+        } else {
+            None
+        };
+        if let Some(msg) = validity_err {
+            set_error(error, NM_OPENVPN3_PLUGIN_ERROR_FAILED, &msg);
+            return GFALSE;
+        }
+
+        // Empty value → remove the key entirely so cleared widgets actually
+        // wipe state.  Non-empty value → add (libnm overwrites).  NUL in
+        // the value is treated as remove rather than silently truncating —
+        // the editor's path-validity indicator already flags the bad input
+        // visually.
+        let set = |key: &str, value: &str| {
+            let k = match CString::new(key) {
+                Ok(c) => c,
+                Err(_) => return,
+            };
+            if value.is_empty() {
                 let _ = nm_setting_vpn_remove_data_item(s_vpn, k.as_ptr());
+                return;
             }
-        }
-    };
-
-    // Secrets follow the same pattern; after add we tag the key
-    // AGENT_OWNED so libnm routes it through the user keyring instead
-    // of the on-disk system-connections file.
-    let s_setting = s_vpn.cast::<nm_vpn_plugin_openvpn3::libnm::NMSetting>();
-    let set_secret = |key: &str, value: &str| {
-        let k = match CString::new(key) {
-            Ok(c) => c,
-            Err(_) => return,
+            match CString::new(value) {
+                Ok(v) => nm_setting_vpn_add_data_item(s_vpn, k.as_ptr(), v.as_ptr()),
+                Err(_) => {
+                    let _ = nm_setting_vpn_remove_data_item(s_vpn, k.as_ptr());
+                }
+            }
         };
-        if value.is_empty() {
-            let _ = nm_setting_vpn_remove_secret(s_vpn, k.as_ptr());
-            return;
-        }
-        match CString::new(value) {
-            Ok(v) => {
-                nm_setting_vpn_add_secret(s_vpn, k.as_ptr(), v.as_ptr());
-                let _ = nm_setting_set_secret_flags(
-                    s_setting,
-                    k.as_ptr(),
-                    NM_SETTING_SECRET_FLAG_AGENT_OWNED,
-                    ptr::null_mut(),
-                );
-                // libnm has copied the value into its own secret store;
-                // scrub the CString's heap bytes before they drop so the
-                // plaintext doesn't linger in this process's memory.
-                let mut vb = v.into_bytes_with_nul();
-                vb.zeroize();
-            }
-            Err(_) => {
+
+        // Secrets follow the same pattern; after add we tag the key
+        // AGENT_OWNED so libnm routes it through the user keyring instead
+        // of the on-disk system-connections file.
+        let s_setting = s_vpn.cast::<nm_vpn_plugin_openvpn3::libnm::NMSetting>();
+        let set_secret = |key: &str, value: &str| {
+            let k = match CString::new(key) {
+                Ok(c) => c,
+                Err(_) => return,
+            };
+            if value.is_empty() {
                 let _ = nm_setting_vpn_remove_secret(s_vpn, k.as_ptr());
+                return;
             }
-        }
-    };
-
-    // Replay only the imported keys we do NOT own — preserves nmcli-set
-    // entries outside the editor's vocabulary across a round-trip.  In-
-    // vocabulary keys land below from widget state, including explicit
-    // removal when the user cleared a field.
-    for (k, v) in st.initial_data.borrow().iter() {
-        if WIDGET_DATA_KEYS.contains(&k.as_str()) {
-            continue;
-        }
-        let kc = match CString::new(k.as_str()) {
-            Ok(c) => c,
-            Err(_) => continue,
+            match CString::new(value) {
+                Ok(v) => {
+                    nm_setting_vpn_add_secret(s_vpn, k.as_ptr(), v.as_ptr());
+                    let _ = nm_setting_set_secret_flags(
+                        s_setting,
+                        k.as_ptr(),
+                        NM_SETTING_SECRET_FLAG_AGENT_OWNED,
+                        ptr::null_mut(),
+                    );
+                    // libnm has copied the value into its own secret store;
+                    // scrub the CString's heap bytes before they drop so the
+                    // plaintext doesn't linger in this process's memory.
+                    let mut vb = v.into_bytes_with_nul();
+                    vb.zeroize();
+                }
+                Err(_) => {
+                    let _ = nm_setting_vpn_remove_secret(s_vpn, k.as_ptr());
+                }
+            }
         };
-        let vc = match CString::new(v.as_str()) {
-            Ok(c) => c,
-            Err(_) => continue,
+
+        // Replay only the imported keys we do NOT own — preserves nmcli-set
+        // entries outside the editor's vocabulary across a round-trip.  In-
+        // vocabulary keys land below from widget state, including explicit
+        // removal when the user cleared a field.
+        for (k, v) in st.initial_data.borrow().iter() {
+            if WIDGET_DATA_KEYS.contains(&k.as_str()) {
+                continue;
+            }
+            let kc = match CString::new(k.as_str()) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+            let vc = match CString::new(v.as_str()) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+            nm_setting_vpn_add_data_item(s_vpn, kc.as_ptr(), vc.as_ptr());
+        }
+
+        let tls_like = matches!(ct, "tls" | "password" | "password-tls");
+        let needs_user_cert = matches!(ct, "tls" | "password-tls");
+        let needs_password = matches!(ct, "password" | "password-tls");
+        let is_static_key = ct == "static-key";
+
+        // Helpers — empty value clears the key, so non-applicable widgets
+        // and zeroed spin rows both round-trip as a remove.
+        let cond = |b: bool, s: &str| -> String {
+            if b {
+                s.to_string()
+            } else {
+                String::new()
+            }
         };
-        nm_setting_vpn_add_data_item(s_vpn, kc.as_ptr(), vc.as_ptr());
-    }
+        let int_or_empty = |v: i64| -> String {
+            if v > 0 {
+                v.to_string()
+            } else {
+                String::new()
+            }
+        };
 
-    let tls_like = matches!(ct, "tls" | "password" | "password-tls");
-    let needs_user_cert = matches!(ct, "tls" | "password-tls");
-    let needs_password = matches!(ct, "password" | "password-tls");
-    let is_static_key = ct == "static-key";
+        set("connection-type", ct);
+        set("remote", st.remote.text().as_ref());
+        set("port", &int_or_empty(st.port.value() as i64));
 
-    // Helpers — empty value clears the key, so non-applicable widgets
-    // and zeroed spin rows both round-trip as a remove.
-    let cond = |b: bool, s: &str| -> String {
-        if b {
-            s.to_string()
-        } else {
+        set("ca", &cond(tls_like, st.ca.text().as_ref()));
+        set("cert", &cond(needs_user_cert, st.cert.text().as_ref()));
+        set("key", &cond(needs_user_cert, st.key.text().as_ref()));
+        // Hold the derived secret in a Zeroizing<String> so our heap copy
+        // is scrubbed on drop.  (The GTK entry buffer + the glib::GString it
+        // returns remain GTK-owned and unscrubbed — outside our control.)
+        let cert_pass = Zeroizing::new(cond(needs_user_cert, st.cert_pass.text().as_ref()));
+        set_secret("cert-pass", cert_pass.as_str());
+
+        set(
+            "username",
+            &cond(needs_password, st.username.text().as_ref()),
+        );
+        let pw = Zeroizing::new(cond(needs_password, st.password.text().as_ref()));
+        set_secret("password", pw.as_str());
+
+        set(
+            "static-key",
+            &cond(is_static_key, st.static_key.text().as_ref()),
+        );
+        set(
+            "static-key-direction",
+            &cond(is_static_key, st.static_key_dir.selected_id()),
+        );
+
+        set("nm-openvpn3-profile", st.profile_path.text().as_ref());
+
+        // Device + Connection
+        set("dev", st.dev.text().as_ref());
+        set("dev-type", st.dev_type.selected_id());
+        set(
+            "proto-tcp",
+            if st.proto_tcp.is_active() { "yes" } else { "" },
+        );
+        set("tunnel-mtu", &int_or_empty(st.tun_mtu.value() as i64));
+        // Switch off → drop the key (empty string clears).  Switch on with
+        // byte count 0 → "yes" (openvpn3 picks).  Switch on with explicit
+        // byte count → numeric string.
+        let mssfix_value = if !st.mssfix_enabled.is_active() {
             String::new()
-        }
-    };
-    let int_or_empty = |v: i64| -> String {
-        if v > 0 {
-            v.to_string()
         } else {
-            String::new()
-        }
-    };
+            let bytes = st.mssfix_bytes.value() as i64;
+            if bytes > 0 {
+                bytes.to_string()
+            } else {
+                "yes".to_string()
+            }
+        };
+        set("mssfix", &mssfix_value);
+        set("fragment-size", &int_or_empty(st.fragment.value() as i64));
+        set("ping", &int_or_empty(st.keepalive_ping.value() as i64));
+        set(
+            "ping-restart",
+            &int_or_empty(st.keepalive_restart.value() as i64),
+        );
+        set(
+            "reneg-seconds",
+            &int_or_empty(st.reneg_seconds.value() as i64),
+        );
+        set(
+            "connect-timeout",
+            &int_or_empty(st.connect_timeout.value() as i64),
+        );
 
-    set("connection-type", ct);
-    set("remote", st.remote.text().as_ref());
-    set("port", &int_or_empty(st.port.value() as i64));
+        // Compression
+        set("allow-compression", st.allow_compression.selected_id());
+        set("comp-lzo", st.comp_lzo.selected_id());
+        set("compress", st.compress.selected_id());
 
-    set("ca", &cond(tls_like, st.ca.text().as_ref()));
-    set("cert", &cond(needs_user_cert, st.cert.text().as_ref()));
-    set("key", &cond(needs_user_cert, st.key.text().as_ref()));
-    // Hold the derived secret in a Zeroizing<String> so our heap copy
-    // is scrubbed on drop.  (The GTK entry buffer + the glib::GString it
-    // returns remain GTK-owned and unscrubbed — outside our control.)
-    let cert_pass = Zeroizing::new(cond(needs_user_cert, st.cert_pass.text().as_ref()));
-    set_secret("cert-pass", cert_pass.as_str());
+        // Security
+        set("cipher", st.cipher.selected_id());
+        set("data-ciphers", st.data_ciphers.text().as_ref());
+        set(
+            "data-ciphers-fallback",
+            st.data_ciphers_fallback.selected_id(),
+        );
+        set("tls-cipher", st.tls_cipher.text().as_ref());
+        set("auth", st.auth.selected_id());
+        set("keysize", &int_or_empty(st.keysize.value() as i64));
 
-    set(
-        "username",
-        &cond(needs_password, st.username.text().as_ref()),
-    );
-    let pw = Zeroizing::new(cond(needs_password, st.password.text().as_ref()));
-    set_secret("password", pw.as_str());
+        // TLS
+        set("tls-version-min", st.tls_version_min.selected_id());
+        set(
+            "tls-version-min-or-highest",
+            if st.tls_version_min_or_highest.is_active() {
+                "yes"
+            } else {
+                ""
+            },
+        );
+        set("tls-version-max", st.tls_version_max.selected_id());
+        set("verify-x509-name", st.verify_x509_name.text().as_ref());
+        set("remote-cert-tls", st.remote_cert_tls.selected_id());
+        set("ns-cert-type", st.ns_cert_type.selected_id());
+        set("ta", st.ta.text().as_ref());
+        set("ta-dir", st.ta_dir.selected_id());
+        set("tls-crypt", st.tls_crypt.text().as_ref());
+        set("tls-crypt-v2", st.tls_crypt_v2.text().as_ref());
 
-    set(
-        "static-key",
-        &cond(is_static_key, st.static_key.text().as_ref()),
-    );
-    set(
-        "static-key-direction",
-        &cond(is_static_key, st.static_key_dir.selected_id()),
-    );
+        // Proxy
+        set("proxy-type", st.proxy_type.selected_id());
+        set("proxy-server", st.proxy_server.text().as_ref());
+        set("proxy-port", &int_or_empty(st.proxy_port.value() as i64));
+        set("http-proxy-username", st.proxy_user.text().as_ref());
 
-    set("nm-openvpn3-profile", st.profile_path.text().as_ref());
+        // Misc
+        set(
+            "override-route-nopull",
+            if st.or_route_nopull.is_active() {
+                "yes"
+            } else {
+                ""
+            },
+        );
+        set(
+            "override-force-default-gateway",
+            if st.or_force_default_gateway.is_active() {
+                "yes"
+            } else {
+                ""
+            },
+        );
+        set(
+            "override-block-ipv6",
+            if st.or_block_ipv6.is_active() {
+                "yes"
+            } else {
+                ""
+            },
+        );
+        set(
+            "override-dns-setup-disabled",
+            if st.or_dns_setup_disabled.is_active() {
+                "yes"
+            } else {
+                ""
+            },
+        );
+        set(
+            "override-dco",
+            if st.or_dco.is_active() { "yes" } else { "" },
+        );
+        set(
+            "override-log-level",
+            &int_or_empty(st.or_log_level.value() as i64),
+        );
 
-    // Device + Connection
-    set("dev", st.dev.text().as_ref());
-    set("dev-type", st.dev_type.selected_id());
-    set(
-        "proto-tcp",
-        if st.proto_tcp.is_active() { "yes" } else { "" },
-    );
-    set("tunnel-mtu", &int_or_empty(st.tun_mtu.value() as i64));
-    // Switch off → drop the key (empty string clears).  Switch on with
-    // byte count 0 → "yes" (openvpn3 picks).  Switch on with explicit
-    // byte count → numeric string.
-    let mssfix_value = if !st.mssfix_enabled.is_active() {
-        String::new()
-    } else {
-        let bytes = st.mssfix_bytes.value() as i64;
-        if bytes > 0 {
-            bytes.to_string()
-        } else {
-            "yes".to_string()
-        }
-    };
-    set("mssfix", &mssfix_value);
-    set("fragment-size", &int_or_empty(st.fragment.value() as i64));
-    set("ping", &int_or_empty(st.keepalive_ping.value() as i64));
-    set(
-        "ping-restart",
-        &int_or_empty(st.keepalive_restart.value() as i64),
-    );
-    set(
-        "reneg-seconds",
-        &int_or_empty(st.reneg_seconds.value() as i64),
-    );
-    set(
-        "connect-timeout",
-        &int_or_empty(st.connect_timeout.value() as i64),
-    );
-
-    // Compression
-    set("allow-compression", st.allow_compression.selected_id());
-    set("comp-lzo", st.comp_lzo.selected_id());
-    set("compress", st.compress.selected_id());
-
-    // Security
-    set("cipher", st.cipher.selected_id());
-    set("data-ciphers", st.data_ciphers.text().as_ref());
-    set(
-        "data-ciphers-fallback",
-        st.data_ciphers_fallback.selected_id(),
-    );
-    set("tls-cipher", st.tls_cipher.text().as_ref());
-    set("auth", st.auth.selected_id());
-    set("keysize", &int_or_empty(st.keysize.value() as i64));
-
-    // TLS
-    set("tls-version-min", st.tls_version_min.selected_id());
-    set(
-        "tls-version-min-or-highest",
-        if st.tls_version_min_or_highest.is_active() {
-            "yes"
-        } else {
-            ""
-        },
-    );
-    set("tls-version-max", st.tls_version_max.selected_id());
-    set("verify-x509-name", st.verify_x509_name.text().as_ref());
-    set("remote-cert-tls", st.remote_cert_tls.selected_id());
-    set("ns-cert-type", st.ns_cert_type.selected_id());
-    set("ta", st.ta.text().as_ref());
-    set("ta-dir", st.ta_dir.selected_id());
-    set("tls-crypt", st.tls_crypt.text().as_ref());
-    set("tls-crypt-v2", st.tls_crypt_v2.text().as_ref());
-
-    // Proxy
-    set("proxy-type", st.proxy_type.selected_id());
-    set("proxy-server", st.proxy_server.text().as_ref());
-    set("proxy-port", &int_or_empty(st.proxy_port.value() as i64));
-    set("http-proxy-username", st.proxy_user.text().as_ref());
-
-    // Misc
-    set(
-        "override-route-nopull",
-        if st.or_route_nopull.is_active() {
-            "yes"
-        } else {
-            ""
-        },
-    );
-    set(
-        "override-force-default-gateway",
-        if st.or_force_default_gateway.is_active() {
-            "yes"
-        } else {
-            ""
-        },
-    );
-    set(
-        "override-block-ipv6",
-        if st.or_block_ipv6.is_active() {
-            "yes"
-        } else {
-            ""
-        },
-    );
-    set(
-        "override-dns-setup-disabled",
-        if st.or_dns_setup_disabled.is_active() {
-            "yes"
-        } else {
-            ""
-        },
-    );
-    set(
-        "override-dco",
-        if st.or_dco.is_active() { "yes" } else { "" },
-    );
-    set(
-        "override-log-level",
-        &int_or_empty(st.or_log_level.value() as i64),
-    );
-
-    GTRUE
+        GTRUE
     })
 }
 
@@ -819,6 +819,10 @@ fn combo_row(
     initial: Option<&str>,
 ) -> ComboBinding {
     let row = ComboRow::new();
+    // Titles/subtitles are plain UI labels; disable Pango markup so a
+    // translation containing `&`, `<`, `'` can't corrupt rendering or
+    // emit Pango warnings (AdwPreferencesRow defaults use-markup=true).
+    row.set_use_markup(false);
     row.set_title(&tr(title));
     if let Some(s) = subtitle {
         row.set_subtitle(&tr(s));
@@ -850,6 +854,7 @@ fn combo_row(
 
 fn spin_row(title: &str, subtitle: Option<&str>, min: f64, max: f64, value: f64) -> SpinRow {
     let row = SpinRow::with_range(min, max, 1.0);
+    row.set_use_markup(false);
     row.set_title(&tr(title));
     if let Some(s) = subtitle {
         row.set_subtitle(&tr(s));
@@ -860,6 +865,7 @@ fn spin_row(title: &str, subtitle: Option<&str>, min: f64, max: f64, value: f64)
 
 fn switch_row(title: &str, subtitle: Option<&str>, initial: bool) -> SwitchRow {
     let row = SwitchRow::new();
+    row.set_use_markup(false);
     row.set_title(&tr(title));
     if let Some(s) = subtitle {
         row.set_subtitle(&tr(s));
@@ -870,6 +876,7 @@ fn switch_row(title: &str, subtitle: Option<&str>, initial: bool) -> SwitchRow {
 
 fn entry_row(title: &str, tooltip: Option<&str>, initial: &str) -> EntryRow {
     let r = EntryRow::new();
+    r.set_use_markup(false);
     r.set_title(&tr(title));
     r.set_text(initial);
     if let Some(t) = tooltip {
@@ -970,7 +977,18 @@ fn path_picker_row(
 
 fn password_row(title: &str) -> PasswordEntryRow {
     let r = PasswordEntryRow::new();
+    r.set_use_markup(false);
     r.set_title(&tr(title));
+    r
+}
+
+/// Section-header ExpanderRow with markup disabled (subtitles are full
+/// sentences; a translated `&`/`<` would otherwise corrupt Pango).
+fn expander_row(title: &str, subtitle: &str) -> ExpanderRow {
+    let r = ExpanderRow::new();
+    r.set_use_markup(false);
+    r.set_title(&tr(title));
+    r.set_subtitle(&tr(subtitle));
     r
 }
 
@@ -1097,9 +1115,7 @@ fn build_widget_tree(initial: &std::collections::BTreeMap<String, String>) -> Ed
     )));
 
     // ---- Device ----
-    let exp_device = ExpanderRow::new();
-    exp_device.set_title(&tr("Device"));
-    exp_device.set_subtitle(&tr("Tun / tap interface, MTU, fragmentation."));
+    let exp_device = expander_row("Device", "Tun / tap interface, MTU, fragmentation.");
     let dev = entry_row(
         "Custom device name",
         Some("Leave empty for openvpn3's default (tun0, tun1, …)."),
@@ -1157,9 +1173,7 @@ fn build_widget_tree(initial: &std::collections::BTreeMap<String, String>) -> Ed
     g_advanced.add(&exp_device);
 
     // ---- Connection / timing ----
-    let exp_conn = ExpanderRow::new();
-    exp_conn.set_title(&tr("Connection"));
-    exp_conn.set_subtitle(&tr("Protocol, keepalive, timeouts."));
+    let exp_conn = expander_row("Connection", "Protocol, keepalive, timeouts.");
     let proto_tcp = switch_row(
         "Use TCP",
         Some("Off uses UDP (recommended). Enable only when UDP is blocked."),
@@ -1201,11 +1215,10 @@ fn build_widget_tree(initial: &std::collections::BTreeMap<String, String>) -> Ed
     g_advanced.add(&exp_conn);
 
     // ---- Compression ----
-    let exp_comp = ExpanderRow::new();
-    exp_comp.set_title(&tr("Compression"));
-    exp_comp.set_subtitle(&tr(
+    let exp_comp = expander_row(
+        "Compression",
         "Disable unless your server enforces it (modern default).",
-    ));
+    );
     let allow_compression = combo_row(
         "Allow compression",
         Some("Master switch — disabling overrides the two options below."),
@@ -1230,9 +1243,7 @@ fn build_widget_tree(initial: &std::collections::BTreeMap<String, String>) -> Ed
     g_advanced.add(&exp_comp);
 
     // ---- Security ----
-    let exp_sec = ExpanderRow::new();
-    exp_sec.set_title(&tr("Security"));
-    exp_sec.set_subtitle(&tr("Ciphers and HMAC algorithms."));
+    let exp_sec = expander_row("Security", "Ciphers and HMAC algorithms.");
     let cipher = combo_row(
         "Legacy cipher",
         Some("Used with older servers. Modern setups use data-ciphers."),
@@ -1280,11 +1291,10 @@ fn build_widget_tree(initial: &std::collections::BTreeMap<String, String>) -> Ed
     g_advanced.add(&exp_sec);
 
     // ---- TLS ----
-    let exp_tls = ExpanderRow::new();
-    exp_tls.set_title(&tr("TLS"));
-    exp_tls.set_subtitle(&tr(
+    let exp_tls = expander_row(
+        "TLS",
         "TLS versions, peer verification, control-channel keys.",
-    ));
+    );
     let tls_version_min = combo_row(
         "Minimum TLS version",
         None,
@@ -1365,9 +1375,7 @@ fn build_widget_tree(initial: &std::collections::BTreeMap<String, String>) -> Ed
     g_advanced.add(&exp_tls);
 
     // ---- Proxy ----
-    let exp_proxy = ExpanderRow::new();
-    exp_proxy.set_title(&tr("Proxy"));
-    exp_proxy.set_subtitle(&tr("HTTP or SOCKS proxy in front of the VPN."));
+    let exp_proxy = expander_row("Proxy", "HTTP or SOCKS proxy in front of the VPN.");
     let proxy_type = combo_row(
         "Proxy type",
         None,
@@ -1404,11 +1412,10 @@ fn build_widget_tree(initial: &std::collections::BTreeMap<String, String>) -> Ed
     g_advanced.add(&exp_proxy);
 
     // ---- Misc / overrides ----
-    let exp_misc = ExpanderRow::new();
-    exp_misc.set_title(&tr("Misc"));
-    exp_misc.set_subtitle(&tr(
+    let exp_misc = expander_row(
+        "Misc",
         "Override flags forwarded to openvpn3's SetOverride API.",
-    ));
+    );
     let or_route_nopull = switch_row(
         "Don't pull routes from server",
         Some("Useful when you only want the VPN for traffic you route yourself."),
@@ -1587,8 +1594,17 @@ fn refresh_path_validity(entry: &EntryRow) {
     let ok = path.is_empty() || std::path::Path::new(path).is_file();
     if ok {
         entry.remove_css_class("error");
+        // Clear the AT cue without disturbing the row's hint tooltip.
+        entry.update_property(&[gtk4::accessible::Property::Description("")]);
     } else {
         entry.add_css_class("error");
+        // The red "error" style is a colour-only signal — invisible to
+        // screen readers and ambiguous for colour-blind users.  Pair it
+        // with an accessible description so the invalid state is also
+        // announced.
+        entry.update_property(&[gtk4::accessible::Property::Description(&tr(
+            "File not found",
+        ))]);
     }
 }
 

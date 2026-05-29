@@ -45,7 +45,7 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
-      - run: cargo clippy --all-targets --release -- -D warnings
+      - run: cargo clippy --all-targets --release --locked -- -D warnings
 
   test:
     name: cargo build + test
@@ -59,9 +59,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: cargo build --release
-        run: cargo build --release --all-targets
+        # --locked: fail if Cargo.lock would change, so a dependency
+        # bump that wasn't relocked can't slip through CI.
+        run: cargo build --release --all-targets --locked
       - name: cargo test --release
-        run: cargo test --release --all-targets
+        run: cargo test --release --all-targets --locked
       - name: verify expected cdylib symbols
         # The libnm + editor cdylibs must export their factory
         # entrypoints; missing symbols mean NM / nm-applet would dlopen
