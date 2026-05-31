@@ -1,3 +1,35 @@
+network-manager-openvpn3 (0.6.0~alpha.5-1~dhcargo1) noble; urgency=medium
+
+  * Security & correctness audit fixes across all five crates:
+    - service (CRITICAL): a Disconnect arriving while a Connect was
+      still in flight could leave a live, orphaned openvpn3 session up
+      after the process exited — NM believed the VPN was torn down while
+      the tunnel stayed connected. Disconnect now serialises against
+      do_connect via a shared lock and a plugin-owned teardown flag
+      (new ConnectCoordinator, unit-tested) so an in-flight Connect
+      either bails and tears down its half-built session or completes
+      and is torn down normally.
+    - service: backend error chains are no longer forwarded verbatim to
+      the D-Bus caller (info disclosure); a generic message is returned
+      and the full chain stays in the service log.
+    - properties: the .ovpn import open() now sets O_NONBLOCK so a FIFO
+      planted at an attacker-controllable import path can no longer hang
+      the host GUI thread (matches the service-side profile read).
+    - properties: http-proxy-auth-file is now accepted only as a bare
+      filename beside the .ovpn, closing an intermediate-directory
+      symlink-traversal that could redirect the credential read.
+    - editor: opening an existing connection and clicking Apply without
+      retyping a password no longer wipes the stored secret — empty
+      secret fields are preserved rather than removed, since secrets are
+      not loaded into the dialog.
+    - client: session endpoint property-read failures are now logged
+      instead of being silently swallowed; the masked-input flag from
+      openvpn3's UserInputQueue is carried through to InputSlot.
+    - build: pin panic = "unwind" so the cdylibs' FFI catch_unwind
+      guards can't be silently defeated by a future panic = "abort".
+
+ -- Dominik Jarmulowicz <dominik.jarmulowicz@oversee.biz>  Sun, 31 May 2026 12:00:00 +0200
+
 network-manager-openvpn3 (0.6.0~alpha.4-1~dhcargo1) noble; urgency=medium
 
   * service: openvpn3 config name now derives from NM's connection.id

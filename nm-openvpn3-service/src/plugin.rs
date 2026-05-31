@@ -29,6 +29,7 @@ use zbus::interface;
 use zbus::object_server::SignalEmitter;
 use zbus::zvariant::{ObjectPath, OwnedObjectPath, OwnedValue};
 
+use crate::connect_coord::ConnectCoordinator;
 use crate::connection::{vpn_data, Settings};
 use crate::secrets::SecretsMap;
 use crate::state::{NMVpnPluginFailure, NMVpnServiceState};
@@ -101,12 +102,14 @@ pub struct Plugin {
     client: Client,
     state: Arc<Mutex<NMVpnServiceState>>,
     session: Arc<Mutex<SessionState>>,
-    /// Serializes Connect dispatch end-to-end.  zbus runs method
-    /// handlers concurrently; without this two Connects could both pass
-    /// the `session_path.is_none()` gate before either stashes its
-    /// session.  Held for the whole do_connect so the second caller
-    /// observes the first's stashed session and is rejected.
-    connect_lock: Arc<Mutex<()>>,
+    /// Serialises Connect vs Disconnect and carries the mid-connect
+    /// teardown request.  zbus runs method handlers concurrently; this
+    /// coordinator's lock is held for the whole of both `do_connect` and
+    /// `disconnect` so they can never interleave, and its teardown flag
+    /// lets `do_connect` bail before bringing a tunnel up when a
+    /// Disconnect has already arrived.  See [`ConnectCoordinator`] for the
+    /// orphaned-tunnel failure mode it closes.
+    coord: ConnectCoordinator,
     /// Fires when Disconnect runs (or activation hard-fails) so main
     /// can drop the bus name and exit — NM only sends SIGTERM if we
     /// hang, and without --persist the C plugin self-exits the same
@@ -152,7 +155,7 @@ impl Plugin {
             client,
             state: Arc::new(Mutex::new(NMVpnServiceState::Init)),
             session: Arc::new(Mutex::new(SessionState::default())),
-            connect_lock: Arc::new(Mutex::new(())),
+            coord: ConnectCoordinator::new(),
             quit_tx,
         }
     }
@@ -323,6 +326,15 @@ impl Plugin {
             }
         }
 
+        // Clear any stale teardown request.  Under `--persist` the
+        // process survives a Disconnect (which leaves the flag set), so a
+        // fresh Connect must reset it or it would bail immediately at the
+        // mid-connect check below.  We hold the connect guard here; a
+        // concurrent Disconnect parks on the same lock, so the symmetric
+        // lock still tears that session down afterwards even if its store
+        // lands just before ours.
+        self.coord.clear_teardown();
+
         // Fresh per-session emit guard.  Prior listeners (if any are
         // mid-emit during a fast Disconnect/Connect cycle) keep
         // referencing the previous Arc; this Connect's listeners get a
@@ -429,6 +441,16 @@ impl Plugin {
             .or_else(|| crate::connection::connection_id(&connection))
             .unwrap_or_else(|| "nm-openvpn3-rust".to_string());
 
+        // Early teardown check, BEFORE we create anything at the backend.
+        // import_config / new_tunnel are remote calls that can be slow (or
+        // hang) against openvpn3; since Disconnect now parks on the connect
+        // lock for our whole duration, bailing here keeps it responsive in
+        // the common "Disconnect during a slow connect" case.  No session
+        // exists yet, so there is nothing to clean up.
+        if self.coord.teardown_requested() {
+            return Err(anyhow!("disconnect requested during Connect (pre-import)"));
+        }
+
         debug!("importing config '{id}' ({} bytes)", profile.len());
         let config_path = self
             .client
@@ -465,6 +487,20 @@ impl Plugin {
             s.disconnect_requested = disconnect_requested.clone();
         }
 
+        // A Disconnect that arrived while we were mid-connect parks on the
+        // connect lock (which we hold) after setting the teardown flag.
+        // Honour it now — before we wait on / Connect the session — so we
+        // tear the freshly-created backend session down instead of
+        // bringing a tunnel up the user already asked to drop.  The
+        // session_path is stashed above, so the Disconnect that follows
+        // (once we release the connect lock) sees an empty session and the
+        // cleanup here is the authoritative teardown.
+        if self.coord.teardown_requested() {
+            warn!("teardown requested during Connect; tearing down {session_path}");
+            self.cleanup_session(&session_path).await;
+            return Err(anyhow!("disconnect requested during Connect"));
+        }
+
         // Wait for the session manager to publish the session, then
         // subscribe to the StatusChange + AttentionRequired signals
         // BEFORE session.Connect runs.  Without this the backend can
@@ -497,6 +533,18 @@ impl Plugin {
             s.tasks.extend([h1, h2]);
         }
         self.grant_access(&session_path, grant_uid).await;
+
+        // Final checkpoint before we actually bring the tunnel up: a
+        // Disconnect could have arrived during the up-to-5s
+        // session_wait_ready above (it is parked on the connect lock).
+        // Catching it here means we tear the session down instead of
+        // completing session.Connect — cleanup_session also aborts the
+        // listeners spawned just above.
+        if self.coord.teardown_requested() {
+            warn!("teardown requested before session.Connect; tearing down {session_path}");
+            self.cleanup_session(&session_path).await;
+            return Err(anyhow!("disconnect requested during Connect"));
+        }
 
         if let Err(e) = self
             .client
@@ -1070,7 +1118,7 @@ impl Plugin {
         connection: Settings,
     ) -> zbus::fdo::Result<()> {
         info!("Connect dispatch entered");
-        let _connect_guard = self.connect_lock.lock().await;
+        let _connect_guard = self.coord.lock_connect().await;
         let r = self.do_connect(&emitter, conn, connection).await;
         match r {
             Ok(()) => {
@@ -1078,12 +1126,33 @@ impl Plugin {
                 Ok(())
             }
             Err(e) => {
+                // When do_connect bailed because a Disconnect arrived
+                // mid-connect, this is NOT an activation failure — the
+                // user asked to drop the connection.  The Disconnect
+                // handler owns the Stopped → quit sequence, so suppress
+                // the Failure/StateChanged emit here to avoid surfacing a
+                // spurious ConnectFailed to NM for a deliberate disconnect.
+                // Still return an error reply so the Connect method itself
+                // reflects that it did not complete.
+                if self.coord.teardown_requested() {
+                    info!("Connect aborted by Disconnect; deferring teardown to disconnect handler");
+                    return Err(zbus::fdo::Error::Failed(
+                        "connect aborted by disconnect".to_string(),
+                    ));
+                }
+                // Full chain (incl. backend / openvpn3 detail) goes to the
+                // service log only.  Return a generic message to the D-Bus
+                // caller so backend internals aren't disclosed across the
+                // bus; NM already learns the failure class via the Failure
+                // signal emitted just below.
                 warn!("Connect failed: {e:#}");
                 self.set_state(&emitter, NMVpnServiceState::Stopped).await;
                 let _ = emitter
                     .failure(crate::state::NMVpnPluginFailure::ConnectFailed.as_u32())
                     .await;
-                Err(zbus::fdo::Error::Failed(format!("{e:#}")))
+                Err(zbus::fdo::Error::Failed(
+                    "VPN activation failed; see the nm-openvpn3 service log for details".to_string(),
+                ))
             }
         }
     }
@@ -1112,6 +1181,13 @@ impl Plugin {
         #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
     ) -> zbus::fdo::Result<()> {
         info!("Disconnect dispatched");
+        // Flag teardown so an in-flight Connect bails at its next
+        // checkpoint, then take the connect lock to serialise against
+        // do_connect — zbus dispatches method handlers concurrently, and
+        // without this a Disconnect interleaving do_connect's await window
+        // left a live tunnel up after the process exited.  Both steps live
+        // in `lock_disconnect`.
+        let _connect_guard = self.coord.lock_disconnect().await;
         let session = {
             let mut s = self.session.lock().await;
             // Flag teardown BEFORE taking the session so the background

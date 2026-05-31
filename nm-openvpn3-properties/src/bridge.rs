@@ -167,29 +167,28 @@ pub unsafe fn ovpn_text_to_connection(
         // directory.  A crafted profile could otherwise name an
         // absolute path or climb out with `..` to slurp the first two
         // lines of an arbitrary readable file into the connection's
-        // proxy credentials.  Reject absolute paths and any `..` /
-        // root component; only a plain relative name beside the .ovpn
-        // is honoured.
+        // proxy credentials.  Honour ONLY a bare filename (a single
+        // Normal component) beside the .ovpn: O_NOFOLLOW on the open
+        // below guards just the final component, so a relative name
+        // with a separator (`subdir/creds`) could still traverse a
+        // symlinked intermediate dir (`subdir -> /etc`).  Rejecting any
+        // path component closes that off entirely.
         let af = Path::new(&authfile);
-        let traversal = af.is_absolute()
-            || af.components().any(|c| {
-                matches!(
-                    c,
-                    std::path::Component::ParentDir | std::path::Component::RootDir
-                )
-            });
-        if traversal {
+        let safe_name = matches!(
+            af.components().collect::<Vec<_>>().as_slice(),
+            [std::path::Component::Normal(_)]
+        );
+        if !safe_name {
             // Surface the rejection — a silent drop looks like a
-            // mis-parse to a user who legitimately pointed at an
-            // absolute creds path.
-            eprintln!("nm-openvpn3: refusing http-proxy-auth-file outside profile dir: {authfile}");
+            // mis-parse to a user who legitimately pointed at a creds
+            // path with a directory component.
+            eprintln!("nm-openvpn3: refusing http-proxy-auth-file that is not a bare filename: {authfile}");
         } else {
             let af_path = parent_dir.join(af);
-            // Open with O_NOFOLLOW: the path guard above blocks `..` and
-            // absolute names, but a symlink beside the .ovpn (creds ->
-            // /etc/shadow) would still be followed by a plain read.
-            // Opening the final component nofollow closes that race-free;
-            // a symlink yields ELOOP and falls through to the skip.
+            // The bare-filename guard above means there is no
+            // intermediate directory to traverse; O_NOFOLLOW then blocks
+            // a symlink AT the final component (creds -> /etc/shadow),
+            // yielding ELOOP which falls through to the skip.
             match std::fs::OpenOptions::new()
                 .read(true)
                 .custom_flags(libc::O_NOFOLLOW)

@@ -237,8 +237,15 @@ impl Client {
             }
         };
 
-        // Preferred: `last_connection` dict (v27+).
-        if let Ok(reply) = try_prop("last_connection").await {
+        // Preferred: `last_connection` dict (v27+).  A read error here is
+        // expected on pre-v27 daemons that lack the property — log it and
+        // fall through to the legacy probe rather than swallowing it
+        // silently, so a genuine bus fault is still visible in the log.
+        let last_connection = try_prop("last_connection").await;
+        if let Err(ref e) = last_connection {
+            tracing::debug!("last_connection unavailable: {e}; trying connected_to");
+        }
+        if let Ok(reply) = last_connection {
             let body = reply.body();
             if let Ok(value) = body.deserialize::<OwnedValue>() {
                 if let Ok(map) = <HashMap<String, OwnedValue>>::try_from(value) {
@@ -263,7 +270,15 @@ impl Client {
         }
 
         // Legacy: `connected_to` — usually `(ssu)` or a single string.
-        if let Ok(reply) = try_prop("connected_to").await {
+        let connected_to = try_prop("connected_to").await;
+        if let Err(ref e) = connected_to {
+            // Both endpoint probes failed.  The remote host/port is a
+            // best-effort cosmetic detail (shown in NM's UI), so surface
+            // the failure in the log but don't fail activation over it —
+            // returning Ok(None) lets the connection still come up.
+            tracing::warn!("connected_to read failed: {e}; remote endpoint unknown");
+        }
+        if let Ok(reply) = connected_to {
             let body = reply.body();
             if let Ok(value) = body.deserialize::<OwnedValue>() {
                 if let Ok(cloned) = value.try_clone() {
@@ -359,12 +374,13 @@ impl Client {
             };
             for id in ids {
                 match proxy.user_input_queue_fetch(t, g, id).await {
-                    Ok((_t, _g, _id, name, descr, _mask_input)) => out.push(InputSlot {
+                    Ok((_t, _g, _id, name, descr, mask_input)) => out.push(InputSlot {
                         type_: t,
                         group: g,
                         id,
                         name,
                         description: descr,
+                        mask_input,
                     }),
                     Err(e) => tracing::debug!("UserInputQueueFetch({t},{g},{id}) failed: {e}"),
                 }
@@ -399,6 +415,12 @@ pub struct InputSlot {
     /// mapping.
     pub name: String,
     pub description: String,
+    /// openvpn3's "mask input" flag: true when the value is sensitive
+    /// (password / passphrase) and must be hidden on entry and handled
+    /// as a secret.  Carried through so the NM-side consumer can pick
+    /// the right secret-flag / masking behaviour instead of inferring
+    /// it from `name`.
+    pub mask_input: bool,
 }
 
 mod proxies {

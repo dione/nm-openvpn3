@@ -9,7 +9,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.6.0-alpha.4"
+version = "0.6.0-alpha.5"
 edition = "2021"
 license = "GPL-2.0-or-later"
 authors = ["nm-openvpn3 contributors"]
@@ -38,3 +38,16 @@ gettext-rs = { version = "0.7", features = ["gettext-system"] }
 
 # Local crate
 ovpn3-client = { path = "ovpn3-client" }
+
+# The properties/editor cdylibs install their FFI entry points behind a
+# `catch_unwind` guard (`ffi_guard`) so a Rust panic can never unwind
+# across the C ABI into libnm (which would abort nm-applet /
+# gnome-control-center).  `catch_unwind` only stops an unwinding panic —
+# under `panic = "abort"` the process dies before the guard runs,
+# silently defeating every FFI guard in the tree.  Pin `unwind`
+# explicitly so a future release-profile tweak can't regress that.
+[profile.release]
+panic = "unwind"
+
+[profile.dev]
+panic = "unwind"

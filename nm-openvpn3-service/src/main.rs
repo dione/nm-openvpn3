@@ -1,6 +1,7 @@
 //! nm-openvpn3-service — Rust port (Phase 3: signals + StatusChange).
 
 mod build_profile;
+mod connect_coord;
 mod connection;
 mod ip4;
 mod plugin;

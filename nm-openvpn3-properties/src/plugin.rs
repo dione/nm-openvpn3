@@ -144,17 +144,23 @@ unsafe extern "C" fn iface_import_from_file(
         // controllable path; an oversized or special file (/dev/zero, a
         // FUSE-backed pipe, a 2 GiB log) would otherwise freeze the host
         // GUI.  1 MiB matches the service-side MAX_PROFILE_BYTES.  Open
-        // first (O_NOFOLLOW + O_CLOEXEC), fstat the fd (so the size check
-        // operates on the same inode the read will consume — no TOCTOU
-        // between stat and open), then read through a `take()` cap so a
-        // mid-read growth still aborts at the same byte budget.
+        // first (O_NOFOLLOW + O_CLOEXEC + O_NONBLOCK), fstat the fd (so
+        // the size check operates on the same inode the read will consume
+        // — no TOCTOU between stat and open), then read through a `take()`
+        // cap so a mid-read growth still aborts at the same byte budget.
         const MAX_IMPORT_BYTES: u64 = 1 << 20;
         let text = {
             use std::io::Read;
             use std::os::unix::fs::OpenOptionsExt;
+            // O_NONBLOCK so opening a FIFO / named pipe at the (attacker-
+            // controllable) import path returns immediately instead of
+            // blocking the GUI thread forever waiting for a writer; the
+            // is_file() check below then rejects it.  No effect on
+            // regular-file reads, so the legitimate path is unchanged.
+            // Matches the service-side profile open in do_connect.
             let file = match std::fs::OpenOptions::new()
                 .read(true)
-                .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
+                .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC | libc::O_NONBLOCK)
                 .open(p)
             {
                 Ok(f) => f,

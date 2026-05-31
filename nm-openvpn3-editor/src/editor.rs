@@ -557,7 +557,16 @@ unsafe extern "C" fn iface_update_connection(
                 Err(_) => return,
             };
             if value.is_empty() {
-                let _ = nm_setting_vpn_remove_secret(s_vpn, k.as_ptr());
+                // Leave an empty secret field ALONE rather than removing
+                // it.  `connection_to_nm_data` only projects vpn.data, so
+                // existing (AGENT_OWNED, keyring-stored) secrets are never
+                // loaded into the dialog — the row renders blank even when
+                // a password is stored.  Emitting `remove_secret` here on
+                // a blank-but-untouched field would silently wipe a stored
+                // credential whenever the user opens an existing
+                // connection and clicks Apply without retyping it.
+                // Preserving on blank loses only the rare in-editor "clear
+                // a secret" gesture, which is the far smaller harm.
                 return;
             }
             match CString::new(value) {
