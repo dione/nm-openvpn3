@@ -696,6 +696,15 @@ impl Plugin {
             // from a fast handshake (cached creds, instant tunnel).
             // Subsequent iterations sleep first per the cadence below.
             let mut first_pass = true;
+            // Last status openvpn3 reported + last device_name seen,
+            // surfaced in the pre-Started timeout warning below so a
+            // "never reached Started" failure shows what the backend was
+            // actually reporting and whether a tun device ever appeared —
+            // distinguishes a plugin-side bug from the openvpn3 backend
+            // simply never connecting (server/network/netcfg).
+            let mut last_major = 0u32;
+            let mut last_minor = 0u32;
+            let mut last_device = String::new();
             loop {
                 if !first_pass {
                     tokio::time::sleep(tick_interval).await;
@@ -710,7 +719,9 @@ impl Plugin {
                 // emit a clean Failure first.
                 if !ip4_emitted && ticks >= max_ticks_pre_started {
                     warn!(
-                        "session never reached Started within {ticks} polls ({}s); failing to NM",
+                        "session never reached Started within {ticks} polls ({}s); \
+                         last openvpn3 status major={last_major} minor={last_minor}, \
+                         device_name={last_device:?}; failing to NM",
                         (ticks as u64) * tick_interval.as_millis() as u64 / 1000
                     );
                     if let Ok(emitter) = make_emitter(&connection) {
@@ -724,6 +735,8 @@ impl Plugin {
                 match proxy.status().await {
                     Ok((major, minor, _msg)) => {
                         post_started_errs = 0;
+                        last_major = major;
+                        last_minor = minor;
                         // Once we've reported Started to NM the poller
                         // is just a liveness watchdog — fold the every-
                         // 5s tick down to TRACE so the journal stays
@@ -748,11 +761,15 @@ impl Plugin {
                         // the moment NM needs the Ip4Config.
                         if !ip4_emitted && target != Some(NMVpnServiceState::Stopped) {
                             match proxy.device_name().await {
-                                Ok(dev) if dev.starts_with("tun") => {
-                                    info!("device_name='{dev}' → treating as Started");
-                                    target = Some(NMVpnServiceState::Started);
+                                Ok(dev) => {
+                                    last_device = dev.clone();
+                                    if dev.starts_with("tun") {
+                                        info!("device_name='{dev}' → treating as Started");
+                                        target = Some(NMVpnServiceState::Started);
+                                    } else {
+                                        debug!("device_name='{dev}' (waiting for tun*)");
+                                    }
                                 }
-                                Ok(dev) => debug!("device_name='{dev}' (waiting for tun*)"),
                                 Err(e) => warn!("device_name read failed: {e}"),
                             }
                         }

@@ -1,3 +1,14 @@
+network-manager-openvpn3 (0.6.0~alpha.7-1~dhcargo1) noble; urgency=medium
+
+  * service: the pre-Started poller timeout warning now records the last
+    openvpn3 status (major/minor) and the last device_name seen, so a
+    "session never reached Started" failure shows whether the backend was
+    reporting progress / had created a tun device — distinguishing a
+    plugin-side issue from the openvpn3 backend simply never connecting
+    (server / network / netcfg). Diagnostics only; no behaviour change.
+
+ -- Dominik Jarmulowicz <dominik.jarmulowicz@oversee.biz>  Tue, 02 Jun 2026 16:00:00 +0200
+
 network-manager-openvpn3 (0.6.0~alpha.6-1~dhcargo1) noble; urgency=medium
 
   * Second security & correctness audit pass (11 fixes, +46 tests):
