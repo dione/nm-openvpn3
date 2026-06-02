@@ -243,14 +243,17 @@ fn read_vpn_details<R: BufRead>(reader: R) -> Result<(DataMap, SecretsMap)> {
 
 fn secret_required_flag(data: &HashMap<String, String>, key: &str) -> bool {
     // NMSettingSecretFlags is encoded in vpn.data under "<key>-flags".
-    // NOT_REQUIRED = 0x2.  Treat missing/unparseable as required.
+    // NOT_REQUIRED = 0x4 — only this bit lets activation proceed without
+    // the secret.  NOT_SAVED (0x2) means "don't store it, but DO ask
+    // every time", so it must still prompt.  Treat missing/unparseable
+    // as required.
     let flag_key = format!("{key}-flags");
     let raw = match data.get(&flag_key) {
         Some(v) => v.as_str(),
         None => return true,
     };
     let bits: u32 = raw.parse().unwrap_or(0);
-    (bits & 0x2) == 0
+    (bits & 0x4) == 0
 }
 
 fn is_encrypted_keyfile_path(path: &str) -> bool {
@@ -455,17 +458,9 @@ fn write_entry(
     writeln!(out, "Value={}", escape(value))?;
     writeln!(out, "Label={}", escape(label))?;
     writeln!(out, "IsSecret=true")?;
-    writeln!(out, "ShouldAsk={}", bool_str(should_ask))?;
-    writeln!(out, "ForceEcho={}", bool_str(force_echo))?;
+    writeln!(out, "ShouldAsk={should_ask}")?;
+    writeln!(out, "ForceEcho={force_echo}")?;
     Ok(())
-}
-
-fn bool_str(b: bool) -> &'static str {
-    if b {
-        "true"
-    } else {
-        "false"
-    }
 }
 
 /// Match GKeyFile string escaping rules (only the chars libnm cares
@@ -518,10 +513,119 @@ mod tests {
 
     #[test]
     fn flag_not_required_suppresses_password() {
+        // NOT_REQUIRED = 0x4 lets activation proceed without the secret.
+        let mut data = HashMap::new();
+        data.insert("connection-type".into(), "password".into());
+        data.insert("password-flags".into(), "4".into());
+        let n = needs(&data, &[]);
+        assert!(!n.password);
+    }
+
+    /// Regression for B3: NOT_SAVED (0x2) means "don't store, ask every
+    /// time" — it MUST still prompt.  The pre-fix code masked 0x2 and
+    /// silently suppressed the prompt for this (security-conscious) setup.
+    #[test]
+    fn flag_not_saved_still_prompts() {
         let mut data = HashMap::new();
         data.insert("connection-type".into(), "password".into());
         data.insert("password-flags".into(), "2".into());
-        let n = needs(&data, &[]);
-        assert!(!n.password);
+        assert!(needs(&data, &[]).password);
+        // AGENT_OWNED (0x1) alone also requires a prompt path.
+        data.insert("password-flags".into(), "1".into());
+        assert!(needs(&data, &[]).password);
+    }
+
+    #[test]
+    fn proxy_server_present_needs_proxypass() {
+        let mut d = HashMap::new();
+        d.insert("connection-type".into(), "tls".into());
+        d.insert("proxy-server".into(), "proxy.example:8080".into());
+        assert!(needs(&d, &[]).proxypass);
+        d.insert("proxy-server".into(), "".into());
+        assert!(!needs(&d, &[]).proxypass);
+    }
+
+    #[test]
+    fn challenge_echo_hint_sets_force_echo_flag() {
+        let n = needs(&HashMap::new(), &[HINT_CHALLENGE_RESPONSE_ECHO.into()]);
+        assert!(n.challenge_response && n.challenge_response_echo);
+        let n2 = needs(&HashMap::new(), &[HINT_CHALLENGE_RESPONSE_NOECHO.into()]);
+        assert!(n2.challenge_response && !n2.challenge_response_echo);
+    }
+
+    #[test]
+    fn escape_neutralises_keyfile_metacharacters() {
+        assert_eq!(escape("a\\b"), "a\\\\b");
+        assert_eq!(escape("line1\nline2"), "line1\\nline2");
+        assert_eq!(escape("a\tb\rc"), "a\\tb\\rc");
+        assert_eq!(escape("plain text"), "plain text");
+    }
+
+    /// An untrusted x-vpn-message must not break out of the Description
+    /// line and forge extra KeyFile entries.
+    #[test]
+    fn description_line_cannot_be_broken_by_vpn_message() {
+        let needed = Needed {
+            password: true,
+            ..Default::default()
+        };
+        let mut buf = Vec::new();
+        write_eui_keyfile(&mut buf, "evil\nShouldAsk=true", &needed, true).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        assert!(s.contains("Description=evil\\nShouldAsk=true"));
+    }
+
+    /// allow_interaction=false (non-interactive activation) must emit
+    /// ShouldAsk=false for every entry even when the secret is needed.
+    #[test]
+    fn non_interactive_emits_no_should_ask() {
+        let needed = Needed {
+            password: true,
+            certpass: true,
+            proxypass: true,
+            challenge_response: true,
+            ..Default::default()
+        };
+        let mut buf = Vec::new();
+        write_eui_keyfile(&mut buf, "prompt", &needed, false).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        assert!(!s.contains("ShouldAsk=true"), "{s}");
+    }
+
+    #[test]
+    fn interactive_asks_only_needed() {
+        let needed = Needed {
+            password: true,
+            ..Default::default()
+        };
+        let mut buf = Vec::new();
+        write_eui_keyfile(&mut buf, "p", &needed, true).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        assert_eq!(s.matches("ShouldAsk=true").count(), 1);
+    }
+
+    /// A secret value containing '=' (base64/JWT tokens) must survive
+    /// intact (split on the FIRST '='), and out-of-order lines must be
+    /// dropped, not mis-filed across the data/secret boundary.
+    #[test]
+    fn read_vpn_details_edge_cases() {
+        let stdin = b"DATA_KEY=connection-type\nDATA_VAL=password\n\nSECRET_KEY=password\nSECRET_VAL=a=b==c\n\nDONE\n";
+        let (_d, s) = read_vpn_details(&stdin[..]).unwrap();
+        assert_eq!(s.get("password").map(|v| v.as_str()), Some("a=b==c"));
+
+        let bad = b"DATA_KEY=k\nSECRET_VAL=leak\nDATA_VAL=v\n\nDONE\n";
+        let (d, s2) = read_vpn_details(&bad[..]).unwrap();
+        assert!(s2.is_empty(), "out-of-order SECRET_VAL must not be filed");
+        assert_eq!(d.get("k").map(String::as_str), Some("v"));
+    }
+
+    #[test]
+    fn write_no_secret_emits_marker_block() {
+        let mut buf = Vec::new();
+        write_no_secret(&mut buf).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        assert!(s.contains("[no-secret]"));
+        assert!(s.contains("Value=true"));
+        assert!(s.contains("ShouldAsk=false"));
     }
 }

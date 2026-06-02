@@ -50,6 +50,7 @@ const KEY_CIPHER: &str = "cipher";
 const KEY_DATA_CIPHERS: &str = "data-ciphers";
 const KEY_DATA_CIPHERS_FALLBACK: &str = "data-ciphers-fallback";
 const KEY_TLS_CIPHER: &str = "tls-cipher";
+const KEY_AUTH: &str = "auth";
 const KEY_KEYSIZE: &str = "keysize";
 const KEY_ALLOW_COMPRESSION: &str = "allow-compression";
 const KEY_COMP_LZO: &str = "comp-lzo";
@@ -123,16 +124,13 @@ pub fn build_profile_string(
 
     let is_tls_like = matches!(
         connection_type,
-        Some(CONTYPE_TLS) | Some(CONTYPE_PASSWORD) | Some(CONTYPE_PASSWORD_TLS)
+        Some(CONTYPE_TLS | CONTYPE_PASSWORD | CONTYPE_PASSWORD_TLS)
     );
     let is_password_like = matches!(
         connection_type,
-        Some(CONTYPE_PASSWORD) | Some(CONTYPE_PASSWORD_TLS)
+        Some(CONTYPE_PASSWORD | CONTYPE_PASSWORD_TLS)
     );
-    let needs_user_cert = matches!(
-        connection_type,
-        Some(CONTYPE_TLS) | Some(CONTYPE_PASSWORD_TLS)
-    );
+    let needs_user_cert = matches!(connection_type, Some(CONTYPE_TLS | CONTYPE_PASSWORD_TLS));
 
     if is_tls_like {
         w.line(&["client"]);
@@ -219,6 +217,12 @@ pub fn build_profile_string(
         get(KEY_DATA_CIPHERS_FALLBACK),
     );
     line_str(&mut w, "tls-cipher", get(KEY_TLS_CIPHER));
+    // HMAC digest (`auth <alg>`).  Emitted unconditionally to match the
+    // editor/exporter, which surface it for all connection types — the
+    // export path (import_export::from_nm_data `pairs_str`) lists it, so
+    // build_profile must too or a user's GUI HMAC choice is honoured in
+    // an exported file but silently dropped at connect time.
+    line_str(&mut w, "auth", get(KEY_AUTH));
     line_int(&mut w, "keysize", get(KEY_KEYSIZE));
     line_str(&mut w, "allow-compression", get(KEY_ALLOW_COMPRESSION));
 
@@ -330,11 +334,15 @@ pub fn build_profile_string(
 
         if let Some(x509_name) = get(KEY_VERIFY_X509_NAME) {
             // The C tree encodes the optional name-type as a `<type>:`
-            // prefix on the same NM key.
-            if let Some((ty, name)) = x509_name.split_once(':') {
-                w.line(&["verify-x509-name", name, ty]);
-            } else {
-                w.line(&["verify-x509-name", x509_name]);
+            // prefix on the same NM key.  Only treat the prefix as a type
+            // when it is one of openvpn's actual name-type keywords —
+            // otherwise a DN that legitimately contains a colon (e.g.
+            // `CN=Foo:Bar`, no type) would be mangled into name+bogus-type.
+            match x509_name.split_once(':') {
+                Some((ty, name)) if matches!(ty, "subject" | "name" | "name-prefix") => {
+                    w.line(&["verify-x509-name", name, ty]);
+                }
+                _ => w.line(&["verify-x509-name", x509_name]),
             }
         }
 
@@ -998,5 +1006,147 @@ mod tests {
         assert!(!is_safe_route_line("script-security 3"));
         // A quoted blob with a space inside a token is rejected.
         assert!(!is_safe_route_line("route 'a b'"));
+    }
+
+    /// Regression for B1: the HMAC `auth` digest must reach the
+    /// live-connect profile.  Previously dropped — honoured on export
+    /// but silently lost at connect.
+    #[test]
+    fn auth_digest_emitted() {
+        let secrets = SecretsMap::new();
+        let data = dict(&[
+            ("connection-type", "tls"),
+            ("remote", "v"),
+            ("auth", "SHA512"),
+        ]);
+        let out = build_profile_string(&data, &secrets).expect("build");
+        assert_contains(&out, "auth SHA512");
+    }
+
+    /// auth applies to static-key tunnels too (emitted unconditionally,
+    /// not gated by is_tls_like).
+    #[test]
+    fn auth_digest_emitted_for_static_key() {
+        let secrets = SecretsMap::new();
+        let data = dict(&[
+            ("connection-type", "static-key"),
+            ("remote", "v"),
+            ("static-key", "/etc/ovpn/static.key"),
+            ("auth", "SHA256"),
+        ]);
+        let out = build_profile_string(&data, &secrets).expect("build");
+        assert_contains(&out, "auth SHA256");
+    }
+
+    /// static-key mode emits `secret`/`ifconfig` and must NOT leak any
+    /// TLS-only directive (it is not is_tls_like).
+    #[test]
+    fn static_key_emits_secret_and_no_tls_opts() {
+        let secrets = SecretsMap::new();
+        let data = dict(&[
+            ("connection-type", "static-key"),
+            ("remote", "v"),
+            ("static-key", "/etc/ovpn/static.key"),
+            ("static-key-direction", "1"),
+            ("local-ip", "10.8.0.2"),
+            ("remote-ip", "10.8.0.1"),
+            ("ta", "/etc/ovpn/ta.key"), // must be ignored (not is_tls_like)
+            ("ca", "/etc/ovpn/ca.pem"), // must be ignored
+        ]);
+        let out = build_profile_string(&data, &secrets).expect("build");
+        assert_contains(&out, "secret '/etc/ovpn/static.key' 1");
+        // Dotted IPs trip escape_arg's needs-quote path → single-quoted.
+        assert_contains(&out, "ifconfig '10.8.0.2' '10.8.0.1'");
+        assert!(
+            !out.lines().any(|l| l == "client"),
+            "static-key must not emit client: {out}"
+        );
+        assert!(
+            !out.lines().any(|l| l.starts_with("tls-auth")),
+            "static-key must not emit tls-auth: {out}"
+        );
+        assert!(
+            !out.lines().any(|l| l.starts_with("ca ")),
+            "static-key must not emit ca: {out}"
+        );
+    }
+
+    #[test]
+    fn crl_verify_dir_tls_auth_dir_tls_crypt_extra_certs_emitted() {
+        let secrets = SecretsMap::new();
+        let data = dict(&[
+            ("connection-type", "tls"),
+            ("remote", "v"),
+            ("crl-verify-dir", "/etc/ovpn/crl.d"),
+            ("ta", "/etc/ovpn/ta.key"),
+            ("ta-dir", "1"),
+            ("tls-crypt", "/etc/ovpn/tc.key"),
+            ("extra-certs", "/etc/ovpn/extra.pem"),
+        ]);
+        let out = build_profile_string(&data, &secrets).expect("build");
+        assert_contains(&out, "crl-verify '/etc/ovpn/crl.d' dir");
+        assert_contains(&out, "tls-auth '/etc/ovpn/ta.key' 1");
+        assert_contains(&out, "tls-crypt '/etc/ovpn/tc.key'");
+        assert_contains(&out, "extra-certs '/etc/ovpn/extra.pem'");
+    }
+
+    #[test]
+    fn socks_proxy_with_retry_and_default_port() {
+        let secrets = SecretsMap::new();
+        let data = dict(&[
+            ("connection-type", "tls"),
+            ("remote", "v"),
+            ("proxy-type", "socks"),
+            ("proxy-server", "socks.example.com"),
+            ("proxy-retry", "yes"),
+        ]);
+        let out = build_profile_string(&data, &secrets).expect("build");
+        assert_contains(&out, "socks-proxy 'socks.example.com' 1080");
+        assert_contains(&out, "socks-proxy-retry");
+    }
+
+    #[test]
+    fn tap_dev_fallback_and_mssfix_flag_vs_value() {
+        let secrets = SecretsMap::new();
+        let data = dict(&[
+            ("connection-type", "tls"),
+            ("remote", "v"),
+            ("tap-dev", "yes"),
+            ("mssfix", "1300"),
+        ]);
+        let out = build_profile_string(&data, &secrets).expect("build");
+        assert_contains(&out, "dev tap");
+        assert_contains(&out, "mssfix 1300");
+
+        let data2 = dict(&[
+            ("connection-type", "tls"),
+            ("remote", "v"),
+            ("mssfix", "yes"),
+        ]);
+        let out2 = build_profile_string(&data2, &secrets).expect("build");
+        assert!(
+            out2.lines().any(|l| l == "mssfix"),
+            "mssfix yes is a bare flag: {out2}"
+        );
+    }
+
+    /// Regression for B8: a no-type verify-x509-name value that itself
+    /// contains a colon must not be mis-split into name+type.
+    #[test]
+    fn verify_x509_name_with_colon_in_dn_not_split() {
+        let secrets = SecretsMap::new();
+        let data = dict(&[
+            ("connection-type", "tls"),
+            ("remote", "v"),
+            ("verify-x509-name", "CN=Foo:Bar"),
+        ]);
+        let out = build_profile_string(&data, &secrets).expect("build");
+        // Whole DN preserved as a single quoted arg, no bogus type token.
+        assert!(
+            out.lines()
+                .any(|l| l == "verify-x509-name \"CN=Foo:Bar\""
+                    || l == "verify-x509-name 'CN=Foo:Bar'"),
+            "DN with embedded colon must round-trip whole: {out}"
+        );
     }
 }

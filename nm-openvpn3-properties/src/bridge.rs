@@ -16,6 +16,7 @@ use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine as _;
 use glib_sys::{gboolean, gpointer, GFALSE, GTRUE};
 use gobject_sys::{g_object_set, GObject};
+use zeroize::{Zeroize, Zeroizing};
 
 use crate::import_export::{Directive, OvpnConfig};
 use crate::libnm::*;
@@ -195,11 +196,15 @@ pub unsafe fn ovpn_text_to_connection(
                 .open(&af_path)
             {
                 Ok(mut f) => {
-                    let mut contents = String::new();
+                    // Hold the authfile body + password in Zeroizing so the
+                    // plaintext is scrubbed from the heap on drop — the
+                    // password is a credential and this mirrors the editor's
+                    // zeroize-after-add_secret discipline.
+                    let mut contents = Zeroizing::new(String::new());
                     if std::io::Read::read_to_string(&mut f, &mut contents).is_ok() {
                         let mut iter = contents.lines();
                         let user = iter.next().unwrap_or("").trim().to_string();
-                        let pass = iter.next().unwrap_or("").trim().to_string();
+                        let pass = Zeroizing::new(iter.next().unwrap_or("").trim().to_string());
                         if !user.is_empty() {
                             data.insert("http-proxy-username".into(), user);
                         }
@@ -215,6 +220,10 @@ pub unsafe fn ovpn_text_to_connection(
                                     NM_SETTING_SECRET_FLAG_AGENT_OWNED,
                                     ptr::null_mut(),
                                 );
+                                // libnm copied the value into its own store;
+                                // scrub our plaintext CString before it drops.
+                                let mut vb = v.into_bytes_with_nul();
+                                vb.zeroize();
                             }
                         }
                     }
@@ -458,20 +467,11 @@ pub unsafe fn export_connection_to_path(
     // world-readable.  Write it 0600 with O_NOFOLLOW | O_EXCL — the
     // same hardening write_blob_securely applies on import — then
     // rename onto the target (which inherits the temp's mode).
+    // Reuse the import-side hardened write (unlink-first, create_new +
+    // O_NOFOLLOW, mode 0600, fsync) so the two secret-write paths can't
+    // drift, then rename onto the target.
     let write_secure = || -> std::io::Result<()> {
-        if let Err(e) = std::fs::remove_file(&tmp_path) {
-            if e.kind() != std::io::ErrorKind::NotFound {
-                return Err(e);
-            }
-        }
-        let mut file = std::fs::OpenOptions::new()
-            .create_new(true)
-            .write(true)
-            .mode(0o600)
-            .custom_flags(libc::O_NOFOLLOW)
-            .open(&tmp_path)?;
-        file.write_all(text.as_bytes())?;
-        file.sync_all()?;
+        write_blob_securely(&tmp_path, text.as_bytes())?;
         std::fs::rename(&tmp_path, path)
     };
     match write_secure() {
@@ -485,5 +485,65 @@ pub unsafe fn export_connection_to_path(
             );
             GFALSE
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+
+    fn tmp(tag: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "nmovpn3_{}_{}_{}",
+            tag,
+            std::process::id(),
+            line!()
+        ))
+    }
+
+    #[test]
+    fn blob_written_0600_and_overwrites() {
+        let p = tmp("blob");
+        let _ = std::fs::remove_file(&p);
+        write_blob_securely(&p, b"first").unwrap();
+        assert_eq!(
+            std::fs::metadata(&p).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        // Re-import overwrites (unlink-first) rather than erroring on O_EXCL.
+        write_blob_securely(&p, b"second").unwrap();
+        assert_eq!(std::fs::read(&p).unwrap(), b"second");
+        assert_eq!(
+            std::fs::metadata(&p).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        let _ = std::fs::remove_file(&p);
+    }
+
+    #[test]
+    fn read_profile_rejects_symlink_accepts_regular() {
+        let real = tmp("real");
+        std::fs::write(&real, b"client\nremote x 1194\n").unwrap();
+        assert!(read_profile_securely(&real).is_some());
+
+        let link = tmp("link");
+        let _ = std::fs::remove_file(&link);
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        // O_NOFOLLOW → symlink open fails → None.
+        assert!(read_profile_securely(&link).is_none());
+
+        let _ = std::fs::remove_file(&link);
+        let _ = std::fs::remove_file(&real);
+    }
+
+    #[test]
+    fn read_profile_rejects_oversized() {
+        let big = tmp("big");
+        // 1 MiB + 1 byte exceeds the cap.
+        let data = vec![b'x'; (1usize << 20) + 1];
+        std::fs::write(&big, &data).unwrap();
+        assert!(read_profile_securely(&big).is_none());
+        let _ = std::fs::remove_file(&big);
     }
 }

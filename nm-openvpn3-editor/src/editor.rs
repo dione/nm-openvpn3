@@ -65,6 +65,28 @@ const CONTYPES: &[(&str, &str)] = &[
     (CONTYPE_STATIC_KEY, "Static key"),
 ];
 
+/// The four field-applicability booleans every connection-type implies.
+/// Derived in one place so the save-gating (`iface_update_connection`)
+/// and the two visibility paths can never silently disagree about what a
+/// type requires.
+struct ContypeFlags {
+    tls_like: bool,
+    needs_user_cert: bool,
+    needs_password: bool,
+    is_static_key: bool,
+}
+
+impl ContypeFlags {
+    fn from_id(ct: &str) -> Self {
+        Self {
+            tls_like: matches!(ct, CONTYPE_TLS | CONTYPE_PASSWORD | CONTYPE_PASSWORD_TLS),
+            needs_user_cert: matches!(ct, CONTYPE_TLS | CONTYPE_PASSWORD_TLS),
+            needs_password: matches!(ct, CONTYPE_PASSWORD | CONTYPE_PASSWORD_TLS),
+            is_static_key: ct == CONTYPE_STATIC_KEY,
+        }
+    }
+}
+
 const ALLOW_COMPRESSION: &[(&str, &str)] = &[
     ("", "Default"),
     ("no", "Disabled"),
@@ -609,10 +631,12 @@ unsafe extern "C" fn iface_update_connection(
             nm_setting_vpn_add_data_item(s_vpn, kc.as_ptr(), vc.as_ptr());
         }
 
-        let tls_like = matches!(ct, "tls" | "password" | "password-tls");
-        let needs_user_cert = matches!(ct, "tls" | "password-tls");
-        let needs_password = matches!(ct, "password" | "password-tls");
-        let is_static_key = ct == "static-key";
+        let ContypeFlags {
+            tls_like,
+            needs_user_cert,
+            needs_password,
+            is_static_key,
+        } = ContypeFlags::from_id(ct);
 
         // Helpers — empty value clears the key, so non-applicable widgets
         // and zeroed spin rows both round-trip as a remove.
@@ -665,10 +689,7 @@ unsafe extern "C" fn iface_update_connection(
         // Device + Connection
         set("dev", st.dev.text().as_ref());
         set("dev-type", st.dev_type.selected_id());
-        set(
-            "proto-tcp",
-            if st.proto_tcp.is_active() { "yes" } else { "" },
-        );
+        set("proto-tcp", yes_or_empty(st.proto_tcp.is_active()));
         set("tunnel-mtu", &int_or_empty(st.tun_mtu.value() as i64));
         // Switch off → drop the key (empty string clears).  Switch on with
         // byte count 0 → "yes" (openvpn3 picks).  Switch on with explicit
@@ -719,11 +740,7 @@ unsafe extern "C" fn iface_update_connection(
         set("tls-version-min", st.tls_version_min.selected_id());
         set(
             "tls-version-min-or-highest",
-            if st.tls_version_min_or_highest.is_active() {
-                "yes"
-            } else {
-                ""
-            },
+            yes_or_empty(st.tls_version_min_or_highest.is_active()),
         );
         set("tls-version-max", st.tls_version_max.selected_id());
         set("verify-x509-name", st.verify_x509_name.text().as_ref());
@@ -743,40 +760,21 @@ unsafe extern "C" fn iface_update_connection(
         // Misc
         set(
             "override-route-nopull",
-            if st.or_route_nopull.is_active() {
-                "yes"
-            } else {
-                ""
-            },
+            yes_or_empty(st.or_route_nopull.is_active()),
         );
         set(
             "override-force-default-gateway",
-            if st.or_force_default_gateway.is_active() {
-                "yes"
-            } else {
-                ""
-            },
+            yes_or_empty(st.or_force_default_gateway.is_active()),
         );
         set(
             "override-block-ipv6",
-            if st.or_block_ipv6.is_active() {
-                "yes"
-            } else {
-                ""
-            },
+            yes_or_empty(st.or_block_ipv6.is_active()),
         );
         set(
             "override-dns-setup-disabled",
-            if st.or_dns_setup_disabled.is_active() {
-                "yes"
-            } else {
-                ""
-            },
+            yes_or_empty(st.or_dns_setup_disabled.is_active()),
         );
-        set(
-            "override-dco",
-            if st.or_dco.is_active() { "yes" } else { "" },
-        );
+        set("override-dco", yes_or_empty(st.or_dco.is_active()));
         set(
             "override-log-level",
             &int_or_empty(st.or_log_level.value() as i64),
@@ -850,10 +848,25 @@ fn combo_row(
     let model = StringList::new(&label_refs);
     let mut ids = Vec::with_capacity(choices.len());
     let mut selected = 0u32;
+    let mut matched = false;
     for (i, (id, _)) in choices.iter().enumerate() {
         ids.push((*id).to_string());
         if initial == Some(*id) {
             selected = i as u32;
+            matched = true;
+        }
+    }
+    // Out-of-vocabulary stored value (set via nmcli or imported, e.g.
+    // cipher=CAMELLIA-256-CBC, compress=stub, auth=SHA3-256): append it
+    // as an extra entry and select it, so Apply round-trips it unchanged
+    // instead of clamping to index 0 ("Default") and silently deleting
+    // the key.  Shown verbatim — it is a protocol token, not a UI label,
+    // so it bypasses gettext like the other passthrough labels.
+    if let Some(v) = initial {
+        if !v.is_empty() && !matched {
+            model.append(v);
+            ids.push(v.to_string());
+            selected = (ids.len() - 1) as u32;
         }
     }
     row.set_model(Some(&model));
@@ -1003,6 +1016,16 @@ fn expander_row(title: &str, subtitle: &str) -> ExpanderRow {
 
 fn parse_int_default(s: Option<&String>, default: f64) -> f64 {
     s.and_then(|v| v.parse::<f64>().ok()).unwrap_or(default)
+}
+
+/// Map a switch's active state to the `"yes"` / `""` tokens the save
+/// path uses (empty clears the vpn.data key).
+fn yes_or_empty(b: bool) -> &'static str {
+    if b {
+        "yes"
+    } else {
+        ""
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1558,10 +1581,12 @@ fn wire_mssfix_visibility(st: &EditorState) {
 /// Toggle visibility of credential/cert/static-key rows for a given
 /// connection-type.  Matches the C tree's per-type field gating.
 fn apply_contype_visibility(st: &EditorState, contype: &str) {
-    let tls_like = matches!(contype, "tls" | "password" | "password-tls");
-    let needs_user_cert = matches!(contype, "tls" | "password-tls");
-    let needs_password = matches!(contype, "password" | "password-tls");
-    let is_static_key = contype == "static-key";
+    let ContypeFlags {
+        tls_like,
+        needs_user_cert,
+        needs_password,
+        is_static_key,
+    } = ContypeFlags::from_id(contype);
 
     st.ca.set_visible(tls_like);
     st.cert.set_visible(needs_user_cert);
@@ -1768,10 +1793,12 @@ fn wire_contype_visibility(st: &EditorState) {
     st.contype.row.connect_selected_item_notify(move |combo| {
         let idx = combo.selected() as usize;
         let contype = ids.get(idx).map(String::as_str).unwrap_or("");
-        let tls_like = matches!(contype, "tls" | "password" | "password-tls");
-        let needs_user_cert = matches!(contype, "tls" | "password-tls");
-        let needs_password = matches!(contype, "password" | "password-tls");
-        let is_static_key = contype == "static-key";
+        let ContypeFlags {
+            tls_like,
+            needs_user_cert,
+            needs_password,
+            is_static_key,
+        } = ContypeFlags::from_id(contype);
 
         if let Some(w) = weak.ca.upgrade() {
             w.set_visible(tls_like);

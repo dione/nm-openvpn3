@@ -144,26 +144,15 @@ impl OvpnConfig {
                 continue;
             };
             match name.as_str() {
-                "port" => {
+                "port" | "proxy-port" => {
                     let v = args
                         .first()
-                        .ok_or_else(|| anyhow!("port requires a value"))?;
+                        .ok_or_else(|| anyhow!("{name} requires a value"))?;
                     let n: u32 = v
                         .parse()
-                        .map_err(|_| anyhow!("port '{v}' is not numeric"))?;
+                        .map_err(|_| anyhow!("{name} '{v}' is not numeric"))?;
                     if !(1..=65535).contains(&n) {
-                        return Err(anyhow!("port {n} out of range 1-65535"));
-                    }
-                }
-                "proxy-port" => {
-                    let v = args
-                        .first()
-                        .ok_or_else(|| anyhow!("proxy-port requires a value"))?;
-                    let n: u32 = v
-                        .parse()
-                        .map_err(|_| anyhow!("proxy-port '{v}' is not numeric"))?;
-                    if !(1..=65535).contains(&n) {
-                        return Err(anyhow!("proxy-port {n} out of range 1-65535"));
+                        return Err(anyhow!("{name} {n} out of range 1-65535"));
                     }
                 }
                 "key-direction" | "static-key-direction" => {
@@ -174,20 +163,12 @@ impl OvpnConfig {
                         return Err(anyhow!("{name} must be 0 or 1, got '{v}'"));
                     }
                 }
-                "remote-cert-tls" => {
+                "remote-cert-tls" | "ns-cert-type" => {
                     let v = args
                         .first()
-                        .ok_or_else(|| anyhow!("remote-cert-tls requires a value"))?;
+                        .ok_or_else(|| anyhow!("{name} requires a value"))?;
                     if !matches!(v.as_str(), "client" | "server") {
-                        return Err(anyhow!("remote-cert-tls must be client|server, got '{v}'"));
-                    }
-                }
-                "ns-cert-type" => {
-                    let v = args
-                        .first()
-                        .ok_or_else(|| anyhow!("ns-cert-type requires a value"))?;
-                    if !matches!(v.as_str(), "client" | "server") {
-                        return Err(anyhow!("ns-cert-type must be client|server, got '{v}'"));
+                        return Err(anyhow!("{name} must be client|server, got '{v}'"));
                     }
                 }
                 "mtu-disc" => {
@@ -353,10 +334,7 @@ impl OvpnConfig {
                 if gw.is_empty() {
                     continue;
                 }
-                let mut it = gw.splitn(3, ':');
-                let host = it.next().unwrap_or("").to_string();
-                let port = it.next().filter(|s| !s.is_empty()).map(String::from);
-                let proto = it.next().filter(|s| !s.is_empty()).map(String::from);
+                let (host, port, proto) = split_remote(gw);
                 let mut args = vec![host];
                 if let Some(p) = port {
                     args.push(p);
@@ -517,10 +495,15 @@ impl OvpnConfig {
 
         if is_tls_like {
             if let Some(x509) = get("verify-x509-name") {
-                let args = if let Some((ty, name)) = x509.split_once(':') {
-                    vec![name.into(), ty.into()]
-                } else {
-                    vec![x509.into()]
+                // Only treat a `type:` prefix as a real name-type when it
+                // is one of openvpn's keywords — otherwise a no-type DN
+                // that legitimately contains a colon (`CN=Foo:Bar`) would
+                // be mangled into name + bogus type.
+                let args = match x509.split_once(':') {
+                    Some((ty, name)) if matches!(ty, "subject" | "name" | "name-prefix") => {
+                        vec![name.into(), ty.into()]
+                    }
+                    _ => vec![x509.into()],
                 };
                 push_opt(&mut directives, "verify-x509-name", args);
             }
@@ -673,7 +656,17 @@ impl OvpnConfig {
                             let host = a0.unwrap_or("");
                             let port = args.get(1).map(String::as_str);
                             let proto = args.get(2).map(String::as_str);
-                            entry.push_str(host);
+                            // Bracket an IPv6 literal so its colons aren't
+                            // confused with the :port:proto delimiters on
+                            // decode (split_remote / the service-side
+                            // parse_remote both expect the bracketed form).
+                            if host.contains(':') && !host.starts_with('[') {
+                                entry.push('[');
+                                entry.push_str(host);
+                                entry.push(']');
+                            } else {
+                                entry.push_str(host);
+                            }
                             if port.is_some() || proto.is_some() {
                                 entry.push(':');
                                 entry.push_str(port.unwrap_or(""));
@@ -706,6 +699,15 @@ impl OvpnConfig {
                         "auth" => {
                             if let Some(v) = a0 {
                                 data.insert("auth".into(), v.into());
+                            }
+                        }
+                        "keysize" => {
+                            // Editor-surfaced (WIDGET_DATA_KEYS) and emitted
+                            // by from_nm_data's pairs_str; without this arm
+                            // an imported `keysize` never reaches vpn.data,
+                            // so the editor shows 0 and Save drops it.
+                            if let Some(v) = a0 {
+                                data.insert("keysize".into(), v.into());
                             }
                         }
                         "tls-cipher" => {
@@ -1150,6 +1152,28 @@ fn push_escaped(buf: &mut String, value: &str) {
     buf.push('"');
 }
 
+/// Split an NM `remote` entry `host[:port[:proto]]` into its parts,
+/// honouring a bracketed IPv6 literal `[2001:db8::1]:port:proto` so the
+/// address colons aren't mistaken for delimiters.  Mirrors the
+/// service-side `build_profile::parse_remote`; the emitted `.ovpn`
+/// `remote` line carries a BARE host (openvpn's `remote` directive does
+/// not take brackets).
+fn split_remote(gw: &str) -> (String, Option<String>, Option<String>) {
+    if let Some(rest) = gw.strip_prefix('[') {
+        if let Some((host, tail)) = rest.split_once(']') {
+            let mut it = tail.strip_prefix(':').unwrap_or(tail).splitn(2, ':');
+            let port = it.next().filter(|s| !s.is_empty()).map(String::from);
+            let proto = it.next().filter(|s| !s.is_empty()).map(String::from);
+            return (host.to_string(), port, proto);
+        }
+    }
+    let mut it = gw.splitn(3, ':');
+    let host = it.next().unwrap_or("").to_string();
+    let port = it.next().filter(|s| !s.is_empty()).map(String::from);
+    let proto = it.next().filter(|s| !s.is_empty()).map(String::from);
+    (host, port, proto)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1540,5 +1564,199 @@ key /etc/ovpn/c.key
             nm.get("http-proxy-auth-file").map(String::as_str),
             Some("auth.txt")
         );
+    }
+
+    /// Regression for B6: an imported `keysize` must land in vpn.data so
+    /// the editor displays it and Save doesn't silently drop it.
+    #[test]
+    fn import_keysize_lands_in_nm_data() {
+        let cfg = OvpnConfig::parse("remote v\nkeysize 256\n").unwrap();
+        assert_eq!(
+            cfg.as_nm_data().get("keysize").map(String::as_str),
+            Some("256")
+        );
+    }
+
+    /// Regression for B7: a bracketed IPv6 remote must survive the
+    /// as_nm_data → from_nm_data → emit round-trip with host/port/proto
+    /// intact (no colon mis-split).
+    #[test]
+    fn ipv6_remote_round_trips() {
+        let cfg = OvpnConfig::parse("remote 2001:db8::1 1194 tcp\n").unwrap();
+        let nm = cfg.as_nm_data();
+        // Encoded bracketed so the address colons aren't delimiters.
+        assert_eq!(
+            nm.get("remote").map(String::as_str),
+            Some("[2001:db8::1]:1194:tcp")
+        );
+        // Decode back to a well-formed remote line (bare host, no garbage).
+        let out = OvpnConfig::from_nm_data(&nm).emit();
+        let remote_line = out
+            .lines()
+            .find(|l| l.starts_with("remote "))
+            .expect("remote line");
+        assert!(
+            remote_line.contains("2001:db8::1"),
+            "host preserved: {remote_line}"
+        );
+        assert!(
+            remote_line.contains("1194"),
+            "port preserved: {remote_line}"
+        );
+        assert!(
+            remote_line.ends_with("tcp"),
+            "proto preserved: {remote_line}"
+        );
+        assert!(
+            !remote_line.contains('['),
+            "emitted host must be bare: {remote_line}"
+        );
+        // Re-parse the emitted line: args split cleanly into 3.
+        let cfg2 = OvpnConfig::parse(&out).unwrap();
+        let r = cfg2.option("remote").expect("remote");
+        assert_eq!(r[0], "2001:db8::1");
+        assert_eq!(r[1], "1194");
+        assert_eq!(r[2], "tcp");
+    }
+
+    /// Regression for B8: a no-type verify-x509-name value containing a
+    /// colon must NOT be split into name+type on emit.
+    #[test]
+    fn from_nm_data_x509_colon_dn_not_split() {
+        let mut data = BTreeMap::new();
+        data.insert("connection-type".into(), "tls".into());
+        data.insert("remote".into(), "v".into());
+        data.insert("verify-x509-name".into(), "CN=Foo:Bar".into());
+        let out = OvpnConfig::from_nm_data(&data).emit();
+        let line = out
+            .lines()
+            .find(|l| l.starts_with("verify-x509-name "))
+            .expect("x509 line");
+        // Whole DN as one quoted arg; no bogus `CN=Foo` type token.
+        assert!(
+            line == "verify-x509-name \"CN=Foo:Bar\"" || line == "verify-x509-name 'CN=Foo:Bar'",
+            "DN with embedded colon must round-trip whole: {line}"
+        );
+        // And a real type prefix still splits.
+        let cfg = OvpnConfig::parse("remote v\nverify-x509-name srv name-prefix\n").unwrap();
+        let nm = cfg.as_nm_data();
+        assert_eq!(
+            nm.get("verify-x509-name").map(String::as_str),
+            Some("name-prefix:srv")
+        );
+        let out2 = OvpnConfig::from_nm_data(&nm).emit();
+        assert!(out2.lines().any(|l| l.starts_with("verify-x509-name ")
+            && l.contains("srv")
+            && l.contains("name-prefix")));
+    }
+
+    /// comp-lzo `no` import remaps to the `no-by-default` sentinel; other
+    /// values pass through (paired with build_profile's reverse mapping).
+    #[test]
+    fn nm_data_comp_lzo_no_maps_to_no_by_default() {
+        let nm = OvpnConfig::parse("remote v\ncomp-lzo no\n")
+            .unwrap()
+            .as_nm_data();
+        assert_eq!(
+            nm.get("comp-lzo").map(String::as_str),
+            Some("no-by-default")
+        );
+        let nm2 = OvpnConfig::parse("remote v\ncomp-lzo adaptive\n")
+            .unwrap()
+            .as_nm_data();
+        assert_eq!(nm2.get("comp-lzo").map(String::as_str), Some("adaptive"));
+    }
+
+    /// connection-type inferred from inline blobs, not just path options.
+    #[test]
+    fn nm_data_infers_type_from_inline_blobs() {
+        let tls = OvpnConfig::parse("remote v\n<cert>\nC\n</cert>\n<key>\nK\n</key>\n")
+            .unwrap()
+            .as_nm_data();
+        assert_eq!(tls.get("connection-type").map(String::as_str), Some("tls"));
+        let sk = OvpnConfig::parse("remote v\n<secret>\nS\n</secret>\n")
+            .unwrap()
+            .as_nm_data();
+        assert_eq!(
+            sk.get("connection-type").map(String::as_str),
+            Some("static-key")
+        );
+    }
+
+    /// from_nm_data gates user cert/key behind needs_user_cert: a
+    /// password-only connection must not emit a stale cert/key line.
+    #[test]
+    fn from_nm_data_password_omits_user_cert_key() {
+        let mut data = BTreeMap::new();
+        data.insert("connection-type".into(), "password".into());
+        data.insert("remote".into(), "v".into());
+        data.insert("ca".into(), "/etc/ovpn/ca.pem".into());
+        data.insert("cert".into(), "/stale/c.crt".into());
+        data.insert("key".into(), "/stale/c.key".into());
+        let out = OvpnConfig::from_nm_data(&data).emit();
+        assert!(
+            out.lines().any(|l| l.starts_with("ca ")),
+            "password keeps ca: {out}"
+        );
+        assert!(
+            !out.lines().any(|l| l.starts_with("cert ")),
+            "must drop cert: {out}"
+        );
+        assert!(
+            !out.lines().any(|l| l.starts_with("key ")),
+            "must drop key: {out}"
+        );
+        assert!(out.lines().any(|l| l == "auth-user-pass"));
+    }
+
+    /// from_nm_data injects the default port 1194 when a proto is given
+    /// without a port (openvpn needs the port slot before the proto).
+    #[test]
+    fn from_nm_data_remote_proto_without_port_injects_1194() {
+        let mut data = BTreeMap::new();
+        data.insert("connection-type".into(), "tls".into());
+        data.insert("remote".into(), "a.example.com,b.example.com::tcp".into());
+        let out = OvpnConfig::from_nm_data(&data).emit();
+        assert!(out
+            .lines()
+            .any(|l| l.contains("b.example.com") && l.contains("1194") && l.contains("tcp")));
+    }
+
+    /// emit()'s double-quote escape branch (value with a literal `'`).
+    #[test]
+    fn emit_double_quotes_value_with_single_quote() {
+        let cfg = OvpnConfig {
+            directives: vec![Directive::Option {
+                name: "verify-x509-name".into(),
+                args: vec!["O=it's mine".into()],
+            }],
+        };
+        assert!(
+            cfg.emit().contains("\"O=it's mine\""),
+            "single-quote forces double-quoting: {}",
+            cfg.emit()
+        );
+    }
+
+    /// validate() branches beyond the three already covered.
+    #[test]
+    fn validate_rejects_bad_proto_keepalive_mtu_disc() {
+        assert!(OvpnConfig::parse("remote v\nproto sctp\n")
+            .unwrap_err()
+            .to_string()
+            .contains("proto"));
+        assert!(OvpnConfig::parse("remote v\nkeepalive 10\n")
+            .unwrap_err()
+            .to_string()
+            .contains("keepalive"));
+        assert!(OvpnConfig::parse("remote v\nmtu-disc sometimes\n")
+            .unwrap_err()
+            .to_string()
+            .contains("mtu-disc"));
+        // proxy-port shares the merged port arm.
+        assert!(OvpnConfig::parse("remote v\nproxy-port 99999\n")
+            .unwrap_err()
+            .to_string()
+            .contains("proxy-port"));
     }
 }

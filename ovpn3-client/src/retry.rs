@@ -146,4 +146,77 @@ mod tests {
         ));
         assert!(!is_pre_dispatch_transient(&no_such_method));
     }
+
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+
+    /// attempts=0 is a programmer error: return the guard error WITHOUT
+    /// ever invoking `op`.
+    #[tokio::test]
+    async fn attempts_zero_never_calls_op() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let c = calls.clone();
+        let r: anyhow::Result<()> = with_activation_retry(0, Duration::ZERO, || {
+            c.fetch_add(1, Ordering::SeqCst);
+            async { Ok(()) }
+        })
+        .await;
+        assert!(r.is_err());
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+    }
+
+    /// An ambiguous (non-pre-dispatch) error must NOT be retried — one
+    /// op call, then surface it.  Retrying NoReply on a stateful Import
+    /// would risk a duplicate config object.
+    #[tokio::test]
+    async fn permanent_error_not_retried() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let c = calls.clone();
+        let r: anyhow::Result<()> = with_activation_retry(3, Duration::ZERO, || {
+            c.fetch_add(1, Ordering::SeqCst);
+            async { Err(zbus::Error::from(fdo::Error::NoReply("x".into()))) }
+        })
+        .await;
+        assert!(r.is_err());
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            1,
+            "NoReply is ambiguous; must not retry"
+        );
+    }
+
+    /// A pre-dispatch transient error is retried exactly `attempts`
+    /// times, then the last error surfaces.
+    #[tokio::test]
+    async fn transient_retried_then_last_error() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let c = calls.clone();
+        let r: anyhow::Result<()> = with_activation_retry(3, Duration::ZERO, || {
+            c.fetch_add(1, Ordering::SeqCst);
+            async { Err(zbus::Error::from(fdo::Error::ServiceUnknown("svc".into()))) }
+        })
+        .await;
+        assert!(r.is_err());
+        assert_eq!(calls.load(Ordering::SeqCst), 3);
+    }
+
+    /// A transient-then-success sequence returns Ok and stops early.
+    #[tokio::test]
+    async fn transient_then_success_stops_early() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let c = calls.clone();
+        let r: anyhow::Result<u8> = with_activation_retry(5, Duration::ZERO, || {
+            let n = c.fetch_add(1, Ordering::SeqCst);
+            async move {
+                if n == 0 {
+                    Err(zbus::Error::from(fdo::Error::UnknownObject("o".into())))
+                } else {
+                    Ok(7u8)
+                }
+            }
+        })
+        .await;
+        assert_eq!(r.unwrap(), 7);
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+    }
 }

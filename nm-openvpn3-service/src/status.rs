@@ -45,8 +45,11 @@ pub enum ConnectionMinor {
     Failed = 10,
     AuthFailed = 11,
     Reconnecting = 12,
-    /// `CONN_DONE` shows up post-CONNECTED on some openvpn3 builds;
-    /// treat as "tunnel is up" same as Connected.
+    /// `CONN_DONE` (constants.hpp: "connection process completed and
+    /// exited") is a terminal tunnel-DOWN event — every upstream
+    /// emission site (INACTIVE_TIMEOUT, ForceShutdown, cb_disconnect)
+    /// stops the mainloop, and the session manager groups it with
+    /// CONN_FAILED → close_session().  Map to Stopped, not Started.
     Done = 16,
 }
 
@@ -117,13 +120,12 @@ impl Status {
             Self::Connection(ConnectionMinor::Connecting | ConnectionMinor::Reconnecting) => {
                 Some(NMVpnServiceState::Starting)
             }
-            Self::Connection(ConnectionMinor::Connected | ConnectionMinor::Done) => {
-                Some(NMVpnServiceState::Started)
-            }
+            Self::Connection(ConnectionMinor::Connected) => Some(NMVpnServiceState::Started),
             Self::Connection(
                 ConnectionMinor::Disconnected
                 | ConnectionMinor::Failed
-                | ConnectionMinor::AuthFailed,
+                | ConnectionMinor::AuthFailed
+                | ConnectionMinor::Done,
             )
             | Self::Session(SessionMinor::AuthFailed) => Some(NMVpnServiceState::Stopped),
             Self::Connection(ConnectionMinor::Disconnecting) => None,
@@ -139,5 +141,74 @@ impl Status {
             | Self::Session(SessionMinor::AuthFailed) => NMVpnPluginFailure::LoginFailed,
             _ => NMVpnPluginFailure::ConnectFailed,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn state(major: u32, minor: u32) -> Option<NMVpnServiceState> {
+        Status::from_wire(major, minor).and_then(Status::to_nm_state)
+    }
+
+    #[test]
+    fn from_wire_rejects_unknown_major_minor() {
+        assert_eq!(Status::from_wire(99, 7), None);
+        assert_eq!(Status::from_wire(2, 99), None);
+        // Session major only models AuthFailed (11).
+        assert_eq!(Status::from_wire(3, 7), None);
+    }
+
+    #[test]
+    fn connecting_and_reconnecting_map_to_starting() {
+        assert_eq!(state(2, 6), Some(NMVpnServiceState::Starting));
+        assert_eq!(state(2, 12), Some(NMVpnServiceState::Starting));
+    }
+
+    #[test]
+    fn connected_maps_to_started() {
+        assert_eq!(state(2, 7), Some(NMVpnServiceState::Started));
+    }
+
+    /// Regression for B4: CONN_DONE (minor 16) is a terminal tunnel-DOWN
+    /// event and must map to Stopped, NOT Started.
+    #[test]
+    fn conn_done_maps_to_stopped() {
+        assert_eq!(state(2, 16), Some(NMVpnServiceState::Stopped));
+    }
+
+    #[test]
+    fn disconnected_failed_authfailed_map_to_stopped() {
+        assert_eq!(state(2, 9), Some(NMVpnServiceState::Stopped)); // Disconnected
+        assert_eq!(state(2, 10), Some(NMVpnServiceState::Stopped)); // Failed
+        assert_eq!(state(2, 11), Some(NMVpnServiceState::Stopped)); // Conn AuthFailed
+        assert_eq!(state(3, 11), Some(NMVpnServiceState::Stopped)); // Session AuthFailed
+    }
+
+    #[test]
+    fn disconnecting_is_log_only() {
+        assert_eq!(state(2, 8), None);
+    }
+
+    #[test]
+    fn failure_reason_classifies_auth_vs_transport() {
+        assert_eq!(
+            Status::from_wire(2, 11).unwrap().failure_reason(),
+            NMVpnPluginFailure::LoginFailed
+        );
+        assert_eq!(
+            Status::from_wire(3, 11).unwrap().failure_reason(),
+            NMVpnPluginFailure::LoginFailed
+        );
+        // CONN_DONE / Failed are transport-class, not auth.
+        assert_eq!(
+            Status::from_wire(2, 16).unwrap().failure_reason(),
+            NMVpnPluginFailure::ConnectFailed
+        );
+        assert_eq!(
+            Status::from_wire(2, 10).unwrap().failure_reason(),
+            NMVpnPluginFailure::ConnectFailed
+        );
     }
 }

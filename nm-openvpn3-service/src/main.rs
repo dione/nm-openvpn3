@@ -72,7 +72,7 @@ async fn main() -> anyhow::Result<()> {
     // chain) so the very first method call NM sends has a handler
     // ready; otherwise zbus warns about lost messages and the first
     // Connect can race the .at() that comes after build.
-    let plugin = plugin::Plugin::new(client, quit_tx);
+    let plugin = plugin::Plugin::new(client, quit_tx, args.persist);
     let connection = zbus::connection::Builder::system()
         .context("zbus builder")?
         .serve_at(plugin::NM_VPN_PLUGIN_PATH, plugin)

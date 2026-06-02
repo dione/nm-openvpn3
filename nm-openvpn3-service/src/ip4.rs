@@ -56,13 +56,20 @@ fn lookup_tun_ipv4(tundev: &str) -> Option<(u32, u32)> {
             continue;
         }
         if let IfAddr::V4(Ifv4Addr { ip, netmask, .. }) = ifa.addr {
-            let addr_be: u32 = u32::from(ip).to_be();
-            let mask_he: u32 = u32::from(netmask);
-            let prefix = mask_he.count_ones();
-            return Some((addr_be, prefix));
+            return Some(ifv4_to_addr_prefix(ip, netmask));
         }
     }
     None
+}
+
+/// Pure transform: tun IPv4 address + netmask → (address in the BE
+/// `s_addr` shape NM expects, prefix length).  Split out from
+/// [`lookup_tun_ipv4`] so the byte-order + popcount logic is testable
+/// without live interface enumeration.
+fn ifv4_to_addr_prefix(ip: Ipv4Addr, netmask: Ipv4Addr) -> (u32, u32) {
+    let addr_be = u32::from(ip).to_be();
+    let prefix = u32::from(netmask).count_ones();
+    (addr_be, prefix)
 }
 
 /// Build the routes array NM consumes (`aau` of `[dest, prefix, next, metric]`).
@@ -286,4 +293,60 @@ pub async fn emit(
         !has_default
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tun_addr_prefix_byte_order() {
+        // Asymmetric address catches a missing/extra byte-swap (8.8.8.8
+        // is palindromic and would hide it).
+        let (addr, prefix) =
+            ifv4_to_addr_prefix(Ipv4Addr::new(10, 8, 0, 6), Ipv4Addr::new(255, 255, 255, 0));
+        assert_eq!(prefix, 24);
+        assert_eq!(addr, u32::from(Ipv4Addr::new(10, 8, 0, 6)).to_be());
+        let (_, p32) = ifv4_to_addr_prefix(
+            Ipv4Addr::new(10, 8, 0, 6),
+            Ipv4Addr::new(255, 255, 255, 255),
+        );
+        assert_eq!(p32, 32);
+        let (_, p0) = ifv4_to_addr_prefix(Ipv4Addr::new(0, 0, 0, 0), Ipv4Addr::new(0, 0, 0, 0));
+        assert_eq!(p0, 0);
+    }
+
+    #[test]
+    fn dns_array_encodes_be_and_drops_non_ipv4() {
+        let v = dns_strings_to_array(&[
+            "1.2.3.4".to_string(), // asymmetric: catches byte-swap
+            "not-an-ip".to_string(),
+            "::1".to_string(), // IPv6 literal → dropped
+            "9.9.9.9".to_string(),
+        ])
+        .unwrap();
+        let arr = <Vec<u32>>::try_from(v).unwrap();
+        assert_eq!(arr.len(), 2, "only the two IPv4 entries survive");
+        assert_eq!(arr[0], u32::from(Ipv4Addr::new(1, 2, 3, 4)).to_be());
+        assert_eq!(arr[1], u32::from(Ipv4Addr::new(9, 9, 9, 9)).to_be());
+    }
+
+    #[test]
+    fn dns_array_all_invalid_is_empty() {
+        let v = dns_strings_to_array(&["x".to_string(), "y".to_string()]).unwrap();
+        assert!(<Vec<u32>>::try_from(v).unwrap().is_empty());
+    }
+
+    #[test]
+    fn search_array_roundtrips_in_order() {
+        let v = search_to_array(&["corp.example".into(), "vpn.example".into()]).unwrap();
+        let arr = <Vec<String>>::try_from(v).unwrap();
+        assert_eq!(
+            arr,
+            vec!["corp.example".to_string(), "vpn.example".to_string()]
+        );
+        assert!(<Vec<String>>::try_from(search_to_array(&[]).unwrap())
+            .unwrap()
+            .is_empty());
+    }
 }

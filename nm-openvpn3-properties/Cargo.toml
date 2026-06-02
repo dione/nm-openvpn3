@@ -20,6 +20,9 @@ name = "nm_vpn_plugin_openvpn3"
 [dependencies]
 anyhow = { workspace = true }
 tracing = { workspace = true }
+# Scrub the http-proxy auth-file password from the heap on the import
+# path, matching the editor's zeroize-after-add_secret discipline.
+zeroize = { workspace = true }
 # `<pkcs12>` inline blobs are base64-encoded DER per openvpn's parser.
 base64 = "0.22"
 # libc for O_NOFOLLOW / mode bits on the secure-blob write path.

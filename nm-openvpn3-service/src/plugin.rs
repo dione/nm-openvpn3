@@ -115,6 +115,12 @@ pub struct Plugin {
     /// hang, and without --persist the C plugin self-exits the same
     /// way.
     quit_tx: tokio::sync::mpsc::UnboundedSender<()>,
+    /// `--persist`: keep the process alive across a Disconnect so NM can
+    /// reuse it for the next activation (the stale-teardown reset in
+    /// `do_connect`/`clear_teardown` exists precisely for this reuse).
+    /// When false (the default) Disconnect tickles `quit_tx` and the
+    /// process exits, matching NM's contract.
+    persist: bool,
 }
 
 fn make_emitter(connection: &zbus::Connection) -> zbus::Result<SignalEmitter<'static>> {
@@ -150,13 +156,18 @@ async fn set_state_via(
 }
 
 impl Plugin {
-    pub fn new(client: Client, quit_tx: tokio::sync::mpsc::UnboundedSender<()>) -> Self {
+    pub fn new(
+        client: Client,
+        quit_tx: tokio::sync::mpsc::UnboundedSender<()>,
+        persist: bool,
+    ) -> Self {
         Self {
             client,
             state: Arc::new(Mutex::new(NMVpnServiceState::Init)),
             session: Arc::new(Mutex::new(SessionState::default())),
             coord: ConnectCoordinator::new(),
             quit_tx,
+            persist,
         }
     }
 
@@ -1092,21 +1103,12 @@ fn username_to_uid(name: &str) -> Option<u32> {
 /// always the human session that triggered NM's activation.  Fallback
 /// only — `connection.permissions` is preferred when present.
 fn lowest_run_user_uid() -> Option<u32> {
-    let entries = std::fs::read_dir("/run/user").ok()?;
-    let mut best: Option<u32> = None;
-    for e in entries.flatten() {
-        let Some(name) = e.file_name().to_str().map(str::to_owned) else {
-            continue;
-        };
-        let Ok(uid) = name.parse::<u32>() else {
-            continue;
-        };
-        if uid == 0 {
-            continue;
-        }
-        best = Some(best.map_or(uid, |b| b.min(uid)));
-    }
-    best
+    std::fs::read_dir("/run/user")
+        .ok()?
+        .flatten()
+        .filter_map(|e| e.file_name().to_str().and_then(|n| n.parse::<u32>().ok()))
+        .filter(|&uid| uid != 0)
+        .min()
 }
 
 #[interface(name = "org.freedesktop.NetworkManager.VPN.Plugin")]
@@ -1135,7 +1137,9 @@ impl Plugin {
                 // Still return an error reply so the Connect method itself
                 // reflects that it did not complete.
                 if self.coord.teardown_requested() {
-                    info!("Connect aborted by Disconnect; deferring teardown to disconnect handler");
+                    info!(
+                        "Connect aborted by Disconnect; deferring teardown to disconnect handler"
+                    );
                     return Err(zbus::fdo::Error::Failed(
                         "connect aborted by disconnect".to_string(),
                     ));
@@ -1151,7 +1155,8 @@ impl Plugin {
                     .failure(crate::state::NMVpnPluginFailure::ConnectFailed.as_u32())
                     .await;
                 Err(zbus::fdo::Error::Failed(
-                    "VPN activation failed; see the nm-openvpn3 service log for details".to_string(),
+                    "VPN activation failed; see the nm-openvpn3 service log for details"
+                        .to_string(),
                 ))
             }
         }
@@ -1212,9 +1217,17 @@ impl Plugin {
         }
         self.set_state(&emitter, NMVpnServiceState::Stopped).await;
         // NM's contract: the plugin process exits after Disconnect
-        // unless it was started with --persist.  Tickle main to drop
-        // the bus name and return from the signal-wait loop.
-        let _ = self.quit_tx.send(());
+        // unless it was started with --persist.  Under --persist we keep
+        // the process alive for NM to reuse on the next Connect (the
+        // session was just torn down above, so state is clean and a
+        // fresh Connect's clear_teardown resets the coordinator flag).
+        if self.persist {
+            info!("Disconnect complete; --persist set, staying alive for reuse");
+        } else {
+            // Tickle main to drop the bus name and return from the
+            // signal-wait loop.
+            let _ = self.quit_tx.send(());
+        }
         Ok(())
     }
 
@@ -1259,6 +1272,21 @@ impl Plugin {
                             sent += 1;
                         }
                         Err(e) => {
+                            // A Disconnect can race new_secrets (they don't
+                            // share the connect lock): lock_disconnect sets
+                            // the teardown flag before mem::take'ing the
+                            // session, so ProvideInput against the now-dead
+                            // session fails.  Don't surface that as a
+                            // spurious auth failure for a deliberate
+                            // disconnect — the disconnect handler owns the
+                            // Stopped sequence.
+                            if self.coord.teardown_requested() {
+                                debug!(
+                                    "new_secrets: ProvideInput({}) failed during teardown; ignoring",
+                                    slot.name
+                                );
+                                return Ok(());
+                            }
                             warn!("ProvideInput({}) failed: {e}", slot.name);
                             missing += 1;
                         }

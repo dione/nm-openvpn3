@@ -1,3 +1,43 @@
+network-manager-openvpn3 (0.6.0~alpha.6-1~dhcargo1) noble; urgency=medium
+
+  * Second security & correctness audit pass (11 fixes, +46 tests):
+    - service (HIGH): the HMAC `auth` digest chosen in the editor was
+      honoured on export but silently dropped from the live-connect
+      profile; build_profile now emits it, so a server pinned to a
+      specific digest no longer fails the handshake while the GUI still
+      shows the configured value.
+    - editor (HIGH): opening a connection whose vpn.data holds a value
+      outside the editor's curated cipher / auth / compress /
+      data-ciphers-fallback lists (set via nmcli or import, e.g.
+      CAMELLIA-256-CBC, compress=stub) and clicking Apply silently
+      deleted the directive; the combo now preserves an out-of-vocabulary
+      value as an extra entry so it round-trips unchanged.
+    - auth-dialog: the per-secret flags check masked NOT_SAVED (0x2)
+      instead of NOT_REQUIRED (0x4), so a password flagged "ask every
+      time" was never prompted and activation failed with no dialog; it
+      now masks 0x4.
+    - service: CONN_DONE (a terminal openvpn3 tunnel-DOWN event) was
+      mapped to "connected" rather than "stopped", so NM kept showing the
+      VPN up for ~30 s after a backend-initiated teardown.
+    - service: full-tunnel redirect-gateway connections were mis-reported
+      to NM as never-default — openvpn3 installs the def1 split
+      (0.0.0.0/1 + 128.0.0.0/1), not a literal 0.0.0.0/0 — so the VPN's
+      DNS lost system-wide priority; has_default_route now recognises it.
+    - properties: an imported `keysize` was dropped from vpn.data;
+      IPv6-literal `remote` values were corrupted by the vpn.data <-> .ovpn
+      encode/decode (now bracket-aware on both sides); a no-type
+      `verify-x509-name` value containing a colon was mis-split into name
+      + a bogus type (guarded on the openvpn type keywords in both the
+      service and editor emit paths).
+    - properties: the http-proxy auth-file password read on import is now
+      zeroized, matching the editor's existing scrub discipline.
+    - service: a Disconnect racing NewSecrets no longer surfaces a
+      spurious authentication failure for a deliberate disconnect; the
+      --persist flag is now honoured (it was parsed but ignored, so the
+      process always exited on Disconnect).
+
+ -- Dominik Jarmulowicz <dominik.jarmulowicz@oversee.biz>  Tue, 02 Jun 2026 12:00:00 +0200
+
 network-manager-openvpn3 (0.6.0~alpha.5-1~dhcargo1) noble; urgency=medium
 
   * Security & correctness audit fixes across all five crates:

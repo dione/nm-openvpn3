@@ -127,10 +127,7 @@ impl Client {
         session_path: &OwnedObjectPath,
         timeout: Duration,
     ) -> anyhow::Result<()> {
-        let proxy = SessionProxy::builder(&self.connection)
-            .path(session_path.as_ref())?
-            .build()
-            .await?;
+        let proxy = self.session_proxy(session_path).await?;
         let deadline = std::time::Instant::now() + timeout;
         loop {
             match proxy.ready().await {
@@ -145,19 +142,13 @@ impl Client {
 
     /// `session.Connect()` — start the backend handshake.
     pub async fn session_connect(&self, session_path: &OwnedObjectPath) -> zbus::Result<()> {
-        let proxy = SessionProxy::builder(&self.connection)
-            .path(session_path.as_ref())?
-            .build()
-            .await?;
+        let proxy = self.session_proxy(session_path).await?;
         proxy.connect().await
     }
 
     /// `session.Disconnect()`.
     pub async fn session_disconnect(&self, session_path: &OwnedObjectPath) -> zbus::Result<()> {
-        let proxy = SessionProxy::builder(&self.connection)
-            .path(session_path.as_ref())?
-            .build()
-            .await?;
+        let proxy = self.session_proxy(session_path).await?;
         proxy.disconnect().await
     }
 
@@ -166,10 +157,7 @@ impl Client {
         &self,
         session_path: &OwnedObjectPath,
     ) -> zbus::Result<HashMap<String, i64>> {
-        let proxy = SessionProxy::builder(&self.connection)
-            .path(session_path.as_ref())?
-            .build()
-            .await?;
+        let proxy = self.session_proxy(session_path).await?;
         proxy.statistics().await
     }
 
