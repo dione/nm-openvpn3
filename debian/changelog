@@ -1,3 +1,31 @@
+network-manager-openvpn3 (0.6.0~alpha.8-1~dhcargo1) noble; urgency=medium
+
+  * Third audit pass — correctness & hardening fixes (+13 tests):
+  * service: throughput rate now clamps to 0 across an openvpn3 counter
+    reset instead of logging a hugely negative B/s value.
+  * service: cleanup_session aborts tasks and clears session state under
+    one lock acquisition, closing a window where a concurrent --persist
+    reconnect saw a half-cleaned session and was wrongly rejected.
+  * service: new_secrets checks the teardown flag before each
+    ProvideInput; getpwnam_r retries with a doubled buffer on ERANGE so
+    users with long passwd entries keep their AccessGrant.
+  * service: an IPv6-literal VPN gateway is no longer fed to DNS as a
+    malformed "host:0" lookup; it now logs a clear no-IPv4-gateway error.
+  * properties: http-proxy-auth-file is opened with the same hardening as
+    other credential reads (O_NONBLOCK + regular-file check + 16 KiB
+    cap) — a FIFO planted beside the .ovpn can no longer hang the GUI.
+  * properties: a failed inline-blob write now drops the data item with a
+    diagnostic instead of importing a connection that points at a
+    missing certificate file.
+  * properties: class_init/get_property wrapped in ffi_guard; NULL
+    connection guard in get_suggested_filename.
+  * editor: password-tls connections now require client cert + key at
+    Apply time (validation gate agreed with the save gating); new
+    "Proxy password" row makes the http-proxy-password secret editable
+    from the GUI at last.
+
+ -- Dominik Jarmulowicz <dominik.jarmulowicz@oversee.biz>  Wed, 10 Jun 2026 09:58:00 +0200
+
 network-manager-openvpn3 (0.6.0~alpha.7-1~dhcargo1) noble; urgency=medium
 
   * service: the pre-Started poller timeout warning now records the last

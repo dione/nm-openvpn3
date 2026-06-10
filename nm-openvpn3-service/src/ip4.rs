@@ -184,9 +184,16 @@ pub async fn emit(
         .flatten();
     debug!("last_connection={connected:?}");
     let ext_gw_be = match connected.as_ref() {
-        Some((_, host, _)) if !host.is_empty() => match host.parse::<Ipv4Addr>() {
-            Ok(ip) => u32::from(ip).to_be(),
-            Err(_) => {
+        Some((_, host, _)) if !host.is_empty() => match classify_gateway_host(host) {
+            GatewayHost::V4(be) => be,
+            GatewayHost::V6 => {
+                warn!(
+                    "VPN gateway '{host}' is an IPv6 literal; no IPv4 gateway \
+                     derivable for NM's ip4 config"
+                );
+                0
+            }
+            GatewayHost::Name => {
                 // Bound the async resolver so a slow / hung DNS server
                 // can't outlast NM's activation timeout.  tokio's
                 // lookup_host runs the resolution on the blocking
@@ -295,9 +302,49 @@ pub async fn emit(
     Ok(())
 }
 
+/// How to derive the IPv4 external gateway from a `connected_to` host
+/// string.
+#[derive(Debug, PartialEq)]
+enum GatewayHost {
+    /// IPv4 literal — value is the address in big-endian u32 form.
+    V4(u32),
+    /// IPv6 literal — no IPv4 gateway derivable; never feed it to DNS
+    /// (appending ":0" to a v6 literal produces a malformed lookup).
+    V6,
+    /// Hostname — resolve via DNS.
+    Name,
+}
+
+fn classify_gateway_host(host: &str) -> GatewayHost {
+    match host.parse::<std::net::IpAddr>() {
+        Ok(std::net::IpAddr::V4(v4)) => GatewayHost::V4(u32::from(v4).to_be()),
+        Ok(std::net::IpAddr::V6(_)) => GatewayHost::V6,
+        Err(_) => GatewayHost::Name,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn gateway_host_v4_literal_is_used_directly() {
+        assert_eq!(
+            classify_gateway_host("1.2.3.4"),
+            GatewayHost::V4(u32::from(Ipv4Addr::new(1, 2, 3, 4)).to_be())
+        );
+    }
+
+    #[test]
+    fn gateway_host_v6_literal_is_not_sent_to_dns() {
+        assert_eq!(classify_gateway_host("2001:db8::1"), GatewayHost::V6);
+        assert_eq!(classify_gateway_host("::1"), GatewayHost::V6);
+    }
+
+    #[test]
+    fn gateway_host_name_goes_to_dns() {
+        assert_eq!(classify_gateway_host("vpn.example.com"), GatewayHost::Name);
+    }
 
     #[test]
     fn tun_addr_prefix_byte_order() {

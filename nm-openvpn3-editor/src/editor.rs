@@ -87,6 +87,37 @@ impl ContypeFlags {
     }
 }
 
+/// Pure required-field gate for Apply.  Empty string means the field is
+/// blank.  Returns the human-readable reason the connection is not yet
+/// saveable, or `None` when the minimum-viable field set is filled in.
+/// Field requirements follow [`ContypeFlags`]: anything `needs_user_cert`
+/// must carry both a client certificate and a private key.
+fn validate_required_fields(
+    ct: &str,
+    remote: &str,
+    ca: &str,
+    cert: &str,
+    key: &str,
+    username: &str,
+    static_key: &str,
+) -> Option<String> {
+    if remote.is_empty() {
+        Some("missing gateway address".to_string())
+    } else if matches!(ct, CONTYPE_TLS | CONTYPE_PASSWORD_TLS) && ca.is_empty() {
+        Some("TLS connection requires a CA certificate".to_string())
+    } else if matches!(ct, CONTYPE_TLS | CONTYPE_PASSWORD_TLS)
+        && (cert.is_empty() || key.is_empty())
+    {
+        Some("TLS connection requires both client certificate and private key".to_string())
+    } else if matches!(ct, CONTYPE_PASSWORD | CONTYPE_PASSWORD_TLS) && username.is_empty() {
+        Some("password authentication requires a user name".to_string())
+    } else if ct == CONTYPE_STATIC_KEY && static_key.is_empty() {
+        Some("static-key connection requires a key file".to_string())
+    } else {
+        None
+    }
+}
+
 const ALLOW_COMPRESSION: &[(&str, &str)] = &[
     ("", "Default"),
     ("no", "Disabled"),
@@ -391,6 +422,7 @@ struct EditorState {
     proxy_server: EntryRow,
     proxy_port: SpinRow,
     proxy_user: EntryRow,
+    proxy_pass: PasswordEntryRow,
 
     // Misc / Overrides
     or_route_nopull: SwitchRow,
@@ -527,21 +559,15 @@ unsafe extern "C" fn iface_update_connection(
         // activation) means the user sees a clear "Apply rejected" hint in
         // libnma's dialog rather than an opaque red banner on Connect.
         let ct = st.contype.selected_id();
-        let remote_text = st.remote.text();
-        let remote_str = remote_text.as_str();
-        let validity_err = if remote_str.is_empty() {
-            Some("missing gateway address".to_string())
-        } else if matches!(ct, "tls" | "password-tls") && st.ca.text().is_empty() {
-            Some("TLS connection requires a CA certificate".to_string())
-        } else if ct == "tls" && (st.cert.text().is_empty() || st.key.text().is_empty()) {
-            Some("TLS connection requires both client certificate and private key".to_string())
-        } else if matches!(ct, "password" | "password-tls") && st.username.text().is_empty() {
-            Some("password authentication requires a user name".to_string())
-        } else if ct == "static-key" && st.static_key.text().is_empty() {
-            Some("static-key connection requires a key file".to_string())
-        } else {
-            None
-        };
+        let validity_err = validate_required_fields(
+            ct,
+            st.remote.text().as_str(),
+            st.ca.text().as_str(),
+            st.cert.text().as_str(),
+            st.key.text().as_str(),
+            st.username.text().as_str(),
+            st.static_key.text().as_str(),
+        );
         if let Some(msg) = validity_err {
             set_error(error, NM_OPENVPN3_PLUGIN_ERROR_FAILED, &msg);
             return GFALSE;
@@ -756,6 +782,8 @@ unsafe extern "C" fn iface_update_connection(
         set("proxy-server", st.proxy_server.text().as_ref());
         set("proxy-port", &int_or_empty(st.proxy_port.value() as i64));
         set("http-proxy-username", st.proxy_user.text().as_ref());
+        let proxy_pw = Zeroizing::new(st.proxy_pass.text().as_str().to_string());
+        set_secret("http-proxy-password", proxy_pw.as_str());
 
         // Misc
         set(
@@ -1441,6 +1469,12 @@ fn build_widget_tree(initial: &std::collections::BTreeMap<String, String>) -> Ed
             .unwrap_or(""),
     );
     exp_proxy.add_row(&proxy_user);
+    // Secrets are never projected back into the dialog (see the
+    // set_secret blank-preserves note in iface_update_connection), so
+    // the row starts blank even when a proxy password is stored; typing
+    // a value sets/overwrites it, leaving it blank keeps the stored one.
+    let proxy_pass = password_row("Proxy password");
+    exp_proxy.add_row(&proxy_pass);
     g_advanced.add(&exp_proxy);
 
     // ---- Misc / overrides ----
@@ -1546,6 +1580,7 @@ fn build_widget_tree(initial: &std::collections::BTreeMap<String, String>) -> Ed
         proxy_server,
         proxy_port,
         proxy_user,
+        proxy_pass,
         or_route_nopull,
         or_force_default_gateway,
         or_block_ipv6,
@@ -1722,6 +1757,9 @@ fn wire_changed_signals(st: &EditorState, editor_ptr: usize) {
     let alive_pw = st.alive.clone();
     st.password
         .connect_changed(move |_| emit_changed(editor_ptr, &alive_pw));
+    let alive_ppw = st.alive.clone();
+    st.proxy_pass
+        .connect_changed(move |_| emit_changed(editor_ptr, &alive_ppw));
 
     let spins: &[&SpinRow] = &[
         &st.port,
@@ -1891,3 +1929,52 @@ pub unsafe fn new_editor(connection: *mut NMConnection, error: *mut *mut GError)
 const _: fn() = || {
     let _ = Path::new("");
 };
+
+#[cfg(test)]
+mod tests {
+    use super::validate_required_fields;
+
+    fn v(ct: &str, remote: &str, ca: &str, cert: &str, key: &str) -> Option<String> {
+        validate_required_fields(ct, remote, ca, cert, key, "user", "sk.key")
+    }
+
+    #[test]
+    fn missing_gateway_always_rejected() {
+        assert!(v("tls", "", "ca.pem", "c.pem", "k.pem").is_some());
+    }
+
+    #[test]
+    fn tls_requires_ca_cert_and_key() {
+        assert!(v("tls", "gw", "", "c.pem", "k.pem").is_some());
+        assert!(v("tls", "gw", "ca.pem", "", "k.pem").is_some());
+        assert!(v("tls", "gw", "ca.pem", "c.pem", "").is_some());
+        assert!(v("tls", "gw", "ca.pem", "c.pem", "k.pem").is_none());
+    }
+
+    #[test]
+    fn password_tls_requires_cert_and_key_too() {
+        // needs_user_cert covers password-tls — the validation gate must
+        // agree with the save-gating, not silently write empty cert/key.
+        assert!(v("password-tls", "gw", "ca.pem", "", "k.pem").is_some());
+        assert!(v("password-tls", "gw", "ca.pem", "c.pem", "").is_some());
+        assert!(v("password-tls", "gw", "ca.pem", "c.pem", "k.pem").is_none());
+    }
+
+    #[test]
+    fn password_requires_username() {
+        assert!(
+            validate_required_fields("password", "gw", "ca.pem", "", "", "", "").is_some()
+        );
+        assert!(
+            validate_required_fields("password", "gw", "ca.pem", "", "", "alice", "").is_none()
+        );
+    }
+
+    #[test]
+    fn static_key_requires_key_file() {
+        assert!(validate_required_fields("static-key", "gw", "", "", "", "", "").is_some());
+        assert!(
+            validate_required_fields("static-key", "gw", "", "", "", "", "sk.key").is_none()
+        );
+    }
+}

@@ -62,15 +62,21 @@ struct Openvpn3EditorPluginClass {
 /// `class_init` — install GObject property overrides for the three
 /// interface-declared properties (name/description/service-type).
 unsafe extern "C" fn class_init(class_ptr: gpointer, _class_data: gpointer) {
-    let object_class = class_ptr.cast::<GObjectClass>();
-    (*object_class).get_property = Some(get_property);
+    // ffi_guard like every other GLib-invoked callback: the CStr
+    // unwraps are infallible for these static literals today, but a
+    // panic here would unwind across the C ABI (UB) if that ever
+    // changes.
+    ffi_guard((), || unsafe {
+        let object_class = class_ptr.cast::<GObjectClass>();
+        (*object_class).get_property = Some(get_property);
 
-    let prop_name = CStr::from_bytes_with_nul(NM_VPN_EDITOR_PLUGIN_NAME).unwrap();
-    let prop_desc = CStr::from_bytes_with_nul(NM_VPN_EDITOR_PLUGIN_DESCRIPTION).unwrap();
-    let prop_svc = CStr::from_bytes_with_nul(NM_VPN_EDITOR_PLUGIN_SERVICE).unwrap();
-    g_object_class_override_property(object_class, PROP_NAME, prop_name.as_ptr());
-    g_object_class_override_property(object_class, PROP_DESC, prop_desc.as_ptr());
-    g_object_class_override_property(object_class, PROP_SERVICE, prop_svc.as_ptr());
+        let prop_name = CStr::from_bytes_with_nul(NM_VPN_EDITOR_PLUGIN_NAME).unwrap();
+        let prop_desc = CStr::from_bytes_with_nul(NM_VPN_EDITOR_PLUGIN_DESCRIPTION).unwrap();
+        let prop_svc = CStr::from_bytes_with_nul(NM_VPN_EDITOR_PLUGIN_SERVICE).unwrap();
+        g_object_class_override_property(object_class, PROP_NAME, prop_name.as_ptr());
+        g_object_class_override_property(object_class, PROP_DESC, prop_desc.as_ptr());
+        g_object_class_override_property(object_class, PROP_SERVICE, prop_svc.as_ptr());
+    });
 }
 
 /// `instance_init` — no-op, the struct only holds the GObject parent.
@@ -84,14 +90,16 @@ unsafe extern "C" fn get_property(
     value: *mut GValue,
     _pspec: *mut GParamSpec,
 ) {
-    let bytes: &[u8] = match prop_id {
-        PROP_NAME => PLUGIN_NAME,
-        PROP_DESC => PLUGIN_DESC,
-        PROP_SERVICE => NM_VPN_SERVICE_TYPE_OPENVPN3,
-        _ => return,
-    };
-    let cstr = CStr::from_bytes_with_nul(bytes).expect("static c-string");
-    gobject_sys::g_value_set_string(value, cstr.as_ptr());
+    ffi_guard((), || unsafe {
+        let bytes: &[u8] = match prop_id {
+            PROP_NAME => PLUGIN_NAME,
+            PROP_DESC => PLUGIN_DESC,
+            PROP_SERVICE => NM_VPN_SERVICE_TYPE_OPENVPN3,
+            _ => return,
+        };
+        let cstr = CStr::from_bytes_with_nul(bytes).expect("static c-string");
+        gobject_sys::g_value_set_string(value, cstr.as_ptr());
+    });
 }
 
 /// Run an FFI entrypoint body, converting any Rust panic into a clean
@@ -273,6 +281,9 @@ unsafe extern "C" fn iface_get_suggested_filename(
     connection: *mut NMConnection,
 ) -> *mut c_char {
     ffi_guard(ptr::null_mut(), || unsafe {
+        if connection.is_null() {
+            return ptr::null_mut();
+        }
         let s_con = nm_connection_get_setting_connection(connection);
         if s_con.is_null() {
             return ptr::null_mut();

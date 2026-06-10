@@ -596,16 +596,24 @@ impl Plugin {
     /// the activation-failure paths so a half-attached listener can't
     /// keep referencing a dead session.
     async fn cleanup_session(&self, session_path: &OwnedObjectPath) {
-        // Abort the background tasks FIRST so a listener/poller can't
-        // keep referencing session_path while we tear the session down
-        // (session_disconnect may take two retries, leaving a window in
-        // which a still-running task talks to a half-dead session).
+        // Abort the background tasks AND clear the cached state under a
+        // single lock acquisition: splitting them around the D-Bus
+        // disconnect call below would leave a window where a concurrent
+        // Connect (--persist) or Disconnect observes aborted tasks with
+        // session_path still set — a half-cleaned session.  The
+        // disconnect itself runs on the local path argument afterwards,
+        // same pattern `disconnect()` uses (mem::take, then act on
+        // locals).
         {
             let mut s = self.session.lock().await;
             s.disconnect_requested.store(true, Ordering::Release);
             for h in s.tasks.drain(..) {
                 h.abort();
             }
+            s.config_path = None;
+            s.session_path = None;
+            s.current_data.clear();
+            s.current_secrets.clear();
         }
         // openvpn3 drops sessions whose backend has yet to register;
         // an in-flight tear-down can return ObjectNotFound or a
@@ -618,11 +626,6 @@ impl Plugin {
                 );
             }
         }
-        let mut s = self.session.lock().await;
-        s.config_path = None;
-        s.session_path = None;
-        s.current_data.clear();
-        s.current_secrets.clear();
     }
 
     /// Grant the activating user per-property access to the openvpn3
@@ -916,14 +919,9 @@ impl Plugin {
                         first = false;
                     } else {
                         let now = std::time::Instant::now();
-                        let dt = now.duration_since(last_tick).as_secs_f64().max(1e-3);
-                        // saturating_sub: openvpn3 counters reset to 0 on a
-                        // daemon reload / session resume, so a naive `bin -
-                        // last` can go negative and render as a wildly
-                        // negative throughput.  Clamp the delta at 0 across a
-                        // reset rather than printing nonsense.
-                        let rate_rx = (bin.saturating_sub(last_bytes_in) as f64 / dt) as i64;
-                        let rate_tx = (bout.saturating_sub(last_bytes_out) as f64 / dt) as i64;
+                        let dt = now.duration_since(last_tick).as_secs_f64();
+                        let rate_rx = byte_rate(last_bytes_in, bin, dt);
+                        let rate_tx = byte_rate(last_bytes_out, bout, dt);
                         info!(
                             "stats: rx={bin}B tx={bout}B tun_rx={tbin}B tun_tx={tbout}B \
                          pkt_in={pkt_in} pkt_out={pkt_out} \
@@ -1093,24 +1091,33 @@ fn username_to_uid(name: &str) -> Option<u32> {
     // libc-suggested minimum (fallback 4 KiB).  `result` is set to NULL
     // when no entry matches, which we treat as "unknown user".
     unsafe {
-        let bufsize = match libc::sysconf(libc::_SC_GETPW_R_SIZE_MAX) {
+        let mut bufsize = match libc::sysconf(libc::_SC_GETPW_R_SIZE_MAX) {
             n if n > 0 => n as usize,
             _ => 4096,
         };
-        let mut buf = vec![0u8; bufsize];
-        let mut pwd: libc::passwd = std::mem::zeroed();
-        let mut result: *mut libc::passwd = std::ptr::null_mut();
-        let rc = libc::getpwnam_r(
-            cname.as_ptr(),
-            &mut pwd,
-            buf.as_mut_ptr().cast::<libc::c_char>(),
-            buf.len(),
-            &mut result,
-        );
-        if rc == 0 && !result.is_null() {
-            Some(pwd.pw_uid)
-        } else {
-            None
+        loop {
+            let mut buf = vec![0u8; bufsize];
+            let mut pwd: libc::passwd = std::mem::zeroed();
+            let mut result: *mut libc::passwd = std::ptr::null_mut();
+            let rc = libc::getpwnam_r(
+                cname.as_ptr(),
+                &mut pwd,
+                buf.as_mut_ptr().cast::<libc::c_char>(),
+                buf.len(),
+                &mut result,
+            );
+            if rc == 0 && !result.is_null() {
+                return Some(pwd.pw_uid);
+            }
+            // POSIX: ERANGE means the scratch buffer was too small for
+            // this passwd entry (long GECOS/shell), NOT "unknown user" —
+            // retry with a doubled buffer instead of silently skipping
+            // the AccessGrant for a perfectly valid user.
+            if rc == libc::ERANGE && bufsize < (1 << 20) {
+                bufsize *= 2;
+                continue;
+            }
+            return None;
         }
     }
 }
@@ -1280,6 +1287,15 @@ impl Plugin {
         let mut sent = 0usize;
         let mut missing = 0usize;
         for slot in pending {
+            // A Disconnect can race new_secrets (they don't share the
+            // connect lock).  Check the teardown flag BEFORE each
+            // ProvideInput, not only in its error path — otherwise the
+            // first slot of a batch can land on a half-torn-down
+            // session and earlier slots' errors are misattributed.
+            if self.coord.teardown_requested() {
+                debug!("new_secrets: teardown in progress; dropping remaining slots");
+                return Ok(());
+            }
             let vkey = crate::secrets::slot_to_vpn_key(&slot);
             match crate::secrets::lookup_value(vkey, &data, &secrets) {
                 Some(value) if !value.is_empty() => {
@@ -1363,4 +1379,38 @@ impl Plugin {
 
     #[zbus(signal)]
     async fn login_banner(emitter: SignalEmitter<'_>, banner: String) -> zbus::Result<()>;
+}
+
+/// Per-tick throughput from two cumulative byte counters.  openvpn3
+/// counters reset to 0 on a daemon reload / session resume, so a naive
+/// `cur - prev` goes negative and renders as a wildly negative
+/// throughput; clamp the delta at 0 across a reset instead.
+fn byte_rate(prev: i64, cur: i64, dt_secs: f64) -> i64 {
+    (cur.saturating_sub(prev).max(0) as f64 / dt_secs.max(1e-3)) as i64
+}
+
+#[cfg(test)]
+mod tests {
+    use super::byte_rate;
+
+    #[test]
+    fn byte_rate_normal_delta() {
+        assert_eq!(byte_rate(0, 3000, 30.0), 100);
+        assert_eq!(byte_rate(1000, 1000, 30.0), 0);
+    }
+
+    #[test]
+    fn byte_rate_counter_reset_clamps_to_zero() {
+        // openvpn3 reset: counter drops from 1 MB back toward 0 — the
+        // rate must clamp to 0 (unknowable across a reset), not report
+        // i64::MIN-ish garbage.
+        assert_eq!(byte_rate(1_000_000, 0, 30.0), 0);
+        assert_eq!(byte_rate(1_000_000, 500, 30.0), 0);
+    }
+
+    #[test]
+    fn byte_rate_zero_dt_does_not_divide_by_zero() {
+        let r = byte_rate(0, 1000, 0.0);
+        assert!(r > 0, "dt clamped to a small epsilon, got {r}");
+    }
 }

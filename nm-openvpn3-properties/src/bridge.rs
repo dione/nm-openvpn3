@@ -89,6 +89,45 @@ fn read_profile_securely(path: &Path) -> Option<String> {
     Some(buf)
 }
 
+/// Defensive open + bounded read for a small user-supplied credentials
+/// file: `O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK` (no symlink redirect, no
+/// blocking on a FIFO), fstat confirms a regular file (rejects FIFOs /
+/// devices), and the read is capped at `max_bytes`.  Returns the body
+/// in a `Zeroizing` so credential text is scrubbed on drop.
+fn read_small_regular_file(
+    path: &Path,
+    max_bytes: u64,
+) -> std::io::Result<Zeroizing<String>> {
+    use std::io::Read;
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC | libc::O_NONBLOCK)
+        .open(path)?;
+    let md = file.metadata()?;
+    if !md.is_file() || md.len() > max_bytes {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!(
+                "not a regular file within the {max_bytes}-byte cap (len={}, regular={})",
+                md.len(),
+                md.is_file()
+            ),
+        ));
+    }
+    let mut buf = Zeroizing::new(String::with_capacity(
+        (md.len() as usize).saturating_add(1),
+    ));
+    let mut limited = (&file).take(max_bytes + 1);
+    limited.read_to_string(&mut buf)?;
+    if buf.len() as u64 > max_bytes {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "file grew past the size cap during read",
+        ));
+    }
+    Ok(buf)
+}
+
 /// Build a fresh `NMConnection` from an `.ovpn` text + the connection
 /// id derived from the file's basename.  Returns NULL + populated
 /// GError on failure, mirroring the C tree's `do_import` contract.
@@ -187,49 +226,48 @@ pub unsafe fn ovpn_text_to_connection(
         } else {
             let af_path = parent_dir.join(af);
             // The bare-filename guard above means there is no
-            // intermediate directory to traverse; O_NOFOLLOW then blocks
-            // a symlink AT the final component (creds -> /etc/shadow),
-            // yielding ELOOP which falls through to the skip.
-            match std::fs::OpenOptions::new()
-                .read(true)
-                .custom_flags(libc::O_NOFOLLOW)
-                .open(&af_path)
-            {
-                Ok(mut f) => {
-                    // Hold the authfile body + password in Zeroizing so the
-                    // plaintext is scrubbed from the heap on drop — the
-                    // password is a credential and this mirrors the editor's
-                    // zeroize-after-add_secret discipline.
-                    let mut contents = Zeroizing::new(String::new());
-                    if std::io::Read::read_to_string(&mut f, &mut contents).is_ok() {
-                        let mut iter = contents.lines();
-                        let user = iter.next().unwrap_or("").trim().to_string();
-                        let pass = Zeroizing::new(iter.next().unwrap_or("").trim().to_string());
-                        if !user.is_empty() {
-                            data.insert("http-proxy-username".into(), user);
-                        }
-                        if !pass.is_empty() {
-                            if let (Ok(k), Ok(v)) = (
-                                CString::new("http-proxy-password"),
-                                CString::new(pass.as_str()),
-                            ) {
-                                nm_setting_vpn_add_secret(s_vpn_cast, k.as_ptr(), v.as_ptr());
-                                let _ = nm_setting_set_secret_flags(
-                                    s_vpn.cast::<NMSetting>(),
-                                    k.as_ptr(),
-                                    NM_SETTING_SECRET_FLAG_AGENT_OWNED,
-                                    ptr::null_mut(),
-                                );
-                                // libnm copied the value into its own store;
-                                // scrub our plaintext CString before it drops.
-                                let mut vb = v.into_bytes_with_nul();
-                                vb.zeroize();
-                            }
+            // intermediate directory to traverse; the hardened open
+            // (O_NOFOLLOW | O_NONBLOCK + regular-file check + size cap)
+            // blocks a symlink AT the final component (creds ->
+            // /etc/shadow, yielding ELOOP), a FIFO planted to hang the
+            // GUI thread, and an oversized file.  The body lives in a
+            // Zeroizing so the plaintext credential is scrubbed from
+            // the heap on drop.
+            const MAX_AUTHFILE_BYTES: u64 = 16 * 1024;
+            match read_small_regular_file(&af_path, MAX_AUTHFILE_BYTES) {
+                Ok(contents) => {
+                    let mut iter = contents.lines();
+                    let user = iter.next().unwrap_or("").trim().to_string();
+                    let pass = Zeroizing::new(iter.next().unwrap_or("").trim().to_string());
+                    if !user.is_empty() {
+                        data.insert("http-proxy-username".into(), user);
+                    }
+                    if !pass.is_empty() {
+                        if let (Ok(k), Ok(v)) = (
+                            CString::new("http-proxy-password"),
+                            CString::new(pass.as_str()),
+                        ) {
+                            nm_setting_vpn_add_secret(s_vpn_cast, k.as_ptr(), v.as_ptr());
+                            let _ = nm_setting_set_secret_flags(
+                                s_vpn.cast::<NMSetting>(),
+                                k.as_ptr(),
+                                NM_SETTING_SECRET_FLAG_AGENT_OWNED,
+                                ptr::null_mut(),
+                            );
+                            // libnm copied the value into its own store;
+                            // scrub our plaintext CString before it drops.
+                            let mut vb = v.into_bytes_with_nul();
+                            vb.zeroize();
                         }
                     }
                 }
                 Err(e) if e.raw_os_error() == Some(libc::ELOOP) => {
                     eprintln!("nm-openvpn3: refusing symlinked http-proxy-auth-file: {authfile}");
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::InvalidInput => {
+                    eprintln!(
+                        "nm-openvpn3: refusing http-proxy-auth-file '{authfile}': {e}"
+                    );
                 }
                 // Missing or unreadable — skip silently, as before.
                 Err(_) => {}
@@ -329,7 +367,17 @@ pub unsafe fn ovpn_text_to_connection(
         } else {
             body.as_bytes().to_vec()
         };
-        let _ = write_blob_securely(&blob_path, &bytes);
+        // A failed write must NOT leave a data item pointing at a
+        // missing file — that imports "successfully" and then fails at
+        // activation with an opaque missing-cert error.  Skip the item
+        // and tell the user why.
+        if let Err(e) = write_blob_securely(&blob_path, &bytes) {
+            eprintln!(
+                "nm-openvpn3: failed to write inline blob '{name}' to {}: {e}; dropping it from the connection",
+                blob_path.display()
+            );
+            continue;
+        }
         let Ok(key_c) = CString::new(name.as_str()) else {
             continue;
         };
@@ -535,6 +583,35 @@ mod tests {
 
         let _ = std::fs::remove_file(&link);
         let _ = std::fs::remove_file(&real);
+    }
+
+    #[test]
+    fn small_file_read_accepts_regular_file() {
+        let p = tmp("auth_ok");
+        std::fs::write(&p, b"user\npass\n").unwrap();
+        let body = read_small_regular_file(&p, 16 * 1024).unwrap();
+        assert_eq!(body.as_str(), "user\npass\n");
+        let _ = std::fs::remove_file(&p);
+    }
+
+    #[test]
+    fn small_file_read_rejects_fifo_without_blocking() {
+        let p = tmp("auth_fifo");
+        let _ = std::fs::remove_file(&p);
+        let c = std::ffi::CString::new(p.to_str().unwrap()).unwrap();
+        assert_eq!(unsafe { libc::mkfifo(c.as_ptr(), 0o600) }, 0);
+        // A FIFO with no writer: a plain open(O_RDONLY) would block the
+        // GUI thread forever.  Must error out instead.
+        assert!(read_small_regular_file(&p, 16 * 1024).is_err());
+        let _ = std::fs::remove_file(&p);
+    }
+
+    #[test]
+    fn small_file_read_rejects_oversized() {
+        let p = tmp("auth_big");
+        std::fs::write(&p, vec![b'x'; 1025]).unwrap();
+        assert!(read_small_regular_file(&p, 1024).is_err());
+        let _ = std::fs::remove_file(&p);
     }
 
     #[test]
