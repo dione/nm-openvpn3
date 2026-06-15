@@ -78,6 +78,12 @@ where
 /// was lost in transit, so a blind retry would leave a duplicate
 /// config / session object behind.
 fn is_pre_dispatch_transient(e: &zbus::Error) -> bool {
+    // `fdo::Error::from` is a lossy projection: any zbus error that is
+    // not an FDO error (InputOutput, Handshake, …) maps to
+    // `fdo::Error::ZBus`, which matches none of the arms below and so is
+    // correctly treated as permanent (not retried).  zbus 5 exposes no
+    // `Error::fdo_error()` accessor, so this round-trip is the supported
+    // way to inspect the FDO variant.
     let fdo_err = fdo::Error::from(e.clone());
     matches!(
         fdo_err,

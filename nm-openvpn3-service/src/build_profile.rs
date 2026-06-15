@@ -246,10 +246,14 @@ pub fn build_profile_string(
 
     match get(KEY_MSSFIX) {
         Some("yes") => w.line(&["mssfix"]),
-        Some(v) => match v.parse::<i64>() {
-            Ok(n) => w.line(&["mssfix", &n.to_string()]),
-            Err(_) => w.line(&["mssfix", v]),
-        },
+        // Drop a non-numeric value silently, matching `line_int` for
+        // every other numeric directive rather than emitting junk that
+        // openvpn3 would reject at parse time.
+        Some(v) => {
+            if let Ok(n) = v.parse::<i64>() {
+                w.line(&["mssfix", &n.to_string()]);
+            }
+        }
         None => {}
     }
 
@@ -563,7 +567,10 @@ impl Writer {
             first = false;
             push_escaped(&mut self.buf, a);
         }
-        self.buf.push('\n');
+        // If every arg was None, emit nothing — never a stray blank line.
+        if !first {
+            self.buf.push('\n');
+        }
     }
 
     /// Append a verbatim line.  Caller is responsible for any escaping;
@@ -641,6 +648,20 @@ mod tests {
             profile.lines().any(|l| l == line),
             "expected line `{line}` in profile, got:\n{profile}"
         );
+    }
+
+    #[test]
+    fn line_opt_all_none_emits_nothing() {
+        let mut w = Writer::new();
+        w.line_opt(&[None, None]);
+        assert_eq!(w.into_inner(), "", "all-None must not emit a blank line");
+    }
+
+    #[test]
+    fn line_opt_skips_none_args() {
+        let mut w = Writer::new();
+        w.line_opt(&[Some("secret"), Some("keyfile"), None]);
+        assert_eq!(w.into_inner(), "secret keyfile\n");
     }
 
     fn tail() -> &'static [&'static str] {
@@ -1127,6 +1148,19 @@ mod tests {
         assert!(
             out2.lines().any(|l| l == "mssfix"),
             "mssfix yes is a bare flag: {out2}"
+        );
+
+        // A non-numeric, non-"yes" mssfix is dropped silently — same as
+        // every other numeric directive (line_int) — not emitted raw.
+        let data3 = dict(&[
+            ("connection-type", "tls"),
+            ("remote", "v"),
+            ("mssfix", "auto"),
+        ]);
+        let out3 = build_profile_string(&data3, &secrets).expect("build");
+        assert!(
+            !out3.lines().any(|l| l.starts_with("mssfix")),
+            "non-numeric mssfix must be dropped: {out3}"
         );
     }
 

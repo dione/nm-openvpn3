@@ -218,6 +218,10 @@ fn read_vpn_details<R: BufRead>(reader: R) -> Result<(DataMap, SecretsMap)> {
         }
         if let Some((prefix, value)) = line.split_once('=') {
             match (prefix, &current_key) {
+                // An empty key would insert a "" entry that shadows a
+                // later real value's slot; libnm never emits one, but a
+                // malformed/injected stream could.  Drop the pending key.
+                ("DATA_KEY" | "SECRET_KEY", _) if value.is_empty() => current_key = None,
                 ("DATA_KEY", _) => current_key = Some((value.to_string(), false)),
                 ("DATA_VAL", Some((k, false))) => {
                     data.insert(k.clone(), value.to_string());
@@ -617,6 +621,13 @@ mod tests {
         let (d, s2) = read_vpn_details(&bad[..]).unwrap();
         assert!(s2.is_empty(), "out-of-order SECRET_VAL must not be filed");
         assert_eq!(d.get("k").map(String::as_str), Some("v"));
+
+        // An empty DATA_KEY/SECRET_KEY must not create a "" ghost entry
+        // that swallows the following VAL.
+        let empty_key = b"DATA_KEY=\nDATA_VAL=v\nDATA_KEY=real\nDATA_VAL=w\n\nDONE\n";
+        let (d3, _s3) = read_vpn_details(&empty_key[..]).unwrap();
+        assert!(!d3.contains_key(""), "empty key must not be filed");
+        assert_eq!(d3.get("real").map(String::as_str), Some("w"));
     }
 
     #[test]

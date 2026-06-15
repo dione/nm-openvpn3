@@ -1269,9 +1269,16 @@ impl Plugin {
         let pending;
         {
             let mut s = self.session.lock().await;
-            s.current_data = data.clone();
-            s.current_secrets = secrets.clone();
             session_path = s.session_path.clone();
+            // Only refresh the credential snapshot while a session is
+            // live — the refresh exists so a subsequent AttentionRequired
+            // burst can auto-provide.  With no session there is nothing to
+            // feed, so stashing plaintext secrets would just keep them in
+            // memory longer than necessary.
+            if session_path.is_some() {
+                s.current_data = data.clone();
+                s.current_secrets = secrets.clone();
+            }
             pending = std::mem::take(&mut s.pending_slots);
         }
 
