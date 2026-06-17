@@ -1258,7 +1258,11 @@ fn build_widget_tree(initial: &std::collections::BTreeMap<String, String>) -> Ed
     exp_conn.add_row(&keepalive_restart);
     let reneg_seconds = spin_row(
         "Renegotiate after",
-        Some("Re-key seconds. 0 leaves the default (3600)."),
+        // 0 here means "unset" (the key is removed and openvpn3 keeps
+        // its 3600 s default) — NOT openvpn's literal `reneg-sec 0`,
+        // which disables rekeying.  Disabling is not yet expressible;
+        // type an explicit interval to change it.
+        Some("Re-key interval in seconds. Leave at 0 to keep openvpn3's default (3600)."),
         0.0,
         86400.0,
         parse_int_default(initial.get("reneg-seconds"), 0.0),

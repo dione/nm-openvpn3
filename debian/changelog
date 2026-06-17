@@ -1,3 +1,38 @@
+network-manager-openvpn3 (0.6.0~alpha.9-1~dhcargo1) noble; urgency=medium
+
+  * Fifth audit pass — parallel per-crate review, security findings
+    independently re-verified for reachability (+6 tests). See
+    docs/AUDIT-2026-06-pass5.md.
+  * service: the extra-route allow-list now rejects any control char. A
+    bare carriage return slipped past it before — split_whitespace() in
+    the validator treats \r as a separator but routes.lines() does not,
+    so "route X\rscript-security 3" validated as benign yet emitted
+    verbatim, smuggling a script hook past the allow-list if openvpn3
+    treats the \r as a line break.
+  * service: a backend failure no longer reports two Failures to NM. The
+    StatusChange listener and the status poller both watched for the same
+    terminal event; a per-session guard now lets only the first emit. The
+    stats timer also self-exits on failure instead of polling a dead
+    session until Disconnect.
+  * properties: the connection_to_nm_data C callback (invoked by
+    nm_setting_vpn_foreach_data_item) is now wrapped in ffi_guard — a
+    panic in it would otherwise unwind across libnm's C frame (UB).
+  * properties: importing a UDP profile whose proto is a -client/-server
+    variant (udp-client, udp4-client, …) no longer silently flips it to
+    TCP.
+  * properties: a standalone "key-direction N" directive is now carried
+    into vpn.data (ta-dir for tls-auth, static-key-direction for a static
+    secret) instead of being dropped on import.
+  * properties: the .ovpn exporter escapes the option name, not just its
+    args — closing a latent directive-injection path should a future
+    Save-As ever emit a parsed config verbatim.
+  * editor: corrected the misleading "reneg-seconds 0" subtitle (0 keeps
+    openvpn3's default; it does not disable rekeying).
+  * cleanup: removed dead data_mode (auth-dialog) and have_client
+    (import_export) state.
+
+ -- Dominik Jarmulowicz <dominik.jarmulowicz@oversee.biz>  Wed, 17 Jun 2026 20:21:00 +0200
+
 network-manager-openvpn3 (0.6.0~alpha.8-1~dhcargo1) noble; urgency=medium
 
   * Third audit pass — correctness & hardening fixes (+13 tests):

@@ -248,7 +248,15 @@ impl OvpnConfig {
         for d in &self.directives {
             match d {
                 Directive::Option { name, args } => {
-                    out.push_str(name);
+                    // Escape the name exactly like args.  A no-op for
+                    // real directive keywords (`[a-z0-9-]`, all benign),
+                    // but if a name ever carried whitespace/newline
+                    // (e.g. a parsed `"a\nup x"` token) emitting it raw
+                    // would split one logical directive into two
+                    // physical lines and smuggle a script hook into the
+                    // exported `.ovpn`.  `push_escaped` keeps it one
+                    // token (newline → literal `\n`).
+                    push_escaped(&mut out, name);
                     for a in args {
                         out.push(' ');
                         push_escaped(&mut out, a);
@@ -608,18 +616,26 @@ impl OvpnConfig {
     }
 
     /// Project the config onto an NM-style `vpn.data` dict.  Lossy by
-    /// design — only the option subset the editor exposes is mapped.
-    /// Unknown options are *not* surfaced here; they survive via the
-    /// [`Directive`] vector and are emitted unchanged on a Save-As.
+    /// design — only the option subset the editor exposes is mapped;
+    /// unknown options are dropped.  Round-trip fidelity for the
+    /// unmapped tail is provided by pinning the verbatim `.ovpn` (see
+    /// `bridge::connection_to_ovpn_text`, which re-exports the pinned
+    /// file when present), NOT by re-emitting the parsed [`Directive`]
+    /// vector — nothing persists that vector past import.
     pub fn as_nm_data(&self) -> BTreeMap<String, String> {
         let mut data = BTreeMap::new();
 
-        let mut have_client = false;
         let mut have_auth_user_pass = false;
         let mut have_cert = false;
         let mut have_key = false;
         let mut have_secret = false;
         let mut have_ca = false;
+        let mut have_tls_auth = false;
+        // A standalone `key-direction N` directive (as opposed to the
+        // 2nd arg of `secret`/`tls-auth`).  openvpn applies it to
+        // whichever keyed directive is present; resolve that after the
+        // loop since the directive may appear before its target.
+        let mut key_direction: Option<String> = None;
 
         for d in &self.directives {
             match d {
@@ -627,7 +643,10 @@ impl OvpnConfig {
                     let n = name.as_str();
                     let a0 = args.first().map(String::as_str);
                     match n {
-                        "client" | "tls-client" => have_client = true,
+                        // `client`/`tls-client` carry no vpn.data key of
+                        // their own — connection-type is inferred below
+                        // from the cert/key/auth-user-pass/ca mix.
+                        "client" | "tls-client" => {}
                         "auth-user-pass" => have_auth_user_pass = true,
                         "dev" => {
                             if let Some(v) = a0 {
@@ -640,7 +659,14 @@ impl OvpnConfig {
                             }
                         }
                         "proto" => match a0 {
-                            Some(p) if !matches!(p, "udp" | "udp4" | "udp6") => {
+                            // Any non-UDP proto means TCP.  Match on the
+                            // `udp` prefix, not a fixed `udp|udp4|udp6`
+                            // list — `validate` also accepts the
+                            // `udp-client` / `udp-server` / `udp4-client`
+                            // / `udp6-client` variants, and matching the
+                            // exact list flipped those to `proto-tcp=yes`
+                            // (silent UDP→TCP on import).
+                            Some(p) if !p.starts_with("udp") => {
                                 data.insert("proto-tcp".into(), "yes".into());
                             }
                             _ => {}
@@ -875,11 +901,17 @@ impl OvpnConfig {
                             }
                         }
                         "tls-auth" => {
+                            have_tls_auth = true;
                             if let Some(v) = a0 {
                                 data.insert("ta".into(), v.into());
                             }
                             if let Some(dir) = args.get(1) {
                                 data.insert("ta-dir".into(), dir.clone());
+                            }
+                        }
+                        "key-direction" => {
+                            if let Some(dir) = a0 {
+                                key_direction = Some(dir.to_string());
                             }
                         }
                         "tls-crypt" => {
@@ -1005,6 +1037,19 @@ impl OvpnConfig {
             }
         }
 
+        // Resolve a standalone `key-direction N` against its keyed
+        // directive.  An inline 2nd-arg direction on secret/tls-auth
+        // already set the target key, so `or_insert` keeps that
+        // precedence.  tls-auth (control channel) takes priority over a
+        // static `secret` when both somehow appear.
+        if let Some(dir) = key_direction {
+            if have_tls_auth {
+                data.entry("ta-dir".into()).or_insert(dir);
+            } else if have_secret {
+                data.entry("static-key-direction".into()).or_insert(dir);
+            }
+        }
+
         // connection-type inference — same triage as the C importer.
         let contype = if have_secret {
             "static-key"
@@ -1025,7 +1070,6 @@ impl OvpnConfig {
         // The C importer sets connection.id to the .ovpn basename; we
         // don't have a path here — leave it to the caller.
 
-        let _ = have_client;
         data
     }
 }
@@ -1256,6 +1300,90 @@ key /etc/ovpn/c.key
         let cfg = OvpnConfig::parse("remote v\nproto tcp\n").unwrap();
         let nm = cfg.as_nm_data();
         assert_eq!(nm.get("proto-tcp").map(String::as_str), Some("yes"));
+    }
+
+    /// R2: the UDP proto variants accepted by `validate`
+    /// (`udp-client`/`udp-server`/`udp4-client`/`udp6-client`) must NOT
+    /// set `proto-tcp` — previously they fell through the
+    /// `udp|udp4|udp6` match and silently flipped UDP profiles to TCP.
+    #[test]
+    fn parse_proto_udp_variants_do_not_set_tcp() {
+        for proto in [
+            "udp",
+            "udp4",
+            "udp6",
+            "udp-client",
+            "udp-server",
+            "udp4-client",
+            "udp6-client",
+        ] {
+            let cfg = OvpnConfig::parse(&format!("remote v\nproto {proto}\n")).unwrap();
+            let nm = cfg.as_nm_data();
+            assert_eq!(
+                nm.get("proto-tcp"),
+                None,
+                "proto {proto} must not set proto-tcp"
+            );
+        }
+        // Sanity: a TCP variant still flips it.
+        let cfg = OvpnConfig::parse("remote v\nproto tcp-client\n").unwrap();
+        assert_eq!(
+            cfg.as_nm_data().get("proto-tcp").map(String::as_str),
+            Some("yes")
+        );
+    }
+
+    /// R3: a standalone `key-direction N` directive must reach vpn.data
+    /// — projected onto `ta-dir` when a tls-auth file is present, else
+    /// `static-key-direction` for a static `secret`.
+    #[test]
+    fn parse_standalone_key_direction_reaches_vpn_data() {
+        let cfg = OvpnConfig::parse("remote v\ntls-auth /etc/ta.key\nkey-direction 1\n").unwrap();
+        assert_eq!(
+            cfg.as_nm_data().get("ta-dir").map(String::as_str),
+            Some("1")
+        );
+
+        let cfg = OvpnConfig::parse("secret /etc/static.key\nkey-direction 0\n").unwrap();
+        assert_eq!(
+            cfg.as_nm_data()
+                .get("static-key-direction")
+                .map(String::as_str),
+            Some("0")
+        );
+
+        // An inline 2nd-arg direction keeps precedence over the standalone.
+        let cfg = OvpnConfig::parse("remote v\ntls-auth /etc/ta.key 1\nkey-direction 0\n").unwrap();
+        assert_eq!(
+            cfg.as_nm_data().get("ta-dir").map(String::as_str),
+            Some("1")
+        );
+    }
+
+    /// D1: a directive name carrying whitespace/newline (e.g. a parsed
+    /// double-quoted `"a\nup x"` token) must be escaped by `emit()`, so
+    /// re-exporting it cannot split one logical directive into two
+    /// physical lines and smuggle a second directive (a script hook)
+    /// into the output.  Guard lives at `emit()` — the only sink — not
+    /// at parse, so import stays as permissive as openvpn itself.
+    #[test]
+    fn emit_neutralises_injected_option_name() {
+        // One physical line whose double-quoted first token carries a
+        // tokenizer `\n` escape (literal backslash-n), decoding to a
+        // newline *inside* the token — the injection vector.
+        let cfg = OvpnConfig::parse("\"a\\nup x\" c\n").unwrap();
+        let out = cfg.emit();
+        // The re-emitted text must round-trip to the SAME single
+        // directive, not two — no bare `up`/`up x` line appears.
+        let reparsed = OvpnConfig::parse(&out).unwrap();
+        assert_eq!(reparsed.directives.len(), 1, "emit must not split: {out:?}");
+        assert!(
+            !out.lines().any(|l| l.trim_start().starts_with("up ")),
+            "no smuggled `up` directive may appear on its own line: {out:?}"
+        );
+        // Real directive names are emitted verbatim (no spurious quoting).
+        let cfg = OvpnConfig::parse("remote-random\ntls-version-min 1.2\n").unwrap();
+        assert!(cfg.emit().contains("remote-random\n"));
     }
 
     #[test]

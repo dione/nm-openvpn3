@@ -96,6 +96,13 @@ struct SessionState {
     /// Disconnect doesn't surface to NM as a spurious ConnectFailed.
     /// Per-session for the same reason as `ip4_emitted`.
     disconnect_requested: Arc<AtomicBool>,
+    /// Per-session "a Failure has already been signalled" guard.  The
+    /// StatusChange listener and the status poller both watch for the
+    /// same terminal backend events; without this they each emit a
+    /// Failure and NM receives two for one event.  Also lets the stats
+    /// timer self-exit once the session has failed instead of polling a
+    /// dead session until Disconnect.  Per-session like `ip4_emitted`.
+    failure_emitted: Arc<AtomicBool>,
 }
 
 pub struct Plugin {
@@ -129,6 +136,28 @@ fn make_emitter(connection: &zbus::Connection) -> zbus::Result<SignalEmitter<'st
         ObjectPath::try_from(NM_VPN_PLUGIN_PATH)
             .expect("NM_VPN_PLUGIN_PATH must parse as ObjectPath"),
     )
+}
+
+/// Emit a Failure to NM at most once per session.  The StatusChange
+/// listener and the status poller both watch for terminal states and
+/// would otherwise each emit a Failure for the same backend event,
+/// sending NM two signals for one failure.  The first to win the CAS
+/// emits; the other becomes a no-op.  Ordering mirrors `ip4_emitted`:
+/// AcqRel on success so the winner's prior state writes are published,
+/// Acquire on failure so the loser observes them.
+async fn emit_failure_once(
+    emitter: &SignalEmitter<'_>,
+    failure_emitted: &Arc<AtomicBool>,
+    reason: NMVpnPluginFailure,
+) {
+    if failure_emitted
+        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+        .is_ok()
+    {
+        let _ = emitter.failure(reason.as_u32()).await;
+    } else {
+        debug!("Failure already signalled for this session; suppressing duplicate");
+    }
 }
 
 /// Transition the cached state and emit StateChanged.  Free function
@@ -181,6 +210,7 @@ impl Plugin {
         session_path: OwnedObjectPath,
         ip4_emitted: Arc<AtomicBool>,
         disconnect_requested: Arc<AtomicBool>,
+        failure_emitted: Arc<AtomicBool>,
     ) -> tokio::task::JoinHandle<()> {
         let client = self.client.clone();
         let state = self.state.clone();
@@ -251,9 +281,12 @@ impl Plugin {
                                 // openvpn3 fixes its state.
                                 ip4_emitted.store(false, Ordering::Release);
                                 set_state_via(&emitter, &state, NMVpnServiceState::Stopped).await;
-                                let _ = emitter
-                                    .failure(NMVpnPluginFailure::BadIpConfig.as_u32())
-                                    .await;
+                                emit_failure_once(
+                                    &emitter,
+                                    &failure_emitted,
+                                    NMVpnPluginFailure::BadIpConfig,
+                                )
+                                .await;
                                 break;
                             }
                             set_state_via(&emitter, &state, target).await;
@@ -265,7 +298,12 @@ impl Plugin {
                             // races this Disconnected event and surfaces as
                             // a spurious ConnectFailed in NM's UI.
                             if !disconnect_requested.load(Ordering::Acquire) {
-                                let _ = emitter.failure(status.failure_reason().as_u32()).await;
+                                emit_failure_once(
+                                    &emitter,
+                                    &failure_emitted,
+                                    status.failure_reason(),
+                                )
+                                .await;
                             }
                             break;
                         }
@@ -352,6 +390,7 @@ impl Plugin {
         // brand-new flag they alone can flip.
         let ip4_emitted = Arc::new(AtomicBool::new(false));
         let disconnect_requested = Arc::new(AtomicBool::new(false));
+        let failure_emitted = Arc::new(AtomicBool::new(false));
 
         let data = vpn_data(&connection).context("parsing vpn.data")?;
         // Split secrets out early — build_profile may need them and we
@@ -496,6 +535,7 @@ impl Plugin {
             s.current_secrets = secret_map;
             s.ip4_emitted = ip4_emitted.clone();
             s.disconnect_requested = disconnect_requested.clone();
+            s.failure_emitted = failure_emitted.clone();
         }
 
         // A Disconnect that arrived while we were mid-connect parks on the
@@ -539,6 +579,7 @@ impl Plugin {
                 session_path.clone(),
                 ip4_emitted.clone(),
                 disconnect_requested.clone(),
+                failure_emitted.clone(),
             );
             let h2 = self.spawn_attention_listener(conn.clone(), session_path.clone());
             s.tasks.extend([h1, h2]);
@@ -582,8 +623,9 @@ impl Plugin {
                 session_path.clone(),
                 ip4_emitted.clone(),
                 disconnect_requested.clone(),
+                failure_emitted.clone(),
             );
-            let h4 = self.spawn_stats_timer(session_path);
+            let h4 = self.spawn_stats_timer(session_path, failure_emitted.clone());
             s.tasks.extend([h3, h4]);
         }
 
@@ -662,6 +704,7 @@ impl Plugin {
         session_path: OwnedObjectPath,
         ip4_emitted_shared: Arc<AtomicBool>,
         disconnect_requested: Arc<AtomicBool>,
+        failure_emitted: Arc<AtomicBool>,
     ) -> tokio::task::JoinHandle<()> {
         let client = self.client.clone();
         let state = self.state.clone();
@@ -729,9 +772,12 @@ impl Plugin {
                     );
                     if let Ok(emitter) = make_emitter(&connection) {
                         set_state_via(&emitter, &state, NMVpnServiceState::Stopped).await;
-                        let _ = emitter
-                            .failure(NMVpnPluginFailure::ConnectFailed.as_u32())
-                            .await;
+                        emit_failure_once(
+                            &emitter,
+                            &failure_emitted,
+                            NMVpnPluginFailure::ConnectFailed,
+                        )
+                        .await;
                     }
                     break;
                 }
@@ -805,9 +851,12 @@ impl Plugin {
                                         ip4_emitted_shared.store(false, Ordering::Release);
                                         set_state_via(&emitter, &state, NMVpnServiceState::Stopped)
                                             .await;
-                                        let _ = emitter
-                                            .failure(NMVpnPluginFailure::BadIpConfig.as_u32())
-                                            .await;
+                                        emit_failure_once(
+                                            &emitter,
+                                            &failure_emitted,
+                                            NMVpnPluginFailure::BadIpConfig,
+                                        )
+                                        .await;
                                         break;
                                     }
                                     set_state_via(&emitter, &state, target).await;
@@ -829,7 +878,7 @@ impl Plugin {
                                         NMVpnPluginFailure::ConnectFailed,
                                         Status::failure_reason,
                                     );
-                                    let _ = emitter.failure(reason.as_u32()).await;
+                                    emit_failure_once(&emitter, &failure_emitted, reason).await;
                                 }
                                 break;
                             }
@@ -856,9 +905,12 @@ impl Plugin {
                         );
                         if let Ok(emitter) = make_emitter(&connection) {
                             set_state_via(&emitter, &state, NMVpnServiceState::Stopped).await;
-                            let _ = emitter
-                                .failure(NMVpnPluginFailure::ConnectFailed.as_u32())
-                                .await;
+                            emit_failure_once(
+                                &emitter,
+                                &failure_emitted,
+                                NMVpnPluginFailure::ConnectFailed,
+                            )
+                            .await;
                         }
                         break;
                     }
@@ -879,7 +931,11 @@ impl Plugin {
     /// `journalctl -t nm-openvpn3-rust-service | grep stats` shows
     /// live throughput.  Mirrors `stats_timer_cb` in the C tree (with
     /// the v0.5.11 TUN_BYTES_* addition).
-    fn spawn_stats_timer(&self, session_path: OwnedObjectPath) -> tokio::task::JoinHandle<()> {
+    fn spawn_stats_timer(
+        &self,
+        session_path: OwnedObjectPath,
+        failure_emitted: Arc<AtomicBool>,
+    ) -> tokio::task::JoinHandle<()> {
         let client = self.client.clone();
         let span = tracing::info_span!("vpn-session", task = "stats", path = %session_path);
         tokio::spawn(
@@ -890,6 +946,15 @@ impl Plugin {
                 let mut first = true;
                 loop {
                     tokio::time::sleep(Duration::from_secs(30)).await;
+                    // A poller/listener failure path may have already
+                    // signalled Failure to NM and broken out.  Disconnect
+                    // normally aborts this handle, but if NM hasn't sent
+                    // it yet there's no point polling stats off a dead
+                    // session — self-exit instead of looping forever.
+                    if failure_emitted.load(Ordering::Acquire) {
+                        debug!("stats timer exiting — session already failed");
+                        break;
+                    }
                     let stats = match client.session_get_statistics(&session_path).await {
                         Ok(s) => s,
                         Err(e) => {

@@ -197,7 +197,6 @@ fn read_vpn_details<R: BufRead>(reader: R) -> Result<(DataMap, SecretsMap)> {
     let mut secrets: SecretsMap = HashMap::new();
 
     let mut current_key: Option<(String, bool)> = None; // (key, is_secret)
-    let mut data_mode = true;
 
     for line in reader.lines() {
         // Wrap the raw line in Zeroizing: a `SECRET_VAL=<password>` line
@@ -211,8 +210,9 @@ fn read_vpn_details<R: BufRead>(reader: R) -> Result<(DataMap, SecretsMap)> {
         }
         if line.is_empty() {
             // Empty line separates data from secrets, and terminates
-            // the secrets block too (the next line is "DONE").
-            data_mode = false;
+            // the secrets block too (the next line is "DONE").  The
+            // data/secret boundary is enforced by `current_key`'s
+            // is_secret tag, not a positional mode flag.
             current_key = None;
             continue;
         }
@@ -237,10 +237,9 @@ fn read_vpn_details<R: BufRead>(reader: R) -> Result<(DataMap, SecretsMap)> {
                     // libnm format bump doesn't crash us.
                 }
             }
-        } else if !data_mode {
-            // Defensive: secret values may legitimately contain '=';
-            // libnm always re-prefixes them, but allow tolerant skip.
         }
+        // A line with no '=' carries no key/value — libnm always
+        // re-prefixes continuation lines, so a tolerant skip is correct.
     }
     Ok((data, secrets))
 }

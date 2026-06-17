@@ -430,13 +430,20 @@ pub unsafe fn connection_to_nm_data(connection: *mut NMConnection) -> BTreeMap<S
     }
 
     unsafe extern "C" fn collect(key: *const c_char, value: *const c_char, user_data: gpointer) {
-        if key.is_null() || value.is_null() || user_data.is_null() {
-            return;
-        }
-        let map = &mut *user_data.cast::<BTreeMap<String, String>>();
-        if let (Ok(k), Ok(v)) = (CStr::from_ptr(key).to_str(), CStr::from_ptr(value).to_str()) {
-            map.insert(k.to_string(), v.to_string());
-        }
+        // This runs on a libnm C stack frame (invoked by
+        // nm_setting_vpn_foreach_data_item).  A panic here — e.g. an
+        // allocation failure in `insert` — would unwind across the C
+        // ABI before the outer ffi_guard can catch it, which is UB.
+        // Contain it locally like the crate's other C callbacks.
+        crate::plugin::ffi_guard((), || unsafe {
+            if key.is_null() || value.is_null() || user_data.is_null() {
+                return;
+            }
+            let map = &mut *user_data.cast::<BTreeMap<String, String>>();
+            if let (Ok(k), Ok(v)) = (CStr::from_ptr(key).to_str(), CStr::from_ptr(value).to_str()) {
+                map.insert(k.to_string(), v.to_string());
+            }
+        });
     }
 
     nm_setting_vpn_foreach_data_item(

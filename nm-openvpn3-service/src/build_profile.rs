@@ -442,6 +442,16 @@ fn is_safe_route_line(line: &str) -> bool {
         "route-metric",
         "route-delay",
     ];
+    // Reject any control char up front.  `routes.lines()` (the caller)
+    // only breaks on `\n`/`\r\n`, but `split_whitespace()` below treats
+    // a bare interior `\r` as a token separator — so without this guard
+    // a line like "route 1.2.3.0/24\rscript-security 3" tokenises to
+    // harmless-looking tokens here yet is emitted verbatim by
+    // `raw_line`, smuggling a second directive past the allow-list if
+    // openvpn3's parser treats the lone `\r` as a line break.
+    if line.chars().any(|c| c.is_control()) {
+        return false;
+    }
     let mut tokens = line.split_whitespace();
     let Some(directive) = tokens.next() else {
         return false;
@@ -1027,6 +1037,43 @@ mod tests {
         assert!(!is_safe_route_line("script-security 3"));
         // A quoted blob with a space inside a token is rejected.
         assert!(!is_safe_route_line("route 'a b'"));
+        // R1: a bare interior CR must be rejected.  `routes.lines()`
+        // does not break on a lone `\r`, but `split_whitespace()` does
+        // — without the control-char guard this tokenised to four
+        // benign tokens yet would be emitted verbatim, smuggling a
+        // second directive if openvpn3 treats the CR as a line break.
+        assert!(!is_safe_route_line("route 1.2.3.0/24\rscript-security 3"));
+        assert!(!is_safe_route_line("route 10.0.0.0 255.0.0.0\tup x"));
+    }
+
+    /// R1 end-to-end: a CR-smuggled directive must not survive into the
+    /// emitted profile as a second line.
+    #[test]
+    fn extra_routes_reject_cr_smuggled_directive() {
+        let secrets = SecretsMap::new();
+        let data = dict(&[
+            ("connection-type", "tls"),
+            ("remote", "v"),
+            (
+                "nm-openvpn3-extra-routes",
+                "route 1.2.3.0/24\rscript-security 3",
+            ),
+        ]);
+        let out = build_profile_string(&data, &secrets).expect("build");
+        // The profile has a legitimate `script-security 2` hardening
+        // tail; the injected directive is `script-security 3`.
+        assert!(
+            !out.contains("script-security 3"),
+            "CR-smuggled directive must be dropped entirely: {out}"
+        );
+        assert!(
+            !out.contains("1.2.3.0/24"),
+            "the whole CR-bearing route line must be dropped: {out}"
+        );
+        assert!(
+            !out.contains('\r'),
+            "no carriage return may reach the emitted profile: {out:?}"
+        );
     }
 
     /// Regression for B1: the HMAC `auth` digest must reach the
