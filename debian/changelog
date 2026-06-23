@@ -1,3 +1,35 @@
+network-manager-openvpn3 (0.6.0~alpha.10-1~dhcargo1) noble; urgency=medium
+
+  * Sixth audit pass — dependency refresh + a fan-out bug hunt with
+    adversarial verification of every finding (+10 tests). See
+    docs/AUDIT-2026-06-pass6.md.
+  * service: the AttentionRequired listener now routes its Failure through
+    the same once-only guard the StatusChange listener and poller use, and
+    suppresses it on a deliberate Disconnect. It previously emitted a raw
+    Failure that could double up with a sibling for one event, never armed
+    the stats timer's self-exit (so it kept polling a dead session), and
+    could surface a spurious failure when a Disconnect raced an in-flight
+    credential submit.
+  * service: a single_use configuration left behind by a failed NewTunnel
+    is now removed rather than orphaning in `openvpn3 configs-list` — one
+    leaked config per failed activation as NM retried.
+  * service: the assembled connect profile (which can hold inline key
+    material) is zeroized on drop; split_vpn now tolerates an a{sv}
+    vpn.data dict instead of silently yielding an empty map.
+  * editor: the renegotiate / ping / ping-restart / connect-timeout spin
+    fields no longer clamp a stored value above their range and then
+    silently re-save the clamped value on Apply (a one-week reneg interval
+    became one day). The ceilings now span the full valid range.
+  * properties: the .ovpn export emitter is brought back into agreement
+    with the connect-time emitter — TLS-only directives are gated on the
+    connection type and the route-line safety allow-list is applied — so
+    the two no longer disagree for the same connection. A new cross-emitter
+    agreement test pins the contract.
+  * build: cargo update (zbus 5.16, zeroize 1.9, et al.); cargo audit
+    clean. Pre-existing rustfmt drift from an older stable fixed.
+
+ -- Dominik Jarmulowicz <dominik.jarmulowicz@oversee.biz>  Tue, 23 Jun 2026 09:01:21 +0200
+
 network-manager-openvpn3 (0.6.0~alpha.9-1~dhcargo1) noble; urgency=medium
 
   * Fifth audit pass — parallel per-crate review, security findings

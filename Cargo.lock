@@ -856,7 +856,7 @@ dependencies = [
 
 [[package]]
 name = "nm-openvpn3-auth-dialog"
-version = "0.6.0-alpha.9"
+version = "0.6.0-alpha.10"
 dependencies = [
  "anyhow",
  "clap",
@@ -867,7 +867,7 @@ dependencies = [
 
 [[package]]
 name = "nm-openvpn3-editor"
-version = "0.6.0-alpha.9"
+version = "0.6.0-alpha.10"
 dependencies = [
  "anyhow",
  "gettext-rs",
@@ -884,7 +884,7 @@ dependencies = [
 
 [[package]]
 name = "nm-openvpn3-properties"
-version = "0.6.0-alpha.9"
+version = "0.6.0-alpha.10"
 dependencies = [
  "anyhow",
  "base64",
@@ -899,7 +899,7 @@ dependencies = [
 
 [[package]]
 name = "nm-openvpn3-service"
-version = "0.6.0-alpha.9"
+version = "0.6.0-alpha.10"
 dependencies = [
  "anyhow",
  "clap",
@@ -977,7 +977,7 @@ dependencies = [
 
 [[package]]
 name = "ovpn3-client"
-version = "0.6.0-alpha.9"
+version = "0.6.0-alpha.10"
 dependencies = [
  "anyhow",
  "tokio",
