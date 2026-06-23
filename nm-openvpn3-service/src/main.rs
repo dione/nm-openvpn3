@@ -10,6 +10,12 @@ mod secrets;
 mod state;
 mod status;
 
+// Cross-emitter agreement test (pass-6): pulls in the properties crate
+// (a dev-dependency) to compare build_profile against import_export so the
+// two hand-maintained `.ovpn` emitters can't silently drift.
+#[cfg(test)]
+mod cross_emitter_agreement;
+
 use anyhow::Context;
 use clap::Parser;
 use tokio::signal::unix::{signal, SignalKind};

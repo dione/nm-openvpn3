@@ -21,3 +21,13 @@ if-addrs.workspace = true
 zeroize.workspace = true
 # O_NOFOLLOW + fstat on the profile open path (TOCTOU-resistant load).
 libc = "0.2"
+
+[dev-dependencies]
+# Pulled in for the cross-emitter agreement test only
+# (src/cross_emitter_agreement.rs, #[cfg(test)]): it compares this crate's
+# connect-side `.ovpn` emitter (build_profile) against the properties
+# crate's export-side emitter (import_export::OvpnConfig) so the two
+# hand-maintained emitters can't silently drift (the B1/B6/R2/R3 + pass-6
+# L4/L5 bug class).  Test-only — the shipped service binary does not link
+# the properties crate or its GTK/libnm stack.
+nm-openvpn3-properties = { path = "../nm-openvpn3-properties" }
