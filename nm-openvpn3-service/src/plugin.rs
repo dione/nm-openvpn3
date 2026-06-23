@@ -415,7 +415,12 @@ impl Plugin {
         //      peer-fingerprint, etc.).
         //   2. Key absent → emit the .ovpn text from the settings dict
         //      via `build_profile::build_profile_string`.
-        let profile = if let Some(profile_path) = data.get(KEY_PROFILE) {
+        // Wrap the assembled profile in Zeroizing: the build-from-vpn.data
+        // branch can embed inline <key>/<tls-crypt> PEM material, and the
+        // file-path branch slurps whatever the pinned .ovpn holds.  Scrub
+        // it from the heap on drop rather than leaving plaintext key
+        // material resident for the lifetime of do_connect (pass-6 D3).
+        let profile = zeroize::Zeroizing::new(if let Some(profile_path) = data.get(KEY_PROFILE) {
             debug!("profile path: {profile_path}");
             let path_owned = profile_path.clone();
             // Open with O_NOFOLLOW so a symlink-swap between the stat
@@ -475,7 +480,7 @@ impl Plugin {
             debug!("no profile path; building config from vpn.data");
             crate::build_profile::build_profile_string(&data_map, &secret_map)
                 .context("building profile from vpn.data")?
-        };
+        });
 
         self.set_state(emitter, NMVpnServiceState::Starting).await;
 
