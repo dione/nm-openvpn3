@@ -436,11 +436,15 @@ impl OvpnConfig {
             ("ping", "ping"),
             ("ping-exit", "ping-exit"),
             ("ping-restart", "ping-restart"),
-            ("remote-cert-tls", "remote-cert-tls"),
-            ("ns-cert-type", "ns-cert-type"),
-            ("tls-remote", "tls-remote"),
-            ("tls-version-max", "tls-version-max"),
-            ("extra-certs", "extra-certs"),
+            // remote-cert-tls / ns-cert-type / tls-remote / tls-version-max
+            // / extra-certs are intentionally NOT here: they are
+            // TLS-context directives that the connect emitter
+            // (build_profile.rs) gates on is_tls_like, so the export
+            // emitter must gate them too — they are emitted from the
+            // is_tls_like block below.  Without this gate a static-key
+            // connection carrying stale TLS keys (left in vpn.data after a
+            // TLS→static-key switch) emitted them on export but not at
+            // connect (pass-6 L4).
         ];
         for (nm_key, ovpn_key) in pairs_str {
             if let Some(v) = get(nm_key) {
@@ -492,6 +496,18 @@ impl OvpnConfig {
                 if line.is_empty() {
                     continue;
                 }
+                // Mirror build_profile.rs's is_safe_route_line allow-list
+                // (pass-6 L5).  The connect emitter (root) drops any
+                // non-route directive smuggled into this attacker-settable
+                // key; the export emitter must drop the same set or the two
+                // disagree (the cross-emitter agreement test enforces
+                // parity on an unsafe-route case).  This is a deliberate
+                // local copy of the canonical predicate in build_profile.rs
+                // — the service and properties crates share no util crate.
+                if !is_safe_route_line(line) {
+                    tracing::warn!("dropping unsafe extra-route line on export: {line:?}");
+                    continue;
+                }
                 let toks = match tokenize(line) {
                     Ok(t) if !t.is_empty() => t,
                     _ => continue,
@@ -535,16 +551,33 @@ impl OvpnConfig {
                 }
                 push_opt(&mut directives, "tls-version-min", args);
             }
-        }
-
-        if let Some(file) = get("crl-verify-file") {
-            push_opt(&mut directives, "crl-verify", vec![file.into()]);
-        } else if let Some(dir) = get("crl-verify-dir") {
-            push_opt(
-                &mut directives,
-                "crl-verify",
-                vec![dir.into(), "dir".into()],
-            );
+            // TLS-context string directives — gated on is_tls_like to
+            // match build_profile.rs's connect emitter (pass-6 L4).  1:1
+            // NM-key→ovpn-key like the unconditional pairs_str above.
+            let tls_pairs: &[(&str, &str)] = &[
+                ("remote-cert-tls", "remote-cert-tls"),
+                ("ns-cert-type", "ns-cert-type"),
+                ("tls-remote", "tls-remote"),
+                ("tls-version-max", "tls-version-max"),
+                ("extra-certs", "extra-certs"),
+            ];
+            for (nm_key, ovpn_key) in tls_pairs {
+                if let Some(v) = get(nm_key) {
+                    push_opt(&mut directives, ovpn_key, vec![v.into()]);
+                }
+            }
+            // crl-verify is likewise TLS-only at connect; gate it here so
+            // a static-key export doesn't carry a crl-verify the live
+            // connection omits (pass-6 L4).
+            if let Some(file) = get("crl-verify-file") {
+                push_opt(&mut directives, "crl-verify", vec![file.into()]);
+            } else if let Some(dir) = get("crl-verify-dir") {
+                push_opt(
+                    &mut directives,
+                    "crl-verify",
+                    vec![dir.into(), "dir".into()],
+                );
+            }
         }
 
         // dev / dev-type / tap fall-back chain matches build_profile.
@@ -1218,6 +1251,47 @@ fn split_remote(gw: &str) -> (String, Option<String>, Option<String>) {
     (host, port, proto)
 }
 
+/// Allow-list gate for a single preserved extra-route line, used by
+/// [`OvpnConfig::from_nm_data`] before re-emitting `nm-openvpn3-extra-routes`.
+///
+/// This is a deliberate copy of the canonical predicate in
+/// `nm-openvpn3-service/src/build_profile.rs` — the two crates share no
+/// common utility crate, so the export emitter (this crate, user context)
+/// carries its own copy of the same allow-list the connect emitter (the
+/// root service) enforces.  The two MUST stay in agreement; the
+/// cross-emitter agreement test (`nm-openvpn3-service/tests/`) feeds an
+/// unsafe-route case through both and fails on divergence.
+///
+/// Accept only the route-table directive family that takes pure
+/// address / netmask / gateway / numeric arguments — never a script hook
+/// (route-up, route-pre-down).  Reject any control char up front so a
+/// bare interior `\r` can't smuggle a second directive (the R1 vector).
+fn is_safe_route_line(line: &str) -> bool {
+    const ALLOWED: &[&str] = &[
+        "route",
+        "route-ipv6",
+        "route-gateway",
+        "route-metric",
+        "route-delay",
+    ];
+    if line.chars().any(|c| c.is_control()) {
+        return false;
+    }
+    let mut tokens = line.split_whitespace();
+    let Some(directive) = tokens.next() else {
+        return false;
+    };
+    if !ALLOWED.contains(&directive) {
+        return false;
+    }
+    tokens.all(|tok| {
+        !tok.is_empty()
+            && tok
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | ':' | '/' | '_' | '-'))
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1864,6 +1938,104 @@ key /etc/ovpn/c.key
             "single-quote forces double-quoting: {}",
             cfg.emit()
         );
+    }
+
+    /// L4: TLS-context directives must be gated on is_tls_like, matching
+    /// the connect emitter.  A static-key connection carrying stale TLS
+    /// keys (left in vpn.data after a TLS→static-key switch) must NOT emit
+    /// them — previously from_nm_data emitted them unconditionally from
+    /// pairs_str, disagreeing with build_profile.
+    #[test]
+    fn from_nm_data_gates_tls_directives_for_static_key() {
+        let mut data = BTreeMap::new();
+        data.insert("connection-type".into(), "static-key".into());
+        data.insert("remote".into(), "v".into());
+        data.insert("static-key".into(), "/s.key".into());
+        // Stale TLS keys that must be dropped for a non-TLS connection.
+        data.insert("remote-cert-tls".into(), "server".into());
+        data.insert("ns-cert-type".into(), "server".into());
+        data.insert("tls-remote".into(), "/CN=server".into());
+        data.insert("tls-version-max".into(), "1.3".into());
+        data.insert("extra-certs".into(), "/extra.pem".into());
+        data.insert("crl-verify-file".into(), "/crl.pem".into());
+        let out = OvpnConfig::from_nm_data(&data).emit();
+        for stale in [
+            "remote-cert-tls",
+            "ns-cert-type",
+            "tls-remote",
+            "tls-version-max",
+            "extra-certs",
+            "crl-verify",
+        ] {
+            assert!(
+                !out.lines().any(|l| l.starts_with(stale)),
+                "static-key export must not emit TLS directive `{stale}`: {out}"
+            );
+        }
+        // Sanity: the static-key directive itself IS emitted.
+        assert!(out.lines().any(|l| l.starts_with("secret ")));
+    }
+
+    /// L4 sanity: the same TLS directives ARE emitted for a TLS connection.
+    #[test]
+    fn from_nm_data_emits_tls_directives_for_tls() {
+        let mut data = BTreeMap::new();
+        data.insert("connection-type".into(), "tls".into());
+        data.insert("remote".into(), "v".into());
+        data.insert("remote-cert-tls".into(), "server".into());
+        data.insert("tls-version-max".into(), "1.3".into());
+        data.insert("crl-verify-file".into(), "/crl.pem".into());
+        let out = OvpnConfig::from_nm_data(&data).emit();
+        assert!(out.lines().any(|l| l.starts_with("remote-cert-tls")));
+        assert!(out.lines().any(|l| l.starts_with("tls-version-max")));
+        assert!(out.lines().any(|l| l.starts_with("crl-verify")));
+    }
+
+    /// L5: an unsafe directive smuggled into the preserved-routes key must
+    /// be dropped on export, matching the connect emitter's allow-list.
+    /// Previously from_nm_data re-emitted any line verbatim.
+    #[test]
+    fn from_nm_data_drops_unsafe_extra_routes() {
+        let mut data = BTreeMap::new();
+        data.insert("connection-type".into(), "tls".into());
+        data.insert("remote".into(), "v".into());
+        data.insert(
+            "nm-openvpn3-extra-routes".into(),
+            "route 10.0.0.0 255.0.0.0\nroute-up /tmp/evil.sh\nroute-gateway 10.8.0.1".into(),
+        );
+        let out = OvpnConfig::from_nm_data(&data).emit();
+        assert!(
+            out.lines()
+                .any(|l| l.starts_with("route ") && l.contains("10.0.0.0")),
+            "safe route must survive: {out}"
+        );
+        assert!(
+            out.lines().any(|l| l.starts_with("route-gateway")),
+            "safe route-gateway must survive: {out}"
+        );
+        assert!(
+            !out.lines().any(|l| l.starts_with("route-up")),
+            "unsafe route-up (script hook) must be dropped on export: {out}"
+        );
+    }
+
+    /// L5: the local is_safe_route_line copy must enforce the same
+    /// allow-list as build_profile.rs (the agreement test enforces
+    /// cross-crate parity; this pins the local behaviour).
+    #[test]
+    fn is_safe_route_line_allowlist() {
+        assert!(is_safe_route_line("route 10.0.0.0 255.0.0.0"));
+        assert!(is_safe_route_line("route 10.0.0.0 255.0.0.0 vpn_gateway"));
+        assert!(is_safe_route_line("route-ipv6 2001:db8::/32"));
+        assert!(is_safe_route_line("route-gateway 10.8.0.1"));
+        assert!(is_safe_route_line("route-metric 100"));
+        assert!(!is_safe_route_line("route-up /tmp/x.sh"));
+        assert!(!is_safe_route_line("up /tmp/x.sh"));
+        assert!(!is_safe_route_line("script-security 3"));
+        assert!(!is_safe_route_line("route 'a b'"));
+        // A bare interior CR must be rejected (the R1 control-char guard).
+        assert!(!is_safe_route_line("route 1.2.3.0/24\rscript-security 3"));
+        assert!(!is_safe_route_line("route 10.0.0.0 255.0.0.0\tup x"));
     }
 
     /// validate() branches beyond the three already covered.
