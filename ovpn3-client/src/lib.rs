@@ -99,6 +99,22 @@ impl Client {
         proxy.set_override(name, &Value::Bool(value)).await
     }
 
+    /// `net.openvpn.v3.configuration.Remove` on a specific config object.
+    /// openvpn3 auto-removes a `single_use` config only once a backend
+    /// client *Fetches* it during registration; a config that an Import
+    /// created but no backend ever consumed (e.g. NewTunnel failed, or a
+    /// Disconnect raced the backend's first fetch) is never GC'd and
+    /// orphans in `openvpn3 configs-list`.  Callers use this to drop such
+    /// a config explicitly.  Best-effort at the call site: removing an
+    /// already-gone config returns a benign error.
+    pub async fn config_remove(&self, config_path: &OwnedObjectPath) -> zbus::Result<()> {
+        let proxy = ConfigurationProxy::builder(&self.connection)
+            .path(config_path.as_ref())?
+            .build()
+            .await?;
+        proxy.remove().await
+    }
+
     /// `net.openvpn.v3.configuration.SetOverride(name, value)` with a string value.
     /// openvpn3 stores the `log-level` override as a string ("1".."6"), so
     /// the integer-shaped wrapper would be rejected — use this for the
@@ -439,6 +455,9 @@ mod proxies {
     pub trait Configuration {
         fn set_override(&self, name: &str, value: &Value<'_>) -> zbus::Result<()>;
         fn unset_override(&self, name: &str) -> zbus::Result<()>;
+        /// `net.openvpn.v3.configuration.Remove` — drop this config
+        /// object.  Owner-callable; the importing service is the owner.
+        fn remove(&self) -> zbus::Result<()>;
 
         #[zbus(property, name = "overrides")]
         fn overrides(&self) -> zbus::Result<HashMap<String, OwnedValue>>;

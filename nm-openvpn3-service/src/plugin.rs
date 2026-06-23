@@ -511,11 +511,23 @@ impl Plugin {
 
         self.apply_overrides(&config_path, &data).await;
 
-        let session_path = self
-            .client
-            .new_tunnel(&config_path)
-            .await
-            .context("NewTunnel")?;
+        let session_path = match self.client.new_tunnel(&config_path).await {
+            Ok(p) => p,
+            Err(e) => {
+                // NewTunnel failed: the single_use config we imported above
+                // was never consumed by a backend (no Fetch), so openvpn3
+                // won't auto-GC it.  Remove it before returning or it
+                // orphans in `openvpn3 configs-list`, one per failed
+                // activation as NM retries (pass-6 M6).  config_path isn't
+                // stashed on the session yet, so this local is the only
+                // handle to it.  Safe even on the lost-reply edge (NewTunnel
+                // ran server-side but the reply was lost): we are failing
+                // the activation regardless, so removing the config can't
+                // corrupt a connection we are keeping.
+                self.remove_config(&config_path).await;
+                return Err(e.context("NewTunnel"));
+            }
+        };
         debug!("session path: {session_path}");
 
         // Stash the session immediately so any subsequent failure can
@@ -651,17 +663,18 @@ impl Plugin {
         // disconnect itself runs on the local path argument afterwards,
         // same pattern `disconnect()` uses (mem::take, then act on
         // locals).
-        {
+        let config_path = {
             let mut s = self.session.lock().await;
             s.disconnect_requested.store(true, Ordering::Release);
             for h in s.tasks.drain(..) {
                 h.abort();
             }
-            s.config_path = None;
+            let config_path = s.config_path.take();
             s.session_path = None;
             s.current_data.clear();
             s.current_secrets.clear();
-        }
+            config_path
+        };
         // openvpn3 drops sessions whose backend has yet to register;
         // an in-flight tear-down can return ObjectNotFound or a
         // transient bus error.  One retry is enough.
@@ -672,6 +685,24 @@ impl Plugin {
                     "cleanup session.Disconnect {session_path} failed twice ({de2}); leaving orphan session for openvpn3 to GC"
                 );
             }
+        }
+        // Drop the imported config too: cleanup_session runs on
+        // activation-failure paths where the backend may never have
+        // Fetched the single_use config, so openvpn3 won't auto-GC it
+        // (pass-6 M6).  Best-effort — already-gone is benign.
+        if let Some(cp) = config_path {
+            self.remove_config(&cp).await;
+        }
+    }
+
+    /// Best-effort removal of an imported openvpn3 config object.  Used on
+    /// activation-failure / teardown paths to drop a `single_use` config
+    /// the backend may never have Fetched (openvpn3 only auto-GCs such a
+    /// config once a backend Fetches it).  An already-removed config
+    /// yields a benign error we log at debug and ignore.
+    async fn remove_config(&self, config_path: &OwnedObjectPath) {
+        if let Err(e) = self.client.config_remove(config_path).await {
+            debug!("config Remove {config_path} failed (likely already gone): {e}");
         }
     }
 
@@ -1333,6 +1364,13 @@ impl Plugin {
                     warn!("session.Disconnect {path} failed twice ({e2}); leaving orphan session");
                 }
             }
+        }
+        // Drop the imported config.  For an established session the backend
+        // already Fetched-and-removed the single_use config (Remove is then
+        // a benign no-op); for a Disconnect that raced the backend's first
+        // fetch this is what reclaims it (pass-6 M6).
+        if let Some(cp) = session.config_path.as_ref() {
+            self.remove_config(cp).await;
         }
         self.set_state(&emitter, NMVpnServiceState::Stopped).await;
         // NM's contract: the plugin process exits after Disconnect
