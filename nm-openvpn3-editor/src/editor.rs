@@ -902,6 +902,19 @@ fn combo_row(
     ComboBinding { row, ids }
 }
 
+/// Upper bound for the open-ended "seconds" timer spins (reneg-sec,
+/// ping, ping-restart, connect-timeout).  OpenVPN parses these as a
+/// plain positive int with no tight protocol ceiling, so the SpinRow
+/// max must not clamp a legitimately-stored value: a clamp on load is
+/// silently re-persisted from widget state on the next Apply (the keys
+/// are in WIDGET_DATA_KEYS, so the round-trip preserve loop skips them),
+/// turning e.g. a 1-week `reneg-sec` into 1 day with no user edit.
+/// `i32::MAX` covers ~68 years of seconds — past any real config — while
+/// staying within openvpn's int parse range.  Distinct from the
+/// genuinely protocol-bounded spins (port/MTU/fragment/keysize ≤ 65535,
+/// log-level ≤ 6), which keep their real ceilings.
+const TIMER_SECS_MAX: f64 = i32::MAX as f64;
+
 fn spin_row(title: &str, subtitle: Option<&str>, min: f64, max: f64, value: f64) -> SpinRow {
     let row = SpinRow::with_range(min, max, 1.0);
     row.set_use_markup(false);
@@ -1244,7 +1257,7 @@ fn build_widget_tree(initial: &std::collections::BTreeMap<String, String>) -> Ed
         "Ping interval",
         Some("Seconds between keepalive probes. 0 disables."),
         0.0,
-        3600.0,
+        TIMER_SECS_MAX,
         parse_int_default(initial.get("ping"), 0.0),
     );
     exp_conn.add_row(&keepalive_ping);
@@ -1252,7 +1265,7 @@ fn build_widget_tree(initial: &std::collections::BTreeMap<String, String>) -> Ed
         "Restart after",
         Some("Seconds without traffic before openvpn3 restarts the session."),
         0.0,
-        3600.0,
+        TIMER_SECS_MAX,
         parse_int_default(initial.get("ping-restart"), 0.0),
     );
     exp_conn.add_row(&keepalive_restart);
@@ -1264,7 +1277,7 @@ fn build_widget_tree(initial: &std::collections::BTreeMap<String, String>) -> Ed
         // type an explicit interval to change it.
         Some("Re-key interval in seconds. Leave at 0 to keep openvpn3's default (3600)."),
         0.0,
-        86400.0,
+        TIMER_SECS_MAX,
         parse_int_default(initial.get("reneg-seconds"), 0.0),
     );
     exp_conn.add_row(&reneg_seconds);
@@ -1272,7 +1285,7 @@ fn build_widget_tree(initial: &std::collections::BTreeMap<String, String>) -> Ed
         "Connect timeout",
         Some("Seconds to wait for the initial connection. 0 keeps the default."),
         0.0,
-        3600.0,
+        TIMER_SECS_MAX,
         parse_int_default(initial.get("connect-timeout"), 0.0),
     );
     exp_conn.add_row(&connect_timeout);
