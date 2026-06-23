@@ -1966,9 +1966,7 @@ mod tests {
 
     #[test]
     fn password_requires_username() {
-        assert!(
-            validate_required_fields("password", "gw", "ca.pem", "", "", "", "").is_some()
-        );
+        assert!(validate_required_fields("password", "gw", "ca.pem", "", "", "", "").is_some());
         assert!(
             validate_required_fields("password", "gw", "ca.pem", "", "", "alice", "").is_none()
         );
@@ -1977,8 +1975,6 @@ mod tests {
     #[test]
     fn static_key_requires_key_file() {
         assert!(validate_required_fields("static-key", "gw", "", "", "", "", "").is_some());
-        assert!(
-            validate_required_fields("static-key", "gw", "", "", "", "", "sk.key").is_none()
-        );
+        assert!(validate_required_fields("static-key", "gw", "", "", "", "", "sk.key").is_none());
     }
 }

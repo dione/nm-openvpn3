@@ -94,10 +94,7 @@ fn read_profile_securely(path: &Path) -> Option<String> {
 /// blocking on a FIFO), fstat confirms a regular file (rejects FIFOs /
 /// devices), and the read is capped at `max_bytes`.  Returns the body
 /// in a `Zeroizing` so credential text is scrubbed on drop.
-fn read_small_regular_file(
-    path: &Path,
-    max_bytes: u64,
-) -> std::io::Result<Zeroizing<String>> {
+fn read_small_regular_file(path: &Path, max_bytes: u64) -> std::io::Result<Zeroizing<String>> {
     use std::io::Read;
     let file = std::fs::OpenOptions::new()
         .read(true)
@@ -114,9 +111,7 @@ fn read_small_regular_file(
             ),
         ));
     }
-    let mut buf = Zeroizing::new(String::with_capacity(
-        (md.len() as usize).saturating_add(1),
-    ));
+    let mut buf = Zeroizing::new(String::with_capacity((md.len() as usize).saturating_add(1)));
     let mut limited = (&file).take(max_bytes + 1);
     limited.read_to_string(&mut buf)?;
     if buf.len() as u64 > max_bytes {
@@ -265,9 +260,7 @@ pub unsafe fn ovpn_text_to_connection(
                     eprintln!("nm-openvpn3: refusing symlinked http-proxy-auth-file: {authfile}");
                 }
                 Err(e) if e.kind() == std::io::ErrorKind::InvalidInput => {
-                    eprintln!(
-                        "nm-openvpn3: refusing http-proxy-auth-file '{authfile}': {e}"
-                    );
+                    eprintln!("nm-openvpn3: refusing http-proxy-auth-file '{authfile}': {e}");
                 }
                 // Missing or unreadable — skip silently, as before.
                 Err(_) => {}
