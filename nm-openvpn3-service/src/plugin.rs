@@ -581,7 +581,12 @@ impl Plugin {
                 disconnect_requested.clone(),
                 failure_emitted.clone(),
             );
-            let h2 = self.spawn_attention_listener(conn.clone(), session_path.clone());
+            let h2 = self.spawn_attention_listener(
+                conn.clone(),
+                session_path.clone(),
+                disconnect_requested.clone(),
+                failure_emitted.clone(),
+            );
             s.tasks.extend([h1, h2]);
         }
         self.grant_access(&session_path, grant_uid).await;
@@ -1010,6 +1015,8 @@ impl Plugin {
         &self,
         connection: zbus::Connection,
         session_path: OwnedObjectPath,
+        disconnect_requested: Arc<AtomicBool>,
+        failure_emitted: Arc<AtomicBool>,
     ) -> tokio::task::JoinHandle<()> {
         let client = self.client.clone();
         let session_state = self.session.clone();
@@ -1039,11 +1046,34 @@ impl Plugin {
                         handle_attention(&connection, &client, &session_path, &session_state, &msg)
                             .await
                     {
-                        warn!("AttentionRequired handler failed: {e:#}; failing to NM");
-                        if let Ok(emitter) = make_emitter(&connection) {
-                            let _ = emitter
-                                .failure(NMVpnPluginFailure::LoginFailed.as_u32())
+                        // Suppress the Failure when teardown is in progress
+                        // — a Disconnect racing an in-flight ProvideInput
+                        // makes the call fail against the dead session, and
+                        // surfacing that as a LoginFailed would be a
+                        // spurious ConnectFailed for a deliberate disconnect
+                        // (the disconnect handler owns the Stopped sequence).
+                        if disconnect_requested.load(Ordering::Acquire) {
+                            debug!(
+                                "AttentionRequired handler failed during teardown ({e:#}); \
+                                 suppressing Failure"
+                            );
+                        } else {
+                            // Route through emit_failure_once so this path
+                            // is CAS-gated like the listener/poller (R5):
+                            // without it the attention path emitted a raw
+                            // Failure, NM could receive a second from a
+                            // sibling, and the failure_emitted flag stayed
+                            // clear so the stats timer kept polling a dead
+                            // session (pass-6 M1).
+                            warn!("AttentionRequired handler failed: {e:#}; failing to NM");
+                            if let Ok(emitter) = make_emitter(&connection) {
+                                emit_failure_once(
+                                    &emitter,
+                                    &failure_emitted,
+                                    NMVpnPluginFailure::LoginFailed,
+                                )
                                 .await;
+                            }
                         }
                         break;
                     }
