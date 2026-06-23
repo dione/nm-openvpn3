@@ -97,5 +97,25 @@ pub fn split_vpn(
 }
 
 fn flatten_str_map(v: OwnedValue) -> Option<HashMap<String, String>> {
-    <HashMap<String, String>>::try_from(v).ok()
+    // Fast path: a real NM `a{ss}` dict.
+    if let Ok(map) = <HashMap<String, String>>::try_from(v.clone()) {
+        return Some(map);
+    }
+    // Fallback: an `a{sv}` dict (older NM, matching the same path in
+    // `connection::string_string_dict`).  Convert per key so a single
+    // non-string value doesn't discard the whole map — the previous
+    // all-or-nothing `try_from` yielded an empty map here while
+    // `connection::vpn_data` parsed the same dict fine, leaving
+    // build_profile to fail with a confusing "missing remote" (pass-6 D5).
+    let map = <HashMap<String, OwnedValue>>::try_from(v).ok()?;
+    let mut out = HashMap::with_capacity(map.len());
+    for (k, val) in map {
+        match String::try_from(val) {
+            Ok(s) => {
+                out.insert(k, s);
+            }
+            Err(_) => tracing::debug!("vpn settings value for '{k}' is not a string; skipping"),
+        }
+    }
+    Some(out)
 }
